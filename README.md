@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.8.4)
+## Verified workflow (0.8.5)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -552,6 +552,48 @@ same card feeds two other places: `ai plan`/`ai run` print the weakest
 required gate, matched pattern count and projected spend for the task being
 planned, and `ai pipeline` prints a non-blocking note (never a NEEDS_HUMAN)
 when projected spend from prior runs exceeds the profile's budget.
+
+```bash
+ai prompt list
+ai prompt show cleanup            # variant a: the shipped instruction, verbatim
+ai prompt experiment start cleanup --variants a,b --min-samples 15
+ai prompt experiment status
+ai prompt report
+ai prompt promote cleanup b --confirm
+ai prompt experiment stop
+ai prompt reset cleanup
+```
+
+`ai prompt` runs measured experiments on the bundled validators' instructions
+only (`INSTRUCTIONS` in `ai_stack/validators.py`) — never the orchestration
+prompt, whose outcome is mediated by a separately launched model and a human,
+so a measured delta there would say little about the prompt itself. Variant
+`a` is always the shipped instruction text; an alternate variant is a
+human-authored file at `templates/prompts/validator.<name>/<variant>.md` — no
+model ever writes variant text.
+
+At most one experiment runs per repository at a time. Assignment is
+deterministic, not random: `hash(task_cache_key + slot) % variant_count`, so a
+task keeps the same variant across `--resume` and the split is reproducible
+from recorded inputs rather than drawn fresh each run. The assigned variant
+and a hash of its exact body text are snapshotted once at plan time
+(`state/prompt-assignment.json`, part of the evidence fingerprint) and
+recorded on every gate event for that slot; `ai prompt report` groups by
+`(variant, sha)`, not just `variant`, so a mid-experiment text change (a stack
+upgrade that edited the file) is flagged as incomparable instead of silently
+pooling two different prompts.
+
+`ai prompt promote` is never automatic: it refuses below the experiment's
+`--min-samples` for every variant, refuses without `--confirm`, prints the
+full per-variant comparison (pass rate, first-attempt pass rate, median
+tokens, and the task-type/risk distribution so confounding is visible) before
+applying, and — like `ai lessons confirm/promote`— refuses to run at all when
+`AI_GATE` or `AI_TASK_DIR` is set, so a model running inside a gate can never
+promote its own validator's prompt. A promotion writes to the repo-scoped
+`prompt-overrides.json`, which always wins over an active experiment's hash
+for that slot and is part of the evidence fingerprint, matching the existing
+`validators.json` precedent that changing what a validator sees invalidates
+prior evidence.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
 migration, UI copy change, integration work, a Figma-driven design task and a

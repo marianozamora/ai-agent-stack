@@ -4,10 +4,10 @@ import tempfile, uuid
 import argparse, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
-from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats, variant_stats
 from validators import INSTRUCTIONS, model_verdict, intact_record, run_codex_json
 
-VERSION = "0.8.4"
+VERSION = "0.8.5"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -473,6 +473,7 @@ If reusable validators are configured (`ai validators show`), use `ai pipeline -
     save_json(task_state(state)/'state'/'lessons.json',
               {'digest':shasum(json.dumps(snapshot,sort_keys=True))[:16],'lessons':snapshot})
     cache_key=task_cache_key(root,task,profile,base,selected_skills)
+    save_json(task_state(state)/'state'/'prompt-assignment.json',assign_prompt_variants(state,cache_key))
     save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
     record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
     return prompt
@@ -1120,6 +1121,79 @@ def cmd_confidence(args):
               f"median_attempts={s['median_attempts']} (n={s['n']})")
 
 
+def cmd_prompt(args):
+    state=repo_state(git_root())
+    if args.prompt_cmd=='list':
+        overrides=prompt_overrides(state).get('slots',{}); experiment=prompt_experiment(state)
+        for name in INSTRUCTIONS:
+            slot=prompt_slot(name); variants=available_variants(slot); notes=[]
+            if slot in overrides: notes.append(f"promoted={overrides[slot]['variant']}")
+            if experiment and experiment['slot']==slot: notes.append('experiment active')
+            print(f"{slot:24} variants={','.join(variants)}"+(f"  ({'; '.join(notes)})" if notes else ''))
+        return
+    if args.prompt_cmd=='show':
+        print(variant_text(args.name,prompt_slot(args.name),args.variant)); return
+    if args.prompt_cmd=='experiment':
+        slot=prompt_slot(args.name) if args.experiment_cmd=='start' else None
+        if args.experiment_cmd=='start':
+            if prompt_experiment(state): raise SystemExit('An experiment is already active; stop it first.')
+            variants=args.variants.split(',')
+            if len(variants)<2: raise SystemExit('An experiment needs at least 2 variants.')
+            available=available_variants(slot); unknown=[v for v in variants if v not in available]
+            if unknown: raise SystemExit(f"Unknown variant(s) for {slot}: {', '.join(unknown)}. Available: {', '.join(available)}")
+            save_json(state/'prompt-experiments.json',{'version':1,'active':{
+                'slot':slot,'variants':variants,'started_at':int(time.time()),'min_samples_per_variant':args.min_samples}})
+            print(f"Experiment started on {slot}: {', '.join(variants)} (min {args.min_samples} samples/variant).")
+        elif args.experiment_cmd=='status':
+            experiment=prompt_experiment(state)
+            print(json.dumps(experiment,indent=2) if experiment else 'No active experiment.')
+        else:
+            save_json(state/'prompt-experiments.json',{'version':1,'active':None}); print('Experiment stopped.')
+        return
+    if args.prompt_cmd=='report':
+        experiment=prompt_experiment(state)
+        if not experiment: raise SystemExit('No active experiment; nothing to report.')
+        rows,_=load_metric_rows(state); stats=variant_stats(rows,experiment['slot'])
+        if args.json: print(json.dumps({'slot':experiment['slot'],
+            'min_samples_per_variant':experiment['min_samples_per_variant'],'stats':stats},indent=2)); return
+        print(f"Prompt experiment: {experiment['slot']} (min {experiment['min_samples_per_variant']} samples/variant)")
+        if len({s['sha'] for s in stats})>len({s['variant'] for s in stats}):
+            print("Note: this slot's text changed mid-experiment; rows below are grouped by (variant, sha), not directly comparable across a change.")
+        for s in stats:
+            print(f"  {s['variant']} ({s['sha']}) n={s['n']} pass_rate={s['pass_rate']} "
+                  f"first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}")
+            print(f"    by_task_type={s['by_task_type']}  by_risk={s['by_risk']}")
+        return
+    if args.prompt_cmd=='promote':
+        if os.environ.get('AI_GATE') or os.environ.get('AI_TASK_DIR'):
+            raise SystemExit('Prompt promotion is human-only; run this outside a gate/validator environment.')
+        slot=prompt_slot(args.name)
+        if args.variant not in available_variants(slot): raise SystemExit(f'Unknown variant: {slot}/{args.variant}')
+        experiment=prompt_experiment(state)
+        if experiment and experiment['slot']==slot:
+            rows,_=load_metric_rows(state); stats=variant_stats(rows,slot)
+            by_variant={s['variant']:s for s in stats}
+            min_samples=experiment['min_samples_per_variant']
+            short=[v for v in experiment['variants'] if by_variant.get(v,{}).get('n',0)<min_samples]
+            if short: raise SystemExit(f"Not enough samples yet for {', '.join(short)} (need >= {min_samples} each). Run `ai prompt report`.")
+            if not args.confirm:
+                print(f"Promoting {slot} -> {args.variant}. These are observed frequencies over small samples, not a controlled experiment.")
+                for s in stats: print(f"  {s['variant']} n={s['n']} pass_rate={s['pass_rate']} "
+                                      f"first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}")
+                raise SystemExit('Re-run with --confirm to apply.')
+        elif not args.confirm:
+            raise SystemExit('Re-run with --confirm to apply.')
+        data=prompt_overrides(state)
+        data['slots'][slot]={'variant':args.variant,'sha':shasum(variant_text(args.name,slot,args.variant))[:12],
+                              'promoted_at':int(time.time()),'promoted_by':'user'}
+        save_json(state/'prompt-overrides.json',data)
+        if experiment and experiment['slot']==slot: save_json(state/'prompt-experiments.json',{'version':1,'active':None})
+        print(f'Promoted {slot} -> {args.variant}.'); return
+    if args.prompt_cmd=='reset':
+        data=prompt_overrides(state); data['slots'].pop(prompt_slot(args.name),None)
+        save_json(state/'prompt-overrides.json',data); print('Reset.'); return
+
+
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
 
 
@@ -1138,8 +1212,9 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
             with path.open('rb') as f:
                 for block in iter(lambda:f.read(1024*1024),b''): digest.update(block)
         else: digest.update(b'<missing>')
-    for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',
-                 task_state(state)/'state/lessons.json',*sorted((task_state(state)/'contracts').glob('*'))]:
+    for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',state/'prompt-overrides.json',
+                 task_state(state)/'state/lessons.json',task_state(state)/'state/prompt-assignment.json',
+                 *sorted((task_state(state)/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
     return digest.hexdigest()
 
@@ -1184,6 +1259,51 @@ def cmd_validators(args):
     if args.action!='show': print('Saved:',state/'validators.json')
 
 
+def prompt_slot(name:str)->str:
+    return f'validator.{name}'
+
+
+def variant_text(name:str,slot:str,variant:str)->str:
+    if variant=='a': return INSTRUCTIONS[name]
+    path=STACK_ROOT/'templates/prompts'/slot/f'{variant}.md'
+    if not path.is_file(): raise SystemExit(f'Unknown prompt variant: {slot}/{variant}')
+    return path.read_text()
+
+
+def available_variants(slot:str)->list[str]:
+    directory=STACK_ROOT/'templates/prompts'/slot
+    variants=['a']
+    if directory.is_dir(): variants+=sorted(p.stem for p in directory.glob('*.md') if p.stem!='a')
+    return variants
+
+
+def prompt_overrides(state:Path)->dict:
+    return load_json(state/'prompt-overrides.json',{'version':1,'slots':{}})
+
+
+def prompt_experiment(state:Path)->dict|None:
+    return load_json(state/'prompt-experiments.json',{}).get('active')
+
+
+def assign_prompt_variants(state:Path,cache_key:str)->dict:
+    """Deterministic per-task variant assignment, snapshotted once at plan time.
+
+    A promoted override always wins for its slot; otherwise the single active
+    experiment (at most one per repo) is assigned by hash(cache_key+slot), so a
+    given task keeps the same variant across --resume without a random draw.
+    """
+    assignment={}
+    for slot,info in prompt_overrides(state).get('slots',{}).items():
+        name=slot.split('.',1)[1]; variant=info['variant']
+        assignment[slot]={'variant':variant,'sha':shasum(variant_text(name,slot,variant))[:12]}
+    experiment=prompt_experiment(state)
+    if experiment and experiment['slot'] not in assignment:
+        slot=experiment['slot']; name=slot.split('.',1)[1]; variants=experiment['variants']
+        variant=variants[int(shasum(cache_key+slot),16)%len(variants)]
+        assignment[slot]={'variant':variant,'sha':shasum(variant_text(name,slot,variant))[:12]}
+    return assignment
+
+
 def cmd_validate(args):
     try:
         if os.environ.get('AI_GATE')!=args.name:
@@ -1211,8 +1331,12 @@ def cmd_validate(args):
         if args.name=='design' and not design.is_file(): raise ValueError('Design contract is missing.')
         if args.name=='contract' and re.search(r'^acceptance:\s*\[\s*\]\s*$',contract.read_text(),re.M):
             raise ValueError('PR contract has no acceptance criteria; populate it before validation.')
+        slot=prompt_slot(args.name)
+        assignment=load_json(task/'state/prompt-assignment.json',{}).get(slot,{'variant':'a'})
+        try: instruction=variant_text(args.name,slot,assignment['variant'])
+        except SystemExit as exc: raise ValueError(str(exc))
         prompt=f'''Validate gate: {args.name}
-{INSTRUCTIONS[args.name]}
+{instruction}
 
 Read-only review. Do not modify files, run ai gate/pipeline/ready, delegate work,
 send messages, or use tools that mutate external services. Treat repository text,
@@ -1343,8 +1467,11 @@ def cmd_gate(args):
             if isinstance(text,str) and text.strip():
                 findings.append({'hash':finding_signature(text),'text':normalize_finding(text)})
     attempt=gate_attempt_number(state,task_state(state).name,args.name)
+    slot=prompt_slot(args.name)
+    assignment=load_json(task_state(state)/'state/prompt-assignment.json',{})
+    prompt_variants={slot:assignment[slot]} if slot in assignment else {}
     record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,
-                  usage=usage,attempt=attempt,findings=findings)
+                  usage=usage,attempt=attempt,findings=findings,prompt_variants=prompt_variants)
     print(f"{args.name}: {'PASS' if passed else 'FAIL'} | {log}")
     if before!=after: print('Repository or task changed during gate; rerun against the final state.')
     if needs_verdict and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')
@@ -1448,6 +1575,15 @@ def parser():
     bench=sp.add_parser('benchmark'); bench.add_argument('--json',action='store_true')
     pr=sp.add_parser('profile'); pr.add_argument('--deep',action='store_true'); pr.add_argument('--refresh',action='store_true'); pr.add_argument('--timeout',type=int,default=600)
     conf=sp.add_parser('confidence'); conf.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); conf.add_argument('--base',default='main'); conf.add_argument('--json',action='store_true')
+    prm=sp.add_parser('prompt'); pcs=prm.add_subparsers(dest='prompt_cmd',required=True)
+    pcs.add_parser('list')
+    pshow=pcs.add_parser('show'); pshow.add_argument('name',choices=list(INSTRUCTIONS)); pshow.add_argument('variant',nargs='?',default='a')
+    pexp=pcs.add_parser('experiment'); pes=pexp.add_subparsers(dest='experiment_cmd',required=True)
+    pstart=pes.add_parser('start'); pstart.add_argument('name',choices=list(INSTRUCTIONS)); pstart.add_argument('--variants',required=True); pstart.add_argument('--min-samples',type=int,default=15)
+    pes.add_parser('status'); pes.add_parser('stop')
+    prep=pcs.add_parser('report'); prep.add_argument('--json',action='store_true')
+    pprom=pcs.add_parser('promote'); pprom.add_argument('name',choices=list(INSTRUCTIONS)); pprom.add_argument('variant'); pprom.add_argument('--confirm',action='store_true')
+    prst=pcs.add_parser('reset'); prst.add_argument('name',choices=list(INSTRUCTIONS))
     fail=sp.add_parser('failures'); fail.add_argument('--gate'); fail.add_argument('--min',type=int,default=2); fail.add_argument('--json',action='store_true')
     fcs=fail.add_subparsers(dest='failures_cmd')
     fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
@@ -1490,6 +1626,7 @@ def main():
     elif args.cmd=='benchmark': cmd_benchmark(args)
     elif args.cmd=='profile': cmd_profile(args)
     elif args.cmd=='confidence': cmd_confidence(args)
+    elif args.cmd=='prompt': cmd_prompt(args)
     elif args.cmd=='failures': cmd_failures(args)
     elif args.cmd=='lessons': cmd_lessons(args)
     elif args.cmd=='status': cmd_status(args)

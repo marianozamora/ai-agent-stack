@@ -38,7 +38,7 @@ reports the aggregated per-pipeline usage and how many runs hit their budget.
 - [x] Phase 2: repository lessons (`ai lessons`) — candidate lessons derived from patterns, human-only confirm/promote, scope-matched injection capped hard by profile (fast=0/standard=3/strict=5), promotion graduates into `rules.json`
 - [x] `ai profile --deep` (opt-in, not in the original 4-item scope) — Codex-assisted architecture/stack/database/deployment/related-repos/docs understanding, cached by commit, never automatic
 - [x] Phase 3: confidence engine (`ai confidence`) — a forecast card of historical pass rates with sample size `n` per stratum (LOW_EVIDENCE below n=5), no blended score, elevate-only (never relaxes `required_gates`/`ai ready`); also surfaced in `ai plan` and as a non-blocking `ai pipeline` preflight note
-- [ ] Prompt optimizer with measured outcomes
+- [x] Phase 4: prompt optimizer (`ai prompt`) — measured A/B experiments on bundled validator instructions only, deterministic assignment bound to the evidence fingerprint, human-only promotion with a minimum sample size and no formula (report all metrics, human decides)
 
 All four learning features are pure stdlib computation over existing `metrics.jsonl`/gate
 records — no new model calls anywhere in this release, and no gate (`required_gates`,

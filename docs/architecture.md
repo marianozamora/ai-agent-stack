@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.8.4)
+## Verified task lifecycle (0.8.5)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -275,3 +275,50 @@ here writes into `evidence_fingerprint()`'s inputs or a gate record. Where the
 card's `weakest_gate` and `projected_usage_tokens` are surfaced, the only
 actionable direction is toward a stricter profile — the same elevate-only
 asymmetry `elevate_risk()` already applies to Code Review Graph impact.
+
+## v0.8 "Learning" — Phase 4 (prompt optimizer)
+
+Scoped to bundled validator instructions only (`INSTRUCTIONS` in
+`ai_stack/validators.py`), never `build_prompt()`'s orchestration prompt —
+that prompt's outcome is mediated by a separately launched implementation
+model and a human, so a measured pass-rate delta downstream would not be
+attributable to the prompt wording. Variant `a` is always `INSTRUCTIONS[name]`
+itself, resolved in code with no file dependency; an alternate variant is a
+human-authored `templates/prompts/validator.<name>/<variant>.md` (`templates/`
+is already in `install.py`'s copy list). `variant_text()`/`available_variants()`
+in `ai_stack/cli.py` are the only two places that know this resolution rule.
+
+At most one experiment runs per repo (`prompt-experiments.json`,
+`{"active": {"slot", "variants", "started_at", "min_samples_per_variant"}}`).
+`assign_prompt_variants(state, cache_key)` is called once, at plan time, from
+`build_prompt()`: a promoted override (`prompt-overrides.json`) always wins
+for its slot; otherwise the active experiment's slot is assigned by
+`int(sha256(cache_key+slot), 16) % len(variants)` — deterministic from
+`task_cache_key()` (already computed for skill-selection caching), so the
+split is reproducible and a task keeps its variant across `--resume` without
+persisting a random draw. The result is snapshotted to
+`task_state(state)/'state/prompt-assignment.json'` — one file per task, not
+per validator call — and added to `evidence_fingerprint()`'s file list, same
+treatment as `state/lessons.json`.
+
+`cmd_validate()` reads that snapshot for its own slot to pick which text to
+send Codex. `cmd_gate()` independently reads the same snapshot to attach
+`{slot: {variant, sha}}` to its `prompt_variants` metric field — decoupled
+from `cmd_validate()` entirely, so metrics recording stays solely `cmd_gate()`'s
+job as it already was for every other field. `variant_stats()` in
+`ai_stack/workflow.py` groups gate events by `(variant, sha)`, not just
+`variant`: if a variant file's body changes mid-experiment (a stack upgrade),
+results split into a new group instead of silently pooling two different
+prompts, and `ai prompt report` surfaces that as an explicit warning.
+
+`ai prompt promote` mirrors `ai lessons confirm`/`promote`'s human-only guard
+(refuses when `AI_GATE` or `AI_TASK_DIR` is set), additionally refuses below
+`min_samples_per_variant` for every variant in the experiment, and always
+prints the full per-variant comparison — including `by_task_type`/`by_risk`
+breakdowns so confounding is visible — before requiring an explicit
+`--confirm`. There is no promotion formula (pass rate vs. token cost vs.
+first-attempt rate): the command reports all of them and a human decides. A
+successful promotion writes `prompt-overrides.json` (repo-scoped, added to
+`evidence_fingerprint()` alongside `validators.json` for the same reason:
+changing what a validator is told changes what its evidence means) and stops
+the experiment if it was promoting that experiment's own slot.

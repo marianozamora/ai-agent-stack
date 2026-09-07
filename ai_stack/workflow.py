@@ -193,6 +193,42 @@ def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
     return stats
 
 
+def variant_stats(rows, slot):
+    """Per-variant outcome stats for one prompt slot, keyed by (variant, sha).
+
+    Grouping by sha too means a mid-experiment text change (a stack upgrade that
+    edited a variant file) never silently pools two different prompts under one id.
+    """
+    gates = [row for row in rows if row.get('event') == 'gate'
+             and isinstance(row.get('prompt_variants'), dict) and slot in row['prompt_variants']]
+    by_key = {}
+    for row in gates:
+        info = row['prompt_variants'][slot]
+        by_key.setdefault((info.get('variant'), info.get('sha')), []).append(row)
+
+    stats = []
+    for (variant, sha), entries in sorted(by_key.items()):
+        n = len(entries)
+        first_attempts = [e for e in entries if e.get('attempt') == 1]
+        usage_totals = [e['usage'].get('input_tokens', 0) + e['usage'].get('output_tokens', 0)
+                         for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
+        by_task_type, by_risk = {}, {}
+        for e in entries:
+            for bucket, key in ((by_task_type, 'task_type'), (by_risk, 'risk')):
+                value = e.get(key)
+                if value: bucket[value] = bucket.get(value, 0) + 1
+        stats.append({
+            'variant': variant, 'sha': sha, 'n': n,
+            'pass_rate': round(sum(1 for e in entries if e.get('passed') is True) / n, 3),
+            'first_attempt_pass_rate': (
+                round(sum(1 for e in first_attempts if e.get('passed') is True) / len(first_attempts), 3)
+                if first_attempts else None),
+            'median_usage_tokens': statistics.median(usage_totals) if usage_totals else None,
+            'by_task_type': by_task_type, 'by_risk': by_risk,
+        })
+    return stats
+
+
 def summarize(rows):
     gates = [row for row in rows if row.get('event') == 'gate']
     counts = {}

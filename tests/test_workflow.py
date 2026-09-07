@@ -297,6 +297,64 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         for gate in required:
             self.assertIn(gate, output)
 
+    def test_prompt_experiment_report_and_promote(self):
+        slot_dir = ROOT / 'templates/prompts/validator.cleanup'
+        created_dir = not slot_dir.exists()
+        slot_dir.mkdir(parents=True, exist_ok=True)
+        variant_b = slot_dir / 'b.md'
+        variant_b.write_text('Alternate cleanup instructions for testing.\n')
+        def cleanup_files():
+            variant_b.unlink(missing_ok=True)
+            if created_dir:
+                try: slot_dir.rmdir()
+                except OSError: pass
+        self.addCleanup(cleanup_files)
+
+        listing = self.ai('prompt', 'list')
+        self.assertIn('validator.cleanup', listing)
+        self.assertIn('variants=a,b', listing)
+        self.assertEqual(self.ai('prompt', 'show', 'cleanup', 'b').strip(),
+                          'Alternate cleanup instructions for testing.')
+
+        self.ai('prompt', 'experiment', 'start', 'cleanup', '--variants', 'a,b', '--min-samples', '2')
+        self.assertIn('"slot": "validator.cleanup"', self.ai('prompt', 'experiment', 'status'))
+        self.ai('prompt', 'experiment', 'start', 'cleanup', '--variants', 'a,b', ok=False)
+
+        seen = {'a': 0, 'b': 0}
+        for i in range(30):
+            if seen['a'] >= 2 and seen['b'] >= 2: break
+            task_id = f'variant-probe-{i}'
+            self.ai('plan', f'small change {i}', '--profile', 'fast', '--base', 'HEAD', '--task-id', task_id)
+            task_dir = Path(self.ai('path', '--task-id', task_id).strip())
+            assignment = json.loads((task_dir / 'state/prompt-assignment.json').read_text())
+            variant = assignment.get('validator.cleanup', {}).get('variant')
+            if variant not in seen or seen[variant] >= 2: continue
+            self.ai('gate', '--task-id', task_id, 'cleanup', '--', sys.executable, '-c',
+                     'import json; print(json.dumps({"status":"PASS","evidence":["fixture"]}))')
+            seen[variant] += 1
+        self.assertGreaterEqual(seen['a'], 2)
+        self.assertGreaterEqual(seen['b'], 2)
+
+        report = json.loads(self.ai('prompt', 'report', '--json'))
+        by_variant = {s['variant']: s for s in report['stats']}
+        self.assertGreaterEqual(by_variant['a']['n'], 2)
+        self.assertGreaterEqual(by_variant['b']['n'], 2)
+        self.assertEqual(by_variant['a']['pass_rate'], 1.0)
+
+        self.env['AI_GATE'] = 'cleanup'
+        self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm', ok=False)
+        del self.env['AI_GATE']
+        self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm')
+        self.assertIn('No active experiment', self.ai('prompt', 'experiment', 'status'))
+
+        # A promoted override wins regardless of the (now-stopped) experiment's hash.
+        self.plan('--task-id', 'after-promote')
+        after = Path(self.ai('path', '--task-id', 'after-promote').strip())
+        assignment = json.loads((after / 'state/prompt-assignment.json').read_text())
+        self.assertEqual(assignment['validator.cleanup']['variant'], 'b')
+
+        self.ai('prompt', 'reset', 'cleanup')
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))

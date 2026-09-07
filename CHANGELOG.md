@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.5
+
+- Add `ai prompt`: measured experiments on bundled validator instructions only (never the orchestration prompt). Deterministic, non-random variant assignment (`hash(task_cache_key + slot)`) snapshotted once at plan time and bound to the evidence fingerprint; at most one experiment per repo. `ai prompt report` groups outcomes by `(variant, sha)` so a mid-experiment text edit is flagged, not silently pooled. `ai prompt promote` refuses below the minimum sample size, refuses without `--confirm`, always shows the full comparison first, and — like `ai lessons confirm/promote` — refuses to run inside a gate/validator environment so a model can never promote its own prompt.
+- This completes v0.8 "Learning": metrics enrichment, failure patterns, repository lessons, deep repository profiling, confidence reporting, and now prompt experiments — all pure stdlib computation or explicit opt-in model calls, none of it able to relax gating.
+
 ## 0.8.4
 
 - Add `ai confidence`: a forecast card of historical gate pass rates for the current change's stratum (profile/risk/task type), always showing sample size `n` and marking gates below `n=5` as `LOW_EVIDENCE` instead of computing a rate on too little data. No blended score, no confidence intervals. Purely advisory — `classify()`, `required_gates()` and `ai ready` never read it, and confidence can only ever suggest more rigor, never less. Also surfaces as three summary lines in `ai plan`/`ai run` and a non-blocking preflight note in `ai pipeline` when projected spend exceeds the profile's usage budget.
