@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.9.0)
+## Verified workflow (0.9.1)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -593,6 +593,8 @@ ai prompt report
 ai prompt promote cleanup b --confirm
 ai prompt experiment stop
 ai prompt reset cleanup
+ai prompt history
+ai prompt rollback cleanup --confirm
 ```
 
 `ai prompt` runs measured experiments on the bundled validators' instructions
@@ -625,6 +627,19 @@ promote its own validator's prompt. A promotion writes to the repo-scoped
 for that slot and is part of the evidence fingerprint, matching the existing
 `validators.json` precedent that changing what a validator sees invalidates
 prior evidence.
+
+Every `promote`, `reset` and `rollback` appends one entry to the repo-scoped
+`prompt-history.jsonl` — an audit log, not a validator input, so it is
+deliberately excluded from the evidence fingerprint (like `patterns.json`).
+A promotion's entry carries the full comparison it was decided from
+(`variant_stats()`'s output, including `by_stack_version` so a stack upgrade
+mid-experiment is a visible confounder alongside `by_task_type`/`by_risk`),
+so the decision survives even if `metrics.jsonl` is later pruned. `ai prompt
+history [--slot NAME]` reads it back; `ai prompt rollback NAME --confirm`
+restores the promoted variant from before the slot's last promote/rollback,
+appending its own history entry — `reset`/`rollback` are `require_human`-guarded
+exactly like `promote`, so a model running inside a gate can neither promote,
+reset nor roll back its own validator's prompt.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
 migration, UI copy change, integration work, a Figma-driven design task and a

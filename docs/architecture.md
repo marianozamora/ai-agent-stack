@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.9.0)
+## Verified task lifecycle (0.9.1)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -367,3 +367,49 @@ a model running inside a gate must not be able to erase the record of its own
 recurring failures. It prints what it would remove before requiring `--confirm`, and
 rewrites the file with only the kept rows — there is no separate archive; a human who
 wants one should copy `metrics.jsonl` first.
+
+## v0.9 "Measurement" — Phase 4 (prompt versioning)
+
+Closes the gap identified when scoping v0.9: `ai prompt`'s A/B evaluation (v0.8 Phase 4)
+was already complete, but promotion had no history — `promote`/`reset` overwrote
+`prompt-overrides.json`'s slot entry unconditionally, so there was no way to answer
+"what was this slot running before?" or undo a bad promotion once `variant_stats()`'s
+live comparison had scrolled off the terminal.
+
+`append_prompt_history()`/`load_prompt_history()` in `ai_stack/cli.py` manage a new
+repo-scoped, append-only `prompt-history.jsonl`. Every `promote`, `reset` and
+`rollback` appends one entry: `{ts, stack_version, action, slot, variant, sha,
+previous, actor, experiment_started_at, evidence}`. `promote`'s entry carries the
+exact `variant_stats()` list it printed for the human to decide from — durably
+binding the decision to the numbers that justified it, so the record survives even
+after `ai metrics prune` removes the underlying `metrics.jsonl` rows. `reset`'s and
+`rollback`'s entries carry `evidence: []` since neither is a data-driven decision.
+
+`ai prompt rollback NAME --confirm` finds the slot's last `promote`/`rollback` entry
+and restores its `previous` value — literally "undo the last change", not a specific
+older version by index, matching the audit-log's append-only shape rather than adding
+a separate versioned-store abstraction. It refuses when there is no earlier value
+(`previous: null`, meaning the slot had never been promoted before that entry) rather
+than promoting to variant `a` as an implicit default, since that would be a decision
+the log itself doesn't actually support.
+
+`reset` and `rollback` are `require_human()`-guarded, same as `promote` — this was a
+deliberate correction while designing the feature, not an afterthought: a model that
+cannot promote its own prompt must equally not be able to reset an inconvenient
+promotion back to the shipped default, or roll back a promotion it dislikes. This is
+the same class of guard-coverage gap ponytail found in `ai lessons` (`add`/`retire`
+were originally missed alongside `confirm`/`reject`/`promote`) — checked explicitly
+here instead of repeating it.
+
+`prompt-history.jsonl` is deliberately excluded from `evidence_fingerprint()`: it
+records what was decided, not what a validator is told (that remains
+`prompt-overrides.json`'s job, unchanged), so appending to it must never invalidate
+in-flight task evidence — the same reasoning `patterns.json`/`lessons.json` already
+established for other derived/audit stores.
+
+`variant_stats()` also gained a `by_stack_version` bucket (via the existing
+`_bucket_counts()` helper), the same class of confounder `(variant, sha)` grouping
+already exists to catch for the variant text itself: a stack upgrade mid-experiment
+now shows up next to `by_task_type`/`by_risk` in `ai prompt report` and in every
+promotion's recorded evidence, instead of silently mixing runs from two different
+tool versions into one number.

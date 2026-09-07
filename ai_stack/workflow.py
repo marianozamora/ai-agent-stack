@@ -225,7 +225,9 @@ def variant_stats(rows, slot, since=None):
     edited a variant file) never silently pools two different prompts under one id.
     `since` (a timestamp) excludes samples recorded before it, so restarting an
     experiment on the same slot never lets an earlier, unrelated run's history
-    silently satisfy this run's sample-size requirement.
+    silently satisfy this run's sample-size requirement. `by_stack_version` surfaces
+    a stack upgrade mid-experiment as a visible confounder, the same class of thing
+    `(variant, sha)` grouping already exists to catch for the variant text itself.
     """
     gates = [row for row in rows if row.get('event') == 'gate'
              and isinstance(row.get('prompt_variants'), dict) and slot in row['prompt_variants']
@@ -238,12 +240,13 @@ def variant_stats(rows, slot, since=None):
     stats = []
     for (variant, sha), entries in sorted(by_key.items()):
         usage_totals = _usage_totals(entries)
-        buckets = _bucket_counts(entries, ('task_type', 'risk'))
+        buckets = _bucket_counts(entries, ('task_type', 'risk', 'stack_version'))
         stats.append({
             'variant': variant, 'sha': sha, 'n': len(entries),
             **_pass_rate_stats(entries),
             'median_usage_tokens': statistics.median(usage_totals) if usage_totals else None,
             'by_task_type': buckets['task_type'], 'by_risk': buckets['risk'],
+            'by_stack_version': buckets['stack_version'],
         })
     return stats
 

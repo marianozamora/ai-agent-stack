@@ -359,7 +359,26 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         assignment = json.loads((after / 'state/prompt-assignment.json').read_text())
         self.assertEqual(assignment['validator.cleanup']['variant'], 'b')
 
+        history = json.loads(self.ai('prompt', 'history', '--json'))
+        self.assertEqual(history[-1]['action'], 'promote')
+        self.assertEqual(history[-1]['variant'], 'b')
+        self.assertIsNone(history[-1]['previous'])
+        self.assertTrue(history[-1]['evidence'])
+        self.assertIn('by_stack_version', history[-1]['evidence'][0])
+
+        # A model running inside a gate cannot reset or roll back a promoted prompt either.
+        self.env['AI_GATE'] = 'cleanup'
+        self.ai('prompt', 'reset', 'cleanup', ok=False)
+        self.ai('prompt', 'rollback', 'cleanup', '--confirm', ok=False)
+        del self.env['AI_GATE']
+
+        # This was the first promotion for the slot: nothing earlier to roll back to.
+        self.ai('prompt', 'rollback', 'cleanup', '--confirm', ok=False)
+
         self.ai('prompt', 'reset', 'cleanup')
+        history = json.loads(self.ai('prompt', 'history', '--json'))
+        self.assertEqual(history[-1]['action'], 'reset')
+        self.assertEqual(history[-1]['previous']['variant'], 'b')
 
         # Restarting an experiment on the same slot must not let stale samples (from
         # before this run, or against edited text) satisfy the new sample requirement.
@@ -368,6 +387,33 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         output = self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm', ok=False)
         self.assertIn('Not enough samples', output)
         self.ai('prompt', 'experiment', 'stop')
+
+    def test_prompt_rollback_restores_previous_promotion(self):
+        slot_dir = ROOT / 'templates/prompts/validator.cleanup'
+        created_dir = not slot_dir.exists()
+        slot_dir.mkdir(parents=True, exist_ok=True)
+        variant_b = slot_dir / 'b.md'
+        variant_b.write_text('Rollback test variant b.\n')
+        def cleanup_files():
+            variant_b.unlink(missing_ok=True)
+            if created_dir:
+                try: slot_dir.rmdir()
+                except OSError: pass
+        self.addCleanup(cleanup_files)
+
+        self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm')
+        self.ai('prompt', 'promote', 'cleanup', 'a', '--confirm')
+        history = json.loads(self.ai('prompt', 'history', '--json'))
+        self.assertEqual([h['action'] for h in history], ['promote', 'promote'])
+        self.assertEqual(history[-1]['previous']['variant'], 'b')
+
+        self.ai('prompt', 'rollback', 'cleanup', '--confirm')
+        self.assertIn('promoted=b', self.ai('prompt', 'list'))
+        history = json.loads(self.ai('prompt', 'history', '--json'))
+        self.assertEqual(history[-1]['action'], 'rollback')
+        self.assertEqual(history[-1]['variant'], 'b')
+
+        self.ai('prompt', 'reset', 'cleanup')
 
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))

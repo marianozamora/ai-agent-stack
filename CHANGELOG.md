@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+- Add prompt promotion history and rollback: `ai prompt history [--slot NAME]` and `ai prompt rollback NAME --confirm`. Every `promote`/`reset`/`rollback` appends to a repo-scoped, append-only `prompt-history.jsonl`, binding a promotion to the exact evidence (`variant_stats()` output) that justified it, so the decision survives even after `ai metrics prune`. `reset` and `rollback` are now `require_human`-guarded, same as `promote`.
+- `variant_stats()` gains a `by_stack_version` confounder bucket, surfaced in `ai prompt report` and in every promotion's recorded evidence.
+- This closes the "prompt versioning" residual from v0.8 Phase 4; v0.9's remaining item is the benchmark suite.
+
 ## 0.9.0
 
 - Add a dimensional usage report to `ai metrics`: `--by day|week|gate|profile|task_type|task` with `--since`/`--top`, `--format csv` (STDOUT-only, matching `ai failures export`), and an advisory (never blocking) `--budget` line. New pure `parse_window()`/`bucket_ts()`/`usage_report()` in `ai_stack/workflow.py` follow `summarize()`'s existing honesty rule: unreported usage stays `null`, never zero-filled.

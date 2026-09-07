@@ -7,7 +7,7 @@ from typing import Any
 from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats, variant_stats, parse_window, bucket_ts, usage_report
 from validators import INSTRUCTIONS, model_verdict, intact_record, run_codex_json
 
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -1214,18 +1214,20 @@ def cmd_prompt(args):
         for s in stats:
             print(f"  {s['variant']} ({s['sha']}) n={s['n']} pass_rate={s['pass_rate']} "
                   f"first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}")
-            print(f"    by_task_type={s['by_task_type']}  by_risk={s['by_risk']}")
+            print(f"    by_task_type={s['by_task_type']}  by_risk={s['by_risk']}  by_stack_version={s['by_stack_version']}")
         return
     if args.prompt_cmd=='promote':
         require_human('Prompt promotion')
         slot=prompt_slot(args.name)
         if args.variant not in available_variants(slot): raise SystemExit(f'Unknown variant: {slot}/{args.variant}')
         experiment=prompt_experiment(state)
+        evidence=[]
         # Always show the comparison before applying, --confirm or not: promotion is a
         # decision a human makes from evidence, never a formula, so the evidence must be seen.
         if experiment and experiment['slot']==slot:
             rows,_=load_metric_rows(state)
             stats=variant_stats(rows,slot,since=experiment['started_at'])
+            evidence=stats
             by_key={(s['variant'],s['sha']):s for s in stats}
             min_samples=experiment['min_samples_per_variant']
             print(f"Prompt promotion candidate: {slot} -> {args.variant} "
@@ -1247,14 +1249,52 @@ def cmd_prompt(args):
             print(f"Prompt promotion candidate: {slot} -> {args.variant} (no active experiment for this slot; no evidence to show).")
         if not args.confirm: raise SystemExit('Re-run with --confirm to apply.')
         data=prompt_overrides(state)
+        previous=data['slots'].get(slot)
         data['slots'][slot]={**variant_entry(args.name,slot,args.variant),
                               'promoted_at':int(time.time()),'promoted_by':'user'}
         save_json(state/'prompt-overrides.json',data)
+        started_at=experiment['started_at'] if experiment and experiment['slot']==slot else None
         if experiment and experiment['slot']==slot: save_json(state/'prompt-experiments.json',{'version':1,'active':None})
+        append_prompt_history(state,{'ts':time.time(),'stack_version':VERSION,'action':'promote','slot':slot,
+            'variant':args.variant,'sha':data['slots'][slot]['sha'],'previous':previous,'actor':'user',
+            'experiment_started_at':started_at,'evidence':evidence})
         print(f'Promoted {slot} -> {args.variant}.'); return
     if args.prompt_cmd=='reset':
-        data=prompt_overrides(state); data['slots'].pop(prompt_slot(args.name),None)
-        save_json(state/'prompt-overrides.json',data); print('Reset.'); return
+        require_human('Prompt reset')
+        slot=prompt_slot(args.name)
+        data=prompt_overrides(state); previous=data['slots'].pop(slot,None)
+        save_json(state/'prompt-overrides.json',data)
+        append_prompt_history(state,{'ts':time.time(),'stack_version':VERSION,'action':'reset','slot':slot,
+            'variant':None,'sha':None,'previous':previous,'actor':'user',
+            'experiment_started_at':None,'evidence':[]})
+        print('Reset.'); return
+    if args.prompt_cmd=='rollback':
+        require_human('Prompt rollback')
+        slot=prompt_slot(args.name)
+        history=[h for h in load_prompt_history(state) if h.get('slot')==slot and h.get('action') in ('promote','rollback')]
+        if not history: raise SystemExit(f'No promotion history for {slot}.')
+        previous=history[-1].get('previous')
+        if not previous: raise SystemExit(f'{slot} has no earlier promoted variant to roll back to.')
+        print(f"Rollback candidate: {slot} -> {previous['variant']} (undoing {history[-1]['action']} to {history[-1]['variant']}).")
+        if not args.confirm: raise SystemExit('Re-run with --confirm to apply.')
+        data=prompt_overrides(state); current=data['slots'].get(slot)
+        data['slots'][slot]={**previous,'promoted_at':int(time.time()),'promoted_by':'user'}
+        save_json(state/'prompt-overrides.json',data)
+        append_prompt_history(state,{'ts':time.time(),'stack_version':VERSION,'action':'rollback','slot':slot,
+            'variant':previous['variant'],'sha':previous['sha'],'previous':current,'actor':'user',
+            'experiment_started_at':None,'evidence':[]})
+        print(f"Rolled back {slot} -> {previous['variant']}."); return
+    if args.prompt_cmd=='history':
+        history=load_prompt_history(state)
+        if args.slot: history=[h for h in history if h.get('slot')==prompt_slot(args.slot)]
+        if args.json: print(json.dumps(history,indent=2)); return
+        if not history: print('No prompt promotion history yet.'); return
+        for h in history:
+            when=time.strftime('%Y-%m-%d %H:%M',time.gmtime(h['ts']))
+            prev=h.get('previous')
+            was=f" (was {prev['variant']})" if prev else ' (was unset)'
+            print(f"{when}  {h['action']:8} {h['slot']} -> {h.get('variant')}{was}")
+        return
 
 
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
@@ -1349,6 +1389,27 @@ def available_variants(slot:str)->list[str]:
 
 def prompt_overrides(state:Path)->dict:
     return load_json(state/'prompt-overrides.json',{'version':1,'slots':{}})
+
+
+def load_prompt_history(state:Path)->list[dict]:
+    rows=[]
+    for line in (state/'prompt-history.jsonl').read_text().splitlines() if (state/'prompt-history.jsonl').exists() else []:
+        try:
+            row=json.loads(line)
+            if isinstance(row,dict): rows.append(row)
+        except ValueError: continue
+    return rows
+
+
+def append_prompt_history(state:Path,entry:dict):
+    """An append-only audit log of promote/reset/rollback decisions and the evidence behind them.
+
+    Deliberately excluded from evidence_fingerprint(): it is a record of a decision,
+    not an input any validator is told, so appending to it must never invalidate
+    in-flight task evidence (the same reasoning patterns.json is kept out for).
+    """
+    with (state/'prompt-history.jsonl').open('a') as f:
+        f.write(json.dumps(entry,sort_keys=True)+"\n")
 
 
 def prompt_experiment(state:Path)->dict|None:
@@ -1659,6 +1720,8 @@ def parser():
     prep=pcs.add_parser('report'); prep.add_argument('--json',action='store_true')
     pprom=pcs.add_parser('promote'); pprom.add_argument('name',choices=list(INSTRUCTIONS)); pprom.add_argument('variant'); pprom.add_argument('--confirm',action='store_true')
     prst=pcs.add_parser('reset'); prst.add_argument('name',choices=list(INSTRUCTIONS))
+    prb=pcs.add_parser('rollback'); prb.add_argument('name',choices=list(INSTRUCTIONS)); prb.add_argument('--confirm',action='store_true')
+    phist=pcs.add_parser('history'); phist.add_argument('--slot',choices=list(INSTRUCTIONS)); phist.add_argument('--json',action='store_true')
     fail=sp.add_parser('failures'); fail.add_argument('--gate'); fail.add_argument('--min',type=int,default=2); fail.add_argument('--json',action='store_true')
     fcs=fail.add_subparsers(dest='failures_cmd')
     fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
