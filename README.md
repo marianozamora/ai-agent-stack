@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.8.2)
+## Verified workflow (0.8.3)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -452,6 +452,38 @@ gate evidence. `export` prints anonymized
 `{gate, hash, occurrences}` counts to STDOUT only — no example text, no scope
 hint, no repository identifier, and no `--out` flag, so a model running inside
 a gate cannot write it into the checkout.
+
+```bash
+ai profile
+ai profile --deep
+ai profile --deep --refresh
+```
+
+`ai profile` prints the static, free project profile (languages, package
+managers, formatters/linters/tests detected, dependencies) that `ai plan`
+already generates on first use. `ai profile --deep` is a separate, explicit,
+opt-in step: it launches Codex read-only (same sandboxed, ephemeral,
+schema-validated protocol the bundled validators use) to read and *understand*
+the repository rather than just detect file presence — architecture pattern
+(backend/frontend split, layering), the stack actually in use, database
+technology and schema structure if any, deployment/CI-CD workflow, links to
+other repositories (submodules, workspace/monorepo references, explicit
+mentions), and a real summary of what key docs (README, ARCHITECTURE.md,
+CONTRIBUTING.md) actually say, not just that they exist. It is intentionally
+never automatic: understanding architecture requires a model call, and running
+one on every `ai plan` would silently add cost to every task. The result is
+cached in `project-deep-profile.json` keyed by the analyzed commit — rerunning
+without `--refresh` on an unchanged commit reuses it and makes no model call;
+`--refresh` forces a fresh read.
+
+Every field is labeled for what it is: a model's interpretation of the
+repository, not verified fact — the saved profile carries an explicit
+`caveat`, and the model must list anything it could not verify or was
+inferring rather than reading directly in `confidence_caveats`. `ai plan`
+references the file by path in the orchestration prompt (`not generated — run
+ai profile --deep` when absent) rather than inlining its content, so the
+injection itself costs no extra context budget; a task that needs the detail
+reads the file.
 
 ```bash
 ai lessons derive

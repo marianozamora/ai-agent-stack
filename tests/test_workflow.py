@@ -225,6 +225,52 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(rules[-1]['source'], 'lesson')
         self.assertEqual(json.loads(self.ai('lessons', '--status', 'retired', '--json'))[0]['id'], lesson_id)
 
+    def install_fake_codex(self):
+        fakebin = self.home / 'tools'
+        fakebin.mkdir(exist_ok=True)
+        fake = fakebin / 'codex'
+        fake.write_text('#!' + sys.executable + '\n' + '''import json, sys
+from pathlib import Path
+args = sys.argv
+assert args[1] == 'exec' and args[args.index('-s') + 1] == 'read-only'
+assert '--output-schema' in args and '--ephemeral' in args
+with open('codex-calls.count', 'a') as marker: marker.write('x')
+value = {
+    'architecture_summary': 'Single Python CLI package.',
+    'stack': {'backend': ['Python'], 'frontend': [], 'other': []},
+    'database': 'none detected', 'deployment': 'none detected',
+    'related_repos': [], 'key_docs': ['README.md: describes the CLI'],
+    'confidence_caveats': ['Inferred from static analysis only.'],
+}
+Path(args[args.index('--output-last-message') + 1]).write_text(json.dumps(value))
+print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output_tokens': 1}}))
+''')
+        fake.chmod(0o755)
+        self.env['PATH'] = str(fakebin) + os.pathsep + self.env['PATH']
+
+    def test_profile_static_and_deep_with_caching(self):
+        profile = json.loads(self.ai('profile'))
+        self.assertIn('languages', profile)
+
+        self.install_fake_codex()
+        deep = json.loads(self.ai('profile', '--deep'))
+        self.assertEqual(deep['stack']['backend'], ['Python'])
+        self.assertIn('caveat', deep)
+        self.assertEqual((self.repo / 'codex-calls.count').read_text(), 'x')
+
+        # Same analyzed commit: cached, no second reviewer invocation.
+        cached = self.ai('profile', '--deep')
+        self.assertIn('up to date', cached)
+        self.assertEqual((self.repo / 'codex-calls.count').read_text(), 'x')
+
+        # --refresh forces a fresh reviewer invocation regardless of commit.
+        self.ai('profile', '--deep', '--refresh')
+        self.assertEqual((self.repo / 'codex-calls.count').read_text(), 'xx')
+
+        state_root = Path(self.ai('path').strip()).parents[1]
+        self.assertTrue((state_root / 'project-deep-profile.json').is_file())
+        self.assertTrue((state_root / 'review/deep-profile-events.jsonl').is_file())
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))

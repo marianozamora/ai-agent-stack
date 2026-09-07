@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.3
+
+- Add `ai profile --deep`: an explicit, opt-in, Codex-assisted read of the repository (architecture pattern, actual stack, database/schema, deployment/CI-CD, links to other repositories, and real summaries of key docs), distinct from the free static `ai profile` (languages/tooling by file presence). Cached by analyzed commit; never runs automatically, so no task pays for it unless asked. Output is explicitly labeled as an unverified model interpretation (`caveat` + `confidence_caveats`), referenced by path (not inlined) from the orchestration prompt.
+- Generalize `ai_stack/validators.py`'s Codex invocation into `run_codex_json()`, shared by the gate validator protocol and `ai profile --deep`; add an explicit `timeout` for callers with no enclosing `ai gate` process group.
+
 ## 0.8.2
 
 - Add `ai lessons`: derive empirical `candidate` lessons from failure patterns, injected into prompts only after human `confirm` (scope-matched, capped hard per profile: fast=0/standard=3/strict=5, sub-budgeted before the orchestration prompt's own budget check). `confirm`/`reject`/`promote` refuse to run inside a gate/validator environment, so a model can never curate its own future context. `promote` graduates a durable lesson into `rules.json` and retires it. `lessons.json` replaces the unused `observations.json`.

@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.8.2)
+## Verified task lifecycle (0.8.3)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -213,3 +213,36 @@ stop a model from certifying its own gate. `promote` appends the lesson's text
 to `rules.json` with `source: "lesson"` and retires the lesson, so a durable
 observation graduates into the one always-injected normative store instead of
 lessons and rules becoming two competing prompt-injection paths.
+
+## Deep repository profile (`ai profile --deep`)
+
+`profile_repo()` (called automatically by `ai plan`/`ai run` on first use) is
+free, static file-presence detection — languages by extension, package
+managers by lockfile, whether a formatter/linter/typechecker/test config
+exists. It never reads content, so it cannot say what the architecture is,
+what a docs file actually claims, or whether the repo talks to another one.
+
+`ai_stack/validators.py`'s Codex invocation was generalized from
+`model_verdict()` into `run_codex_json(executable, root, review_dir, name,
+prompt, schema, checker, timeout=None)` — the same read-only/ephemeral/
+schema-validated safety contract, decoupled from the gate-specific PASS/FAIL
+`SCHEMA`. `model_verdict()` is now a thin wrapper over it for the gate
+protocol. `cmd_profile()` in `ai_stack/cli.py` is the second caller: it has no
+enclosing `ai gate` process group, so it is the one caller that must pass an
+explicit `timeout` (default 600s via `--timeout`); `run_codex_json` persists
+diagnostics to `review/<name>-events.jsonl` even on a timeout, not only on a
+completed-but-failed run.
+
+`DEEP_PROFILE_SCHEMA`/`check_deep_profile()` define a distinct contract from
+the gate `SCHEMA`: there is no PASS/FAIL, because this is descriptive context
+generation, not a review. The model must cite file paths for every claim and
+list anything unverified or inferred in `confidence_caveats`; the saved
+`project-deep-profile.json` additionally carries a fixed `caveat` string, so
+nothing consuming this file can mistake it for verified evidence. It is keyed
+by `analyzed_commit` and skips the model call entirely when unchanged and
+`--refresh` was not passed — the same freshness-without-restating-the-check
+pattern `ai failures`/`ai pipeline --resume` already use. `build_prompt()`
+references the file by path (never inlines it), so the injection costs no
+context budget until a task actually reads it. This file is deliberately kept
+out of `evidence_fingerprint()` — like `project-profile.json` before it, it is
+informational context, not gate evidence.

@@ -5,9 +5,9 @@ import argparse, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwr
 from pathlib import Path
 from typing import Any
 from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns
-from validators import INSTRUCTIONS, model_verdict, intact_record
+from validators import INSTRUCTIONS, model_verdict, intact_record, run_codex_json
 
-VERSION = "0.8.2"
+VERSION = "0.8.3"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -404,6 +404,7 @@ PR Contract: {task_state(state)/'contracts/current-pr.yml'}
 Design Contract: {(task_state(state)/'contracts/current-design.yml') if figma else 'off'}
 Graphify graph: {graph if Path(graph).exists() else 'not built'}
 Code Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd() else 'missing')}
+Deep repository profile (AI-generated interpretation; verify before relying on it): {(state/'project-deep-profile.json') if (state/'project-deep-profile.json').exists() else 'not generated — run `ai profile --deep`'}
 
 Repository rules:
 {rules_text(state)}
@@ -490,6 +491,79 @@ def cmd_init(args):
     print(f"State:      {state}")
     print("Repository modified: NO")
     print("Languages:  "+(', '.join(profile['languages']) or 'unknown'))
+
+
+DEEP_PROFILE_SCHEMA={
+    'type':'object','additionalProperties':False,
+    'required':['architecture_summary','stack','database','deployment','related_repos','key_docs','confidence_caveats'],
+    'properties':{
+        'architecture_summary':{'type':'string'},
+        'stack':{'type':'object','additionalProperties':False,'required':['backend','frontend','other'],
+                 'properties':{'backend':{'type':'array','items':{'type':'string'}},
+                               'frontend':{'type':'array','items':{'type':'string'}},
+                               'other':{'type':'array','items':{'type':'string'}}}},
+        'database':{'type':'string'},
+        'deployment':{'type':'string'},
+        'related_repos':{'type':'array','items':{'type':'string'}},
+        'key_docs':{'type':'array','items':{'type':'string'}},
+        'confidence_caveats':{'type':'array','items':{'type':'string'}},
+    },
+}
+
+
+def check_deep_profile(value:dict)->dict:
+    required=DEEP_PROFILE_SCHEMA['required']
+    if not isinstance(value,dict) or not all(k in value for k in required):
+        raise ValueError('Deep profile response missing required fields.')
+    stack=value.get('stack')
+    if not isinstance(stack,dict) or not all(k in stack for k in ('backend','frontend','other')):
+        raise ValueError('Deep profile stack must include backend/frontend/other arrays.')
+    for key in ('related_repos','key_docs','confidence_caveats'):
+        if not isinstance(value[key],list): raise ValueError(f'Deep profile {key} must be an array.')
+    return value
+
+
+def cmd_profile(args):
+    root=git_root(); state=repo_state(root)
+    if args.refresh or not (state/'project-profile.json').exists(): profile_repo(root,state)
+    profile=load_json(state/'project-profile.json',{})
+    if not args.deep: print(json.dumps(profile,indent=2)); return
+    deep_path=state/'project-deep-profile.json'
+    current_commit=safe_head(root)
+    existing=load_json(deep_path,None)
+    if existing and not args.refresh and existing.get('analyzed_commit')==current_commit:
+        print(f"Deep profile up to date (commit {current_commit[:12]}); use --refresh to force.")
+        print(json.dumps(existing,indent=2)); return
+    executable=shutil.which('codex')
+    if not executable: raise SystemExit('Codex CLI missing. Install/authenticate Codex to run a deep profile.')
+    prompt=f'''Read this repository read-only and describe it factually, citing file paths for every claim.
+Do not modify files, run any command that writes, or fabricate anything you cannot verify by reading.
+Identify: 1) architecture pattern (backend/frontend separation, monolith vs services, layering);
+2) the stack actually in use (languages/frameworks, split into backend/frontend/other);
+3) database technology and schema structure if present (migrations, models, schema files) as free text,
+or "none detected" if there is none; 4) deployment/CI-CD workflow, reading files such as
+.github/workflows, Dockerfile, docker-compose.yml, deploy scripts, or "none detected";
+5) links to other repositories: git submodules, workspace/monorepo package references, a
+"repository" field in package.json/pyproject.toml pointing elsewhere, or explicit mentions in
+README/docs of related repos — empty array if none found; 6) relevant documentation: read
+README/ARCHITECTURE.md/CONTRIBUTING.md/docs/* content (not just note that they exist) and list
+each as "path: one-line summary of what it actually says". List in confidence_caveats anything
+you could not verify, that seems ambiguous, or that you are inferring rather than reading directly.
+This is descriptive context for future work, not a pass/fail review — there is no PASS/FAIL status.
+
+Repository: {root}
+Already-detected static facts (languages, package managers, tooling): {json.dumps(profile)}
+'''
+    try:
+        deep=run_codex_json(executable,root,state/'review','deep-profile',prompt,DEEP_PROFILE_SCHEMA,
+                             check_deep_profile,timeout=args.timeout)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    deep={k:deep[k] for k in DEEP_PROFILE_SCHEMA['required']}|{'usage':deep.get('usage',{})}
+    deep.update(version=1,generated_at=int(time.time()),analyzed_commit=current_commit,
+                caveat='AI-generated interpretation of the repository; verify before relying on it for critical decisions.')
+    save_json(deep_path,deep)
+    print(json.dumps(deep,indent=2))
 
 
 def ctx7_cmd()->list[str]|None:
@@ -1315,6 +1389,7 @@ def parser():
     setting.add_argument('command',nargs=argparse.REMAINDER)
     metrics=sp.add_parser('metrics'); metrics.add_argument('--all-tasks',action='store_true'); metrics.add_argument('--json',action='store_true')
     bench=sp.add_parser('benchmark'); bench.add_argument('--json',action='store_true')
+    pr=sp.add_parser('profile'); pr.add_argument('--deep',action='store_true'); pr.add_argument('--refresh',action='store_true'); pr.add_argument('--timeout',type=int,default=600)
     fail=sp.add_parser('failures'); fail.add_argument('--gate'); fail.add_argument('--min',type=int,default=2); fail.add_argument('--json',action='store_true')
     fcs=fail.add_subparsers(dest='failures_cmd')
     fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
@@ -1355,6 +1430,7 @@ def main():
     elif args.cmd=='validate': cmd_validate(args)
     elif args.cmd=='pipeline': cmd_pipeline(args)
     elif args.cmd=='benchmark': cmd_benchmark(args)
+    elif args.cmd=='profile': cmd_profile(args)
     elif args.cmd=='failures': cmd_failures(args)
     elif args.cmd=='lessons': cmd_lessons(args)
     elif args.cmd=='status': cmd_status(args)
