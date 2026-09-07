@@ -1,4 +1,4 @@
-version: 2
+version: 4
 
 default_profile: standard
 
@@ -15,6 +15,9 @@ agents:
   long_horizon:
     preferred: fable
     mutates_code: true
+  figma_ingest:
+    preferred: haiku_or_sonnet
+    mutates_code: false
   regression:
     preferred: haiku
     mutates_code: false
@@ -33,16 +36,23 @@ agents:
 
 reviewers:
   low: none
-  medium: terra
-  high: sol
-  critical: astra
-  security: sol
+  medium: balanced_codex
+  high: strong_codex
+  critical: extreme_codex
+  security: strong_codex
 
 pipeline:
   - phase: contract
     tool: pr_contract
+  - phase: design_contract
+    when: figma_enabled
+    agent: figma_ingest
+    tools: [figma_mcp, code_connect, context_governor]
+  - phase: structural_impact
+    tool: code_review_graph
+    outputs: [blast_radius, affected_flows, test_gaps, structural_risk]
   - phase: context_plan
-    tools: [codegraph, context_governor]
+    tools: [code_review_graph, graphify, codegraph, context_governor]
   - phase: plan
     when: risk >= high
     agent: planner
@@ -58,6 +68,8 @@ pipeline:
   - phase: adversarial_review
     when: risk >= medium
     agent: codex_reviewer
+    context_source: code_review_graph_minimal_review_set
+    sandbox: read_only
   - phase: security_gate
     when: security_boundary == true
     agent: security_reviewer
@@ -73,8 +85,13 @@ pipeline:
     tool: diff_budget
   - phase: verify_after_cleanup
     tools: [rtk]
+  - phase: provenance_gate_before_quality
+    tool: provenance_scan
   - phase: ponytail
     agent: ponytail
+  - phase: design_fidelity
+    when: figma_enabled
+    owner: ponytail
   - phase: quality_fix
     when: ponytail_failed
     agent: builder
@@ -90,6 +107,9 @@ pipeline:
   - phase: pr_summary
     when: pr_ready == true
     agent: pr_summarizer
+  - phase: provenance_gate_final_artifacts
+    when: pr_ready == true
+    tool: provenance_scan
 
 limits:
   max_adversarial_reviews: 1
@@ -115,4 +135,6 @@ pr_ready_requires:
   - conditional_security_gate_passed_or_not_required
   - cleanup_pass
   - cleanup_diff_budget_ok
+  - provenance_scan_pass
   - ponytail_pass
+  - design_fidelity_pass_or_not_required

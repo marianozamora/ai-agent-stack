@@ -9,7 +9,7 @@ Goal: identify existing behavior that the change could accidentally break and pr
 ## Inputs
 - PR contract
 - changed symbols/diff
-- CodeGraph blast radius when useful
+- Code Review Graph blast radius, affected flows and test gaps first; use CodeGraph only for exact symbol follow-up
 - existing nearby tests
 
 ## Rules

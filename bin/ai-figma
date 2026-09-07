@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+SERVER="https://mcp.figma.com/mcp"
+CMD="${1:-doctor}"; shift || true
+
+usage() {
+cat <<'TXT'
+Usage:
+  ai-figma doctor
+  ai-figma setup [--apply]
+  ai-figma contract <figma-frame-url>
+  ai-figma inspect <figma-frame-url> [--launch]
+
+Remote Figma MCP is used so design ingestion is link-based and reproducible.
+TXT
+}
+
+case "$CMD" in
+  doctor)
+    echo "Figma MCP doctor"
+    if command -v claude >/dev/null 2>&1; then
+      if claude mcp list 2>/dev/null | grep -qi 'figma'; then echo "✓ Claude Code: figma MCP configured"; else echo "· Claude Code: figma MCP not detected"; fi
+    else echo "✗ Claude Code CLI missing"; fi
+    if command -v codex >/dev/null 2>&1; then
+      if codex mcp list 2>/dev/null | grep -qi 'figma'; then echo "✓ Codex CLI: figma MCP configured"; else echo "· Codex CLI: figma MCP not detected"; fi
+    else echo "✗ Codex CLI missing"; fi
+    echo "Server: $SERVER"
+    ;;
+  setup)
+    if [[ "${1:-}" != "--apply" ]]; then
+      cat <<TXT
+Preferred Claude Code setup (official Figma plugin):
+  claude plugin install figma@claude-plugins-official
+
+Manual/global Claude MCP alternative:
+  claude mcp add --scope user --transport http figma $SERVER
+
+Codex CLI:
+  codex mcp add figma --url $SERVER
+
+Run with --apply to execute the preferred Claude plugin install and Codex MCP add.
+OAuth/authentication may still require interactive approval.
+TXT
+      exit 0
+    fi
+    command -v claude >/dev/null 2>&1 || { echo "claude CLI missing" >&2; exit 1; }
+    command -v codex >/dev/null 2>&1 || { echo "codex CLI missing" >&2; exit 1; }
+    claude plugin install figma@claude-plugins-official || true
+    codex mcp add figma --url "$SERVER" || true
+    echo "Setup invoked. Authenticate when prompted, then run: $0 doctor"
+    ;;
+  contract)
+    URL="${1:-}"; [[ "$URL" == *figma.com/* ]] || { echo "A Figma URL is required" >&2; exit 2; }
+    TEMPLATE="$ROOT/.ai-review/contracts/design-contract.yml"
+    TARGET="$ROOT/.ai-review/current-design-contract.yml"
+    [[ -f "$TEMPLATE" ]] || { echo "Missing $TEMPLATE" >&2; exit 1; }
+    python3 - "$TEMPLATE" "$TARGET" "$URL" <<'PY'
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs, unquote
+import re, sys
+src=Path(sys.argv[1]).read_text(); out=Path(sys.argv[2]); url=sys.argv[3]
+p=urlparse(url); q=parse_qs(p.query)
+m=re.search(r'/(?:design|file|board|proto)/([^/]+)', p.path)
+key=m.group(1) if m else ''
+node=(q.get('node-id') or q.get('node_id') or [''])[0]
+node=unquote(node).replace('-',':') if node else ''
+def yq(v): return '"'+v.replace('\\','\\\\').replace('"','\\"')+'"'
+lines=[]
+for line in src.splitlines():
+    if line.startswith('source_url:'): line='source_url: '+yq(url)
+    elif line.startswith('file_key:'): line='file_key: '+yq(key)
+    elif line.startswith('node_id:'): line='node_id: '+yq(node)
+    lines.append(line)
+out.write_text('\n'.join(lines)+'\n')
+print(f'Created {out}')
+print(f'  file_key: {key or "unknown"}')
+print(f'  node_id:  {node or "not specified"}')
+PY
+    ;;
+  inspect)
+    URL="${1:-}"; [[ "$URL" == *figma.com/* ]] || { echo "A Figma URL is required" >&2; exit 2; }
+    LAUNCH=false; [[ "${2:-}" == "--launch" ]] && LAUNCH=true
+    "$0" contract "$URL" >/dev/null
+    PROMPT=$(cat <<TXT
+Use the Figma MCP server to ingest only the implementation-relevant design context for:
+$URL
+
+Follow .ai-review/figma.yml and .ai-review/agents/figma-ingest.md.
+Fill .ai-review/current-design-contract.yml. Start with metadata/variables/Code Connect; request targeted design context only. Do not implement code yet.
+TXT
+)
+    echo "$PROMPT"
+    if [[ "$LAUNCH" == true ]]; then
+      command -v claude >/dev/null 2>&1 || { echo "claude CLI missing" >&2; exit 1; }
+      exec claude "$PROMPT"
+    fi
+    ;;
+  -h|--help|help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

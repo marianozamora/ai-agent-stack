@@ -32,7 +32,7 @@ profiles:
 expansion_policy:
   allowed_reasons:
     - concrete unresolved finding
-    - dependency edge shown by CodeGraph
+    - dependency edge shown by Code Review Graph, Graphify, or CodeGraph
     - failing test requiring implementation detail
     - high-risk invariant or security boundary
   forbidden_reasons:
@@ -40,3 +40,27 @@ expansion_policy:
     - broad style review
     - speculative refactor
     - rereading information already in context
+
+figma:
+  raw_mcp_payload_retention: false
+  metadata_first_for_large_frames: true
+  design_context_nodes_max:
+    fast: 2
+    standard: 5
+    strict: 8
+  screenshots_max:
+    fast: 0
+    standard: 1
+    strict: 2
+  code_connect_first: true
+  summarize_into_design_contract: true
+
+review_intelligence:
+  primary: code-review-graph
+  default_detail: minimal
+  diff_first: true
+  prefer_blast_radius_before_raw_reads: true
+  allow_risk_elevation: true
+  allow_risk_reduction: false
+  use_graphify_for_macro_architecture_only_when_needed: true
+  use_codegraph_for_exact_symbol_navigation_only_when_needed: true

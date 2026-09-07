@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+import fnmatch, os, re, subprocess, sys
+from pathlib import Path
+
+BASE = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith('-') else 'main'
+STRICT = '--relaxed' not in sys.argv
+ROOT = Path(subprocess.check_output(['git','rev-parse','--show-toplevel'], text=True).strip())
+os.chdir(ROOT)
+
+EXCLUDE_PREFIXES = ('.ai-review/', 'CLAUDE.md', 'AGENTS.md', 'bin/ai', 'bin/ai-')
+NAMES = re.compile(r'\b(?:Claude|Codex|ChatGPT)\b', re.I)
+PHRASES = re.compile(r'(?:AI[- ]generated|generated\s+by\s+(?:AI|Claude|Codex|ChatGPT)|written\s+by\s+(?:Claude|Codex|ChatGPT)|reviewed\s+by\s+(?:Claude|Codex|ChatGPT)|co-authored-by:.*(?:Claude|Codex|ChatGPT|Anthropic|OpenAI))', re.I)
+
+allow_patterns=[]
+allow_file=ROOT/'.ai-review/provenance.allow'
+if allow_file.exists():
+    for line in allow_file.read_text(errors='ignore').splitlines():
+        line=line.strip()
+        if line and not line.startswith('#'):
+            try: allow_patterns.append(re.compile(line, re.I))
+            except re.error: pass
+
+def excluded(path:str)->bool:
+    return any(path == p or path.startswith(p) for p in EXCLUDE_PREFIXES)
+
+def allowed(text:str)->bool:
+    return any(p.search(text) for p in allow_patterns)
+
+def bad(text:str)->bool:
+    if allowed(text): return False
+    return bool(PHRASES.search(text) or (STRICT and NAMES.search(text)))
+
+def ref_exists(ref):
+    return subprocess.run(['git','rev-parse','--verify',ref], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+ref=BASE if ref_exists(BASE) else 'HEAD'
+findings=[]
+
+# Added lines only: don't fail on unrelated legacy content.
+diff=subprocess.run(['git','diff','--unified=0',ref,'--'], text=True, capture_output=True).stdout
+path=''
+for line in diff.splitlines():
+    if line.startswith('+++ b/'):
+        path=line[6:]
+        continue
+    if line.startswith('+') and not line.startswith('+++') and path and not excluded(path):
+        content=line[1:]
+        if bad(content): findings.append(('code', path, content.strip()[:180]))
+
+# Untracked deliverables are not in git diff.
+untracked=subprocess.run(['git','ls-files','--others','--exclude-standard'], text=True, capture_output=True).stdout.splitlines()
+for path in untracked:
+    if excluded(path): continue
+    p=ROOT/path
+    try:
+        if p.is_file() and p.stat().st_size <= 1_000_000:
+            text=p.read_text(errors='ignore')
+            for i,line in enumerate(text.splitlines(),1):
+                if bad(line): findings.append(('untracked', f'{path}:{i}', line.strip()[:180]))
+    except OSError: pass
+
+# Commit messages in PR range. Never rewrite history automatically.
+if ref_exists(BASE):
+    log=subprocess.run(['git','log',f'{BASE}..HEAD','--format=%H%x1f%s%x1f%b%x1e'], text=True, capture_output=True).stdout
+    for rec in log.split('\x1e'):
+        rec=rec.strip('\n\r')
+        if not rec: continue
+        parts=rec.split('\x1f',2)
+        if len(parts)<3: continue
+        sha,subj,body=parts
+        msg=subj+'\n'+body
+        if bad(msg): findings.append(('commit', sha[:12], subj[:180]))
+
+# Generated final artifacts when present.
+for artifact in ['.ai-review/state/pr-summary.md','.ai-review/state/commit-message.txt']:
+    p=ROOT/artifact
+    if p.exists():
+        for i,line in enumerate(p.read_text(errors='ignore').splitlines(),1):
+            if bad(line): findings.append(('artifact', f'{artifact}:{i}', line.strip()[:180]))
+
+if findings:
+    print('PROVENANCE: FAIL')
+    for kind,where,text in findings[:25]:
+        print(f'  {kind}: {where}: {text}')
+    if len(findings)>25: print(f'  ... {len(findings)-25} more')
+    print('\nCleanup may fix working-tree/artifact findings. Existing commit history is never silently rewritten; amend/rebase intentionally.')
+    print('For a legitimate product reference, add a narrow regex to .ai-review/provenance.allow.')
+    sys.exit(2)
+print('PROVENANCE: PASS')

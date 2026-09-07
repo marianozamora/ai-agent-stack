@@ -1,83 +1,53 @@
-# Architecture
+# Architecture — v0.6
 
-The stack is deliberately **tool-heavy and agent-light**. Deterministic routing/context tools should decide as much as possible before an expensive model is called.
+AI Agent Stack is a zero-footprint overlay for existing repositories.
 
 ```text
-                         PR CONTRACT
-                              │
-                              ▼
-                        ORCHESTRATOR
-                 ┌────────────┴────────────┐
-                 ▼                         ▼
-          Context Governor             Risk Engine
-        CodeGraph + RTK + cache       profile + paths
-                 │                         │
-                 └────────────┬────────────┘
-                              ▼
-                      Planner if HIGH
-                           Opus
-                              │
-                              ▼
-                     Builder — Sonnet
-                              │
-                              ▼
-                 deterministic checks
-                              │
-                              ▼
-                 Regression — Haiku
-                              │
-                     concrete test gaps
-                              │
-                 ┌────────────┴────────────┐
-                 │                         │
-                LOW                   MEDIUM/HIGH
-                 │                         │
-                 │                         ▼
-                 │                  Codex correctness
-                 │                         │
-                 │              security gate if triggered
-                 │                         │
-                 └────────────┬────────────┘
-                              ▼
-                    confirmed fixes only
-                              │
-                              ▼
-                      diff snapshot
-                              │
-                              ▼
-                      Cleanup — Haiku
-                              │
-                              ▼
-                      diff budget check
-                              │
-                              ▼
-                    lint/typecheck/tests
-                              │
-                              ▼
-                    Ponytail — Sonnet
-                     read-only quality
-                         ┌────┴────┐
-                         │         │
-                       PASS      FAIL
-                         │         │
-                         │    one targeted fix
-                         │         │
-                         └────┬────┘
-                              ▼
-                      PR Summarizer
-                          Haiku
-                              │
-                              ▼
-                    READY / NEEDS_HUMAN
+~/.local/share/ai-agent-stack/           global engine
+~/.config/ai-agent-stack/repos/<id>/     repo-specific state
+~/work/repository/                       unchanged by the framework
 ```
 
-## Core invariants
+The repository fingerprint is derived from the normalized `origin` URL (or the local root if no remote exists). Moving a checkout therefore does not normally lose its learned profile/rules.
 
-- Contract, tests and direct evidence outrank model opinion.
-- CodeGraph decides what code deserves context; RTK compresses command output.
-- Context expansion requires evidence.
-- Builder owns behavior changes; Cleanup owns mechanical noise; Ponytail is read-only.
-- Security review is conditional, not a permanent tax on every PR.
-- Cleanup/quality passes are bounded by diff budget.
-- Agent loops have hard circuit breakers. Unresolved high-impact disagreements become `NEEDS_HUMAN`.
-- PR Summarizer receives only final artifacts and never leaks AI provenance into the PR.
+## Context hierarchy
+
+```text
+PR / Design Contract
+       ↓
+Code Review Graph  — current diff, blast radius, flows, test gaps, minimal review set
+       ↓
+Graphify           — macro routes, communities, architecture graph
+       ↓
+CodeGraph          — exact symbol navigation when needed
+       ↓
+Context7           — external framework/library documentation only
+       ↓
+RTK                — compressed shell/git/test output
+       ↓
+Raw source         — only when implementation/evidence needs it
+```
+
+The hierarchy is conditional, not a mandate to call every tool. CRG is the default structural source during review; Graphify is for macro architecture; CodeGraph is for precise implementation navigation; Context7 is only for version-sensitive external APIs.
+
+## Code Review Graph
+
+The wrapper sets `CRG_DATA_DIR` to the external per-repo state directory. `ai impact` is deterministic and LLM-free. `ai review` starts from CRG's compact impact and launches Codex with a read-only sandbox. CRG evidence may elevate risk but never automatically lower a conservative heuristic risk.
+
+## Zero-footprint invariant
+
+The framework must not add tracked AI configuration, contracts, metrics, graph outputs, generated prompts, CRG databases, or MCP files to work repositories. Per-repo data belongs under the external config directory. `ai doctor` / `ai status` detect known contamination.
+
+## Agent pipeline
+
+Builder → deterministic checks → Regression → CRG impact → conditional Codex adversarial/security review → Cleanup → checks → provenance gate → Ponytail → optional design fidelity → PR summary.
+
+Cleanup modifies only non-behavioral residue. Ponytail is read-only and judges project conventions before generic SOLID/FP preferences.
+
+## Context7
+
+CLI-first by default. Library IDs are cached in `context7-libraries.json`; query results are cached by library+question hash under `docs-cache/`. MCP can still be configured globally for interactive sessions, but the orchestrator does not require it.
+
+## Graphify
+
+The wrapper sets `GRAPHIFY_OUT` to the external per-repo state directory. This uses Graphify without placing `graphify-out/` in the checkout. `EXTRACTED` edges count as stronger evidence; `INFERRED` edges are discovery hints and cannot independently block a PR.

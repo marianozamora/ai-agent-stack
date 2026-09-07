@@ -4,7 +4,7 @@ Goal: maximize correctness and PR quality while minimizing duplicated context, m
 
 ## 1. PR Contract first
 
-For non-trivial work, create or update `.ai-review/current-contract.yml` before implementation.
+For non-trivial work, create or update `$AI_REPO_STATE/current-contract.yml` before implementation.
 The contract is the compact source of truth for:
 - objective
 - acceptance criteria
@@ -22,7 +22,7 @@ Use the cheapest context source that can answer the question:
 2. **RTK** for git, tests, lint, typecheck, logs, containers and cloud CLI output.
 3. **Raw source reads** only when exact implementation details are required.
 
-Default context caps are in `.ai-review/context-governor.yml`.
+Default context caps are in `$AI_REPO_STATE/context-governor.yml`.
 Do not expand context without one of the allowed evidence-based reasons.
 Do not reread information already present in the current context.
 
@@ -48,11 +48,11 @@ Action: cheap/local checks. No cross-model review by default.
 
 ### MEDIUM
 Normal business logic, API behavior, integrations, non-destructive data handling, meaningful localized refactors.
-Action: Sonnet builder + focused regression scout + one Terra adversarial review.
+Action: Sonnet builder + focused regression scout + one balanced Codex adversarial review.
 
 ### HIGH
 Auth/RBAC, payments, migrations/schema, destructive operations, concurrency, queues/retries/idempotency, secrets/crypto, IAM/infra, data integrity, wide blast radius.
-Action: Opus planning when useful, Sonnet implementation, regression scout, Sol review and conditional security gate.
+Action: Opus planning when useful, Sonnet implementation, regression scout, strong Codex review and conditional security gate.
 
 ### CRITICAL / LONG-HORIZON
 Multi-repo migrations, major architecture replacement, irreversible/high-blast-radius changes, unresolved production incidents or many connected autonomous steps.
@@ -60,7 +60,7 @@ Action: Fable/deep role exceptionally; strongest reviewer only when justified.
 
 ## 5. Profiles
 
-Use `.ai-review/profiles.yml`:
+Use `$AI_REPO_STATE/profiles.yml`:
 - `fast`: low-risk iteration; no adversarial review by default.
 - `standard`: daily default; one balanced review when risk requires it.
 - `strict`: high-risk/release-critical; stronger checks and larger but still bounded context.
@@ -109,7 +109,7 @@ Run full suites for HIGH/CRITICAL changes, release-critical paths, or when targe
 
 ## 11. Project profile cache
 
-`.ai-review/project-profile.json` caches cheap facts such as languages, linters, formatters, test frameworks and repository guidance.
+`$AI_REPO_STATE/project-profile.json` caches cheap facts such as languages, linters, formatters, test frameworks and repository guidance.
 Regenerate it when tooling/config changes materially.
 Ponytail may use it to avoid rediscovering conventions every PR, but explicit repo guidance and nearby code always win.
 
@@ -138,3 +138,18 @@ A PR is ready only when:
 - `CLEANUP: PASS`
 - cleanup stayed within budget
 - `PONYTAIL: PASS` and `PR_READY: YES`
+
+
+## Figma-origin tickets
+- Auto-detect Figma URLs or enable explicitly with `ai run --figma <url>`.
+- Use remote Figma MCP and `$AI_REPO_STATE/figma.yml`.
+- Build `$AI_REPO_STATE/current-design-contract.yml` before implementation.
+- Prefer metadata + variables + Code Connect before targeted design context.
+- Do not retain raw MCP payloads after the Design Contract is populated.
+- Ponytail owns material design fidelity; avoid pixel-nitpicking.
+
+## Provenance hygiene
+- Cleanup removes accidental Claude/Codex/ChatGPT/AI-generated residue from changed deliverables.
+- `ai-provenance-scan` checks added code/docs, commit messages in the PR range, and generated PR artifacts.
+- Never silently rewrite existing git history. If a commit message fails, return `NEEDS_ATTENTION` with the commit hash.
+- Legitimate product references must use a narrow `$AI_REPO_STATE/provenance.allow` regex rather than globally disabling the gate.

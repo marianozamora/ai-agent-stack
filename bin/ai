@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SELF="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
+HERE="$(cd "$(dirname "$SELF")/.." && pwd)"
+exec python3 "$HERE/ai_stack/cli.py" "$@"

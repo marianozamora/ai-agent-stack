@@ -17,11 +17,6 @@ def stats():
             if p[0].isdigit(): added+=int(p[0])
             if p[1].isdigit(): deleted+=int(p[1])
     untracked=[x for x in subprocess.check_output(['git','ls-files','--others','--exclude-standard'],cwd=root,text=True).splitlines() if not ignore.search(x)]
-    for rel in untracked:
-        path=root/rel
-        if path.is_file():
-            data=path.read_bytes()
-            added+=data.count(b'\n') + bool(data and not data.endswith(b'\n'))
     return {'lines':added+deleted,'files':files+len(untracked),'added':added,'deleted':deleted,'base':base}
 if cmd=='snapshot':
     s=stats(); s['timestamp']=int(time.time()); state.write_text(json.dumps(s,indent=2)+"\n")

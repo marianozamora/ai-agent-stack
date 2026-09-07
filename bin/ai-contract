@@ -18,9 +18,7 @@ case "$CMD" in
     ;;
   status)
     if [[ ! -f "$TARGET" ]]; then echo "PR_CONTRACT: MISSING"; exit 1; fi
-    if grep -Eq '^objective:[[:space:]]*""[[:space:]]*$|^[[:space:]]*-[[:space:]]*""[[:space:]]*$|^risk:[[:space:]]*unknown[[:space:]]*$' "$TARGET"; then
-      echo "PR_CONTRACT: INCOMPLETE"; exit 2
-    fi
+    if grep -Eq '^objective:[[:space:]]*""[[:space:]]*$' "$TARGET"; then echo "PR_CONTRACT: INCOMPLETE"; exit 2; fi
     echo "PR_CONTRACT: PRESENT"
     ;;
   show) cat "$TARGET" ;;

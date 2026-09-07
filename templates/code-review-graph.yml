@@ -1,0 +1,33 @@
+# Review Intelligence Engine
+# State is stored outside the work repository under the repo fingerprint.
+enabled: true
+mode: cli-first
+zero_footprint: true
+
+storage:
+  env: CRG_DATA_DIR
+  external_subdir: code-review-graph
+
+review:
+  default_depth: 2
+  detail_level: minimal
+  prefer_brief: true
+  max_findings: 5
+  refresh_on_rebase_or_large_change: true
+
+risk:
+  may_elevate_heuristic_risk: true
+  may_lower_heuristic_risk: false
+  signals:
+    - blast_radius
+    - affected_flows
+    - test_gaps
+    - hub_nodes
+    - bridge_nodes
+    - cross_community_impact
+
+routing:
+  implementation_symbols: codegraph
+  architecture_paths: graphify
+  diff_review: code-review-graph
+  external_docs: context7

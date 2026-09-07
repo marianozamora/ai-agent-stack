@@ -1,13 +1,14 @@
 <!-- ai-agent-stack:start -->
 ## AI agent stack policy
 
-Follow `.ai-review/policy.md`, `.ai-review/model-routing.md`, `.ai-review/profiles.yml`, `.ai-review/context-governor.yml` and `.ai-review/evidence-policy.yml` for non-trivial work.
+Follow the policy injected by the global ai-agent-stack. Per-repo learned state is external at `$AI_REPO_STATE`; never create framework state in the checkout.
 
 ### Before implementation
-- Use `.ai-review/current-contract.yml` as the compact source of truth. Create it with `./bin/ai-contract init` when missing for non-trivial work.
-- Read `.ai-review/project-profile.json` for cached tooling/style facts; do not rediscover them repeatedly.
+- Use `$AI_REPO_STATE/contracts/current-pr.yml` as the compact source of truth. Create it with `./bin/ai-contract init` when missing for non-trivial work.
+- Read `$AI_REPO_STATE/project-profile.json` for cached tooling/style facts; do not rediscover them repeatedly.
 - Prefer CodeGraph for structural context and RTK for command output.
 - Respect context and agent-call budgets for the selected profile (`fast`, `standard`, `strict`).
+- When a Figma URL is present or `--figma` is active, use `$AI_REPO_STATE/figma.yml` and build the compact Design Contract before implementation; never keep broad raw MCP output in context.
 
 ### Model discipline
 - Haiku: classification, regression scout, cleanup, PR summary and mechanical work.
@@ -31,7 +32,9 @@ Follow `.ai-review/policy.md`, `.ai-review/model-routing.md`, `.ai-review/profil
 7. `./bin/ai-diff-budget check` + checks.
 8. Ponytail read-only gate.
 9. At most one targeted Ponytail correction loop.
-10. PR Summarizer only after PASS; never mention AI provenance in PR text.
+10. Provenance scan: working diff + PR-range commit messages + generated PR artifacts must be clean. Existing history is never silently rewritten.
+11. PR Summarizer only after PASS; never mention AI provenance in PR text.
+12. If Figma is active, Ponytail must also return `DESIGN_FIDELITY: PASS`.
 
 If a destructive/security/architecture disagreement remains after the configured budget, return `NEEDS_HUMAN`; do not enter an unbounded agent loop.
 <!-- ai-agent-stack:end -->

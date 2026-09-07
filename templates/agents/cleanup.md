@@ -7,7 +7,7 @@ Default model role: **CHEAP / Haiku**. Escalate only if cleanup cannot be judged
 Cleanup may mutate code, but only behavior-neutrally. It does not redesign the solution and does not fix product behavior.
 
 ## Scope
-Start from the current diff. Respect `.ai-review/context-governor.yml` and `.ai-review/project-profile.json`.
+Start from the current diff. Respect `$AI_REPO_STATE/context-governor.yml` and `$AI_REPO_STATE/project-profile.json`.
 
 Clean up:
 - comments that merely restate obvious code
@@ -17,6 +17,7 @@ Clean up:
 - unused imports, variables and dead local helpers introduced by the change
 - redundant temporary scaffolding removable without behavior change
 - AI provenance/conversation residue: `Claude`, `Codex`, `ChatGPT`, `AI-generated`, prompt/reviewer/model notes accidentally left in source/docs
+- generated commit/PR draft text must also be provenance-free; existing commit history is checked separately and never silently rewritten
 - formatter/lint issues safely handled by configured project tools
 
 Preserve comments/documentation that explain:
@@ -36,6 +37,9 @@ Preserve comments/documentation that explain:
 - Before Cleanup, orchestrator should run `./bin/ai-diff-budget snapshot`.
 - After Cleanup, run `./bin/ai-diff-budget check`.
 - If the diff budget is exceeded, stop with `CLEANUP: NEEDS_ATTENTION`; do not justify a large refactor as cleanup.
+
+## Final provenance handoff
+After cleanup, the orchestrator runs `./bin/ai-provenance-scan <base>`. Source/docs, commit messages in the PR range and generated PR artifacts must pass before Ponytail/PR_READY.
 
 ## Completion
 Run the cheapest relevant checks after cleanup.

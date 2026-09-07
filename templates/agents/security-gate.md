@@ -13,7 +13,7 @@ Trigger examples:
 Default reviewer: strong Codex tier. Use the strongest tier only for unresolved critical security questions.
 
 ## Scope
-Start from the diff and CodeGraph blast radius. Inspect only relevant trust boundaries.
+Start from the diff and Code Review Graph blast radius/affected flows. Use Graphify/CodeGraph only for targeted follow-up. Inspect only relevant trust boundaries.
 
 Check for concrete:
 - authn/authz bypass

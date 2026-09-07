@@ -21,6 +21,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   [[ -f .ai-review/current-contract.yml ]] && echo "✓ PR contract present" || echo "· PR contract not created yet"
   [[ -f .ai-review/project-profile.json ]] && echo "✓ project profile present" || echo "· project profile missing: run ./bin/ai-project-profile"
   if command -v codegraph >/dev/null 2>&1; then codegraph status . >/dev/null 2>&1 && echo "✓ CodeGraph ready" || echo "· CodeGraph not initialized"; fi
+  [[ -x ./bin/ai-figma ]] && ./bin/ai-figma doctor || true
 fi
 
 if command -v rtk >/dev/null 2>&1; then
@@ -30,10 +31,12 @@ fi
 echo
 cat <<'MSG'
 Per-project:
+  ./bin/ai status
   ./bin/ai-contract status
   ./bin/ai-project-profile
   ./bin/ai-check-plan
   ./bin/ai-review-plan main --profile standard
   ./bin/ai-pr-ready main --profile standard
+  ./bin/ai-provenance-scan main
   ./bin/ai-metrics
 MSG

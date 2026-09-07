@@ -24,3 +24,7 @@ human_required_if:
   - ambiguous_product_requirement
   - unresolved_security_tradeoff
   - unresolved_architecture_disagreement
+
+design:
+  enabled: false
+  contract: $AI_REPO_STATE/current-design-contract.yml

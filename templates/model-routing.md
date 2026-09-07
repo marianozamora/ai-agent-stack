@@ -52,21 +52,21 @@ Do not make this the daily coding default.
 
 Keep exact model IDs configurable because the Codex lineup changes.
 
-### CHEAP REVIEWER — Luna
+### CHEAP REVIEWER
 Use for:
 - sanity checks
 - obvious regression checks
 - targeted test-gap review
 - low-cost second opinion
 
-### BALANCED REVIEWER — Terra
+### BALANCED REVIEWER
 Default for MEDIUM changes:
 - business logic
 - API changes
 - integrations
 - normal regressions/backwards compatibility
 
-### STRONG REVIEWER — Sol
+### STRONG REVIEWER
 Default for HIGH changes:
 - auth/security
 - data integrity
@@ -75,17 +75,17 @@ Default for HIGH changes:
 - retries/idempotency
 - destructive or rollback-sensitive behavior
 
-### EXTREME REVIEWER — Astra
+### EXTREME REVIEWER
 Only for critical unresolved/high-blast-radius work or when strong Claude + strong Codex still disagree on a material issue.
 
 ## Recommended routing table
 
 | Risk | Planning | Builder | Reviewer | Review count |
 |---|---|---|---|---:|
-| LOW | Haiku/Sonnet | Haiku or Sonnet | none; Luna only if justified | 0 |
-| MEDIUM | Sonnet | Sonnet | Terra | 1 |
-| HIGH | Opus when needed | Sonnet | Sol | 1 |
-| CRITICAL | Opus/Fable | Sonnet/Fable | Astra only if justified | 1, max 2 if justified |
+| LOW | Haiku/Sonnet | Haiku or Sonnet | none | 0 |
+| MEDIUM | Sonnet | Sonnet | balanced Codex | 1 |
+| HIGH | Opus when needed | Sonnet | strong Codex | 1 |
+| CRITICAL | Opus/Fable | Sonnet/Fable | extreme Codex | 1, max 2 if justified |
 
 ## Anti-patterns
 
@@ -114,7 +114,5 @@ Cheap read-only pass after implementation. It uses contract + diff + CodeGraph b
 ### PR SUMMARIZER — Haiku
 Runs only after PR readiness passes. Reads the contract, final diff/stat and actual checks; produces PR title/body without replaying chat history or mentioning AI provenance.
 
-### CONDITIONAL SECURITY GATE — Sol by default
-Not a permanent extra agent call. Trigger only when the diff crosses a real
-trust boundary (auth/RBAC/tenant isolation, secrets/crypto, SQL/untrusted input,
-IAM, payments/sensitive data). Use Astra only for an unresolved critical case.
+### CONDITIONAL SECURITY GATE — strong Codex tier
+Not a permanent extra agent call. Trigger only when the diff crosses a real trust boundary (auth/RBAC/tenant isolation, secrets/crypto, SQL/untrusted input, IAM, payments/sensitive data).

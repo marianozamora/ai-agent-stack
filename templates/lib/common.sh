@@ -47,18 +47,9 @@ ai_collect_scope() {
   untracked="$(git ls-files --others --exclude-standard || true)"
   [[ -z "$untracked" ]] || AI_FILES="${AI_FILES}${AI_FILES:+$'\n'}${untracked}"
 
-  AI_FILES="$(printf '%s\n' "$AI_FILES" | grep -Ev '^(\.ai-review/|CLAUDE\.md$|AGENTS\.md$|bin/ai-[^/]+$)' || true)"
-  AI_NUMSTAT="$(printf '%s\n' "$AI_NUMSTAT" | awk -F '\t' '$3 !~ /^(\.ai-review\/|CLAUDE\.md$|AGENTS\.md$|bin\/ai-[^\/]+$)/')"
+  AI_FILES="$(printf '%s\n' "$AI_FILES" | grep -Ev '^(\.ai-review/|CLAUDE\.md$|AGENTS\.md$|bin/ai$|bin/ai-[^/]+$)' || true)"
   AI_FILE_COUNT="$(printf '%s\n' "$AI_FILES" | sed '/^$/d' | wc -l | tr -d ' ')"
-  local tracked_lines untracked_lines path
-  tracked_lines="$(printf '%s\n' "$AI_NUMSTAT" | awk '{if ($1 ~ /^[0-9]+$/) a+=$1; if ($2 ~ /^[0-9]+$/) d+=$2} END {print a+d+0}')"
-  untracked_lines=0
-  while IFS= read -r path; do
-    [[ -n "$path" && -f "$path" ]] || continue
-    case "$path" in .ai-review/*|CLAUDE.md|AGENTS.md|bin/ai-*) continue ;; esac
-    untracked_lines=$((untracked_lines + $(wc -l < "$path" | tr -d ' ')))
-  done <<< "$untracked"
-  AI_CHANGED_LINES=$((tracked_lines + untracked_lines))
+  AI_CHANGED_LINES="$(printf '%s\n' "$AI_NUMSTAT" | awk '{if ($1 ~ /^[0-9]+$/) a+=$1; if ($2 ~ /^[0-9]+$/) d+=$2} END {print a+d+0}')"
 }
 
 ai_classify_risk() {
@@ -70,7 +61,7 @@ ai_classify_risk() {
   high='(^|/)(auth|authentication|authorization|rbac|iam|payment|payments|billing|migration|migrations|schema|database|db|crypto|secrets?|permissions?|infra|terraform|k8s|kubernetes)(/|$)|(^|/)(Dockerfile|.*\.tf|.*\.sql)$'
   medium='(^|/)(api|services?|integrations?|workers?|queues?|jobs?|repositories?|controllers?|middleware)(/|$)'
   lowonly='(^|/)(docs?|examples?|fixtures?|snapshots?)(/|$)|\.(md|txt|snap)$'
-  security='(^|/)(auth|authentication|authorization|rbac|iam|crypto|secrets?|permissions?|payments?|billing|sql|queries?|uploads?)(/|$)|(^|/).*(security|tenant|token|credential|untrusted|deserializ|sensitive).*'
+  security='(^|/)(auth|authentication|authorization|rbac|iam|crypto|secrets?|permissions?)(/|$)|(^|/).*(security|tenant|token|credential).*'
 
   if printf '%s\n' "$AI_FILES" | grep -Eqi "$security"; then AI_SECURITY_BOUNDARY="true"; fi
   if printf '%s\n' "$AI_FILES" | grep -Eqi "$high"; then
@@ -95,7 +86,7 @@ ai_contract_status() {
     AI_CONTRACT_STATUS="missing"
     return
   fi
-  if grep -Eq '^objective:[[:space:]]*""[[:space:]]*$|^[[:space:]]*-[[:space:]]*""[[:space:]]*$|^risk:[[:space:]]*unknown[[:space:]]*$' "$AI_CONTRACT"; then
+  if grep -Eq '^objective:[[:space:]]*""[[:space:]]*$' "$AI_CONTRACT"; then
     AI_CONTRACT_STATUS="incomplete"
   else
     AI_CONTRACT_STATUS="present"

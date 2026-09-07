@@ -14,6 +14,7 @@ profiles:
     max_agent_calls: 3
     max_escalations: 1
     max_review_rounds: 0
+    figma_screenshot_budget: 0
     full_suite: false
 
   standard:
@@ -21,7 +22,7 @@ profiles:
     classifier: haiku
     planner: conditional_opus
     builder: sonnet
-    correctness_reviewer: terra
+    correctness_reviewer: balanced_codex
     cleanup: haiku
     ponytail: sonnet
     regression: haiku
@@ -29,6 +30,7 @@ profiles:
     max_agent_calls: 5
     max_escalations: 2
     max_review_rounds: 1
+    figma_screenshot_budget: 1
     full_suite: false
 
   strict:
@@ -36,7 +38,7 @@ profiles:
     classifier: haiku
     planner: opus
     builder: sonnet
-    correctness_reviewer: sol
+    correctness_reviewer: strong_codex
     cleanup: haiku
     ponytail: sonnet
     regression: haiku
@@ -44,4 +46,5 @@ profiles:
     max_agent_calls: 7
     max_escalations: 2
     max_review_rounds: 2
+    figma_screenshot_budget: 2
     full_suite: true

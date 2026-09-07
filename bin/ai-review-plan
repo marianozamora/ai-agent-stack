@@ -50,7 +50,7 @@ MSG
 Routing:
   Builder: Sonnet
   Regression: Haiku, max 3 concrete risks
-  Codex: Terra reviewer
+  Codex: balanced reviewer tier
   Cleanup: Haiku
   Ponytail: Sonnet
 
@@ -67,7 +67,7 @@ Routing:
   Planner: Opus when strategy is non-obvious
   Builder: Sonnet
   Regression: Haiku
-  Codex: Sol reviewer
+  Codex: strong reviewer tier
   Security gate: $( [[ "$AI_SECURITY_BOUNDARY" == true ]] && echo required || echo conditional/not detected )
   Cleanup: Haiku
   Ponytail: Sonnet

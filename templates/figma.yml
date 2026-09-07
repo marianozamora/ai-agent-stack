@@ -1,0 +1,48 @@
+version: 1
+server:
+  mode: remote
+  url: https://mcp.figma.com/mcp
+
+# Token-efficient read order. Do not dump a whole Figma file into context.
+context_strategy:
+  first:
+    - get_metadata
+    - get_variable_defs
+    - get_code_connect_map
+  targeted:
+    - get_design_context
+  conditional:
+    - get_motion_context
+    - get_screenshot
+    - download_assets
+    - search_design_system
+  rules:
+    get_metadata_first_for_large_frames: true
+    design_context_targeted_nodes_only: true
+    prefer_code_connect: true
+    prefer_existing_design_system: true
+    screenshot_only_for_material_visual_ambiguity_or_final_strict_check: true
+    raw_mcp_output_is_not_pr_contract: true
+
+assets:
+  prefer_original: true
+  never_recreate_existing_assets: true
+
+code_connect:
+  enabled_when_available: true
+  unmapped_component_policy: inspect_repo_before_creating_new_component
+
+fidelity_gate:
+  owner: ponytail
+  block_on:
+    - wrong_component_or_variant
+    - missing_required_state
+    - material_layout_mismatch
+    - wrong_responsive_behavior
+    - hardcoded_token_when_project_token_exists
+    - duplicated_design_system_component
+    - missing_required_interaction
+  do_not_block_on:
+    - subpixel_or_rendering_engine_difference
+    - formatter_resolved_style
+    - personal_visual_preference_not_in_design

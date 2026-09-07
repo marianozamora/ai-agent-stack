@@ -1,344 +1,231 @@
 # AI Agent Stack
 
-Reusable **token-aware AI development orchestration** for Claude Code + Codex.
+A **zero-footprint**, token-aware orchestration layer for Claude Code + Codex over existing repositories.
 
 It combines:
-- **RTK** — compressed shell/git/test/tool output
-- **CodeGraph** — structural context, callers/callees and blast radius
-- **Caveman** — optional concise Claude behavior
-- **Codex** — independent correctness/security challenger
-- **PR Contract** — compact task source of truth
-- **Context Governor** — hard context/call/escalation budgets
-- **Project Profile cache** — avoids rediscovering repo conventions every PR
-- **Regression Agent** — cheap behavior-regression scout
-- **Cleanup Agent** — behavior-neutral final cleanup
-- **Ponytail** — final read-only project-style/architecture/quality gate
-- **PR Summarizer** — cheap final PR title/body generator
-- **Telemetry** — optional local model/tool-call tracking
 
-The design principle is: **minimum agents, maximum evidence**.
+- Claude routing: Haiku / Sonnet / Opus / Fable by role and risk
+- Codex adversarial review tiers
+- RTK for compressed terminal output
+- CodeGraph for symbol-level code intelligence
+- Graphify for architecture routes, communities and cross-file relationships
+- Code Review Graph (CRG) for diff impact, blast radius, affected flows, test gaps and minimal review context
+- Context7 for current, version-specific external library documentation
+- Figma MCP + Design Contracts for design-driven tickets
+- Cleanup + Ponytail final PR gates
 
-## Pipeline
+## Core principle
+
+**Nothing from the framework is committed to the repository you are working on.**
 
 ```text
-PR Contract
-   ↓
-Context Governor + CodeGraph + risk/profile routing
-   ↓
-Opus plan only when HIGH and useful
-   ↓
-Sonnet builder
-   ↓
-RTK deterministic checks
-   ↓
-Haiku regression scout
-   ↓
-Codex correctness review when warranted
-   ↓
-conditional security gate
-   ↓
-confirmed fixes only
-   ↓
-diff snapshot
-   ↓
-Haiku Cleanup
-   ↓
-diff-budget + checks
-   ↓
-Sonnet Ponytail
-   ↓
-Haiku PR Summarizer
-   ↓
-PR READY / NEEDS_HUMAN
+~/.local/share/ai-agent-stack/          # engine
+~/.config/ai-agent-stack/repos/<id>/    # rules, contracts, graph, docs cache, metrics
+~/work/company-repo/                    # no framework files
 ```
 
-## Profiles
-
-| Profile | Intended use | Cross-model review | Context/call budget |
-|---|---|---|---|
-| `fast` | trivial/low-risk iteration | none by default | smallest |
-| `standard` | normal daily development | one balanced review when needed | bounded default |
-| `strict` | high-risk/release-critical | stronger review, full relevant suite | larger but bounded |
-
-Example:
+## Install
 
 ```bash
-./bin/ai-review-plan main --profile standard
-./bin/ai-pr-ready main --profile standard
-```
-
-## Agent/model roles
-
-| Role | Preferred model | Responsibility |
-|---|---|---|
-| Classifier | Haiku | cheap risk/triage |
-| Planner | Opus | difficult architecture/debug strategy only |
-| Builder | Sonnet | normal implementation |
-| Long horizon | Fable | exceptional multi-repo/long autonomous work |
-| Regression | Haiku | max 3 concrete regression risks/test gaps |
-| Correctness reviewer | Luna/Terra/Sol/Astra by risk | independent adversarial correctness review |
-| Security gate | Sol; Astra only if unresolved and critical | only when a trust boundary is touched |
-| Cleanup | Haiku | behavior-neutral removal of noise/AI residue |
-| Ponytail | Sonnet | final read-only project-specific quality gate |
-| PR Summarizer | Haiku | final PR title/body from final artifacts only |
-| Arbiter | Opus | unresolved material reasoning conflict |
-
-Exact provider model IDs intentionally remain configurable as model lineups change.
-
-## One-time machine setup
-
-Prerequisites: Git, Bash 3.2+, Python 3, and Node.js/npm for integrations that
-install through npm. The Claude Code and Codex CLIs are optional unless you use
-their corresponding workflows.
-
-Check the current machine first:
-
-```bash
-./bin/ai-stack-doctor
-```
-
-### RTK
-
-```bash
-brew install rtk
-rtk init --global
-rtk init --global --codex
-```
-
-### CodeGraph
-
-```bash
-npm install -g @colbymchenry/codegraph
-codegraph install --target=claude,codex --yes
-```
-
-### Caveman (optional, mainly Claude)
-
-```bash
-claude plugin marketplace add JuliusBrussee/caveman
-claude plugin install caveman@caveman
-```
-
-### Codex plugin for Claude Code
-
-Inside Claude Code:
-
-```text
-/plugin marketplace add openai/codex-plugin-cc
-/plugin install codex@openai-codex
-/reload-plugins
-/codex:setup
-```
-
-If Codex CLI is missing:
-
-```bash
-npm install -g @openai/codex
-codex login
-```
-
-## Install into a project
-
-```bash
-git clone https://github.com/YOUR-USER/ai-agent-stack.git
+unzip ai-agent-stack-v0.6.0.zip
 cd ai-agent-stack
-./install.sh /path/to/project
-cd /path/to/project
-./bin/ai-project-profile
+./install.sh
 ```
 
-The installer preserves existing `CLAUDE.md` and `AGENTS.md` content using managed blocks.
-It keeps transient contract/state/telemetry local through `.git/info/exclude` rather than editing the project's tracked `.gitignore`.
+Ensure `~/.local/bin` is on `PATH`, then from any git repository:
 
-Installed structure:
+```bash
+ai init
+ai doctor
+```
 
-```text
-.ai-review/
-  policy.md
-  model-routing.md
-  orchestration.yml
-  profiles.yml
-  context-governor.yml
-  evidence-policy.yml
-  project-profile.json
-  contracts/pr-contract.yml
-  agents/
-    regression.md
-    security-gate.md
-    cleanup.md
-    ponytail.md
-    pr-summarizer.md
-  lib/common.sh
-bin/
-  ai-contract
-  ai-project-profile
-  ai-check-plan
-  ai-review-plan
-  ai-diff-budget
-  ai-pr-ready
-  ai-log
-  ai-metrics
-  ai-stack-doctor
-CLAUDE.md
-AGENTS.md
+Optional tools:
+
+```bash
+npm install -g ctx7                         # Context7
+uv tool install graphifyy                   # Graphify
+uv tool install code-review-graph             # Code Review Graph
+npm i -g @colbymchenry/codegraph            # CodeGraph
+brew install rtk                            # RTK (macOS)
 ```
 
 ## Daily usage
 
-### 1. Create the compact PR contract
+```bash
+ai plan "implement ticket #1450"
+ai impact --base main                      # deterministic structural impact
+ai run  "implement ticket #1450"
+ai review --base main                      # CRG context -> Codex read-only
+ai run  "implement ticket #1450" --profile strict
+ai run  "ticket with design" --figma "https://figma.com/design/..."
+ai ready
+```
+
+The external repo state can be inspected with:
 
 ```bash
-./bin/ai-contract init
+ai path
+ai status
 ```
 
-Fill `.ai-review/current-contract.yml`:
+## Per-repository rules
 
-```yaml
-objective: "Add AUTO_SENT to allowed generationStatus values"
-acceptance:
-  - "AUTO_SENT is accepted"
-  - "existing statuses remain valid"
-must_not_change:
-  - "event payload shape"
-risk: low
-test_plan:
-  - "schema accepts AUTO_SENT"
-  - "existing enum values still pass"
-```
-
-The contract prevents every agent from rereading the full ticket/chat.
-
-### 2. Refresh cached project conventions when needed
+Rules are stored outside the checkout and automatically injected into orchestration context.
 
 ```bash
-./bin/ai-project-profile
+ai rules
+ai rules add "Controllers stay thin; business logic belongs in services."
+ai rules add --scope "src/frontend/**" "Reuse existing design-system components."
+ai rules remove 2
 ```
 
-This records cheap facts such as languages, package manager, linters, formatters, typecheck/test configs and style docs. Ponytail uses it as a cache, never as dogma.
-
-### 3. Get risk/context/model routing
-
-```bash
-./bin/ai-review-plan main --profile standard
-```
-
-Risk is based primarily on domain/path and should be strengthened by CodeGraph blast radius. Large generated/test diffs do not automatically become HIGH.
-
-### 4. Determine deterministic checks
-
-```bash
-./bin/ai-check-plan
-```
-
-Use CodeGraph blast radius to narrow LOW/MEDIUM tests. HIGH/strict should prefer the full relevant suite.
-
-### 5. Final cleanup budget
-
-Before Cleanup:
-
-```bash
-./bin/ai-diff-budget snapshot
-```
-
-After Cleanup:
-
-```bash
-./bin/ai-diff-budget check
-```
-
-By default a cleanup/quality pass cannot grow the behavioral diff by more than 100 lines or 15%. If it does, stop and inspect manually.
-
-### 6. PR readiness
-
-```bash
-./bin/ai-pr-ready main --profile standard
-```
-
-A PR is ready only after contract, deterministic checks, applicable correctness/security gates, Cleanup, diff-budget and Ponytail pass.
-
-## Evidence policy
-
-Blocking evidence priority:
+Rule precedence:
 
 ```text
-test
-> static analysis
-> reproducible failure
-> CodeGraph dependency evidence
-> direct source evidence
-> model reasoning
+explicit repo rule
+  > repository tooling/config
+  > established architecture
+  > nearby module convention
+  > generic SOLID / FP advice
 ```
 
-Default blocker confidence is `>= 0.80`. Style-only Ponytail blockers require `>= 0.90`. Lower-confidence security/data-loss concerns can trigger investigation but should not be stated as proven facts.
+## Graphify — macro architecture
 
-## Circuit breakers
+Graphify maps cross-file relationships and paths. The wrapper stores its output externally using `GRAPHIFY_OUT`.
 
-No infinite Claude ↔ Codex ↔ Claude loops.
+```bash
+ai graph doctor
+ai graph build
+ai graph query "show the auth flow"
+ai graph path AuthService CommunityService
+ai graph explain PermissionService
+```
 
-`fast`, `standard` and `strict` define hard budgets for:
-- raw context files
-- review files
-- agent calls
-- escalations
-- review rounds
+Use Graphify for *where in the architecture?* and CodeGraph for *which exact symbols/callers?*.
 
-If budget is exhausted with an unresolved destructive/security/architecture problem:
+
+## Code Review Graph — review intelligence
+
+CRG is used for **review-time structural evidence**, not as another general-purpose agent.
+The wrapper forces its database and generated artifacts into the external per-repo state using `CRG_DATA_DIR`. It does **not** run `code-review-graph install` inside company repositories.
+
+```bash
+ai crg doctor
+ai crg build
+ai crg update --base main
+ai crg detect --base main
+```
+
+High-level commands:
+
+```bash
+ai impact --base main          # no LLM; blast radius/risk/test-gap summary
+ai impact --base main --refresh
+ai review --base main          # compact CRG impact -> Codex `exec -s read-only`
+ai review --base main --build  # build CRG first if missing
+ai review --no-launch          # only prepare the bounded review prompt
+```
+
+The risk engine allows CRG evidence to **elevate** a heuristic risk level, never lower it automatically. This keeps structural evidence conservative. Review scope should start with CRG's minimal/brief impact and only expand to Graphify, CodeGraph or raw source when needed.
+
+Tool routing:
 
 ```text
-NEEDS_HUMAN
+Architecture / subsystem route  -> Graphify
+Exact symbol navigation         -> CodeGraph
+Diff / blast radius / test gaps -> Code Review Graph
+External library documentation  -> Context7
+Shell/tests/log output           -> RTK
 ```
 
-not “call a more expensive model forever”.
+## Context7 — current external docs
 
-## Optional telemetry
-
-Log a phase locally:
+Context7 is **CLI-first** to keep documentation retrieval deterministic and bounded.
 
 ```bash
-./bin/ai-log build sonnet pass
-./bin/ai-log review terra pass "3 findings, 1 confirmed"
+ai docs doctor
+ai docs detect                         # dependency versions detected in repo profile
+ai docs library nextjs "middleware"  # resolve and cache Context7 ID
+ai docs query nextjs "How does middleware work in this installed version?"
 ```
 
-If a runner exposes token counts, pass them through environment variables:
+Or query an exact ID directly:
 
 ```bash
-AI_INPUT_TOKENS=12000 AI_OUTPUT_TOKENS=1800 ./bin/ai-log review terra pass
+ai docs query /vercel/next.js "App Router middleware behavior"
 ```
 
-Summarize:
+Resolved library IDs are cached per repo. Docs query results are cached by query hash, so repeated reviews do not repeatedly spend Context7 calls/context. Use `--refresh` when you explicitly want new docs.
+
+Context7 is only used when a task depends on **external API/framework knowledge**. It should not be called to understand project-specific behavior.
+
+## Figma
 
 ```bash
-./bin/ai-metrics
+ai run "implement checkout screen" --figma "<frame-url>"
 ```
 
-Telemetry stays local by default.
+The orchestrator uses Figma as an input to a compact Design Contract. Raw design context should not remain in the prompt after extraction. Ponytail additionally checks material design fidelity.
 
-## Updating an installation
+## Profiles
 
-Pull the latest template and rerun `./install.sh /path/to/project`. Managed
-configuration and helper scripts are refreshed, the generated project profile
-is preserved, and only marked blocks in `CLAUDE.md` and `AGENTS.md` are updated.
-Review the target repository diff before committing.
+| Profile | Typical use | Raw files | Reviews | Context7 queries |
+|---|---|---:|---:|---:|
+| `fast` | trivial/local | 4 | 0 | 1 |
+| `standard` | normal feature | 8 | 1 | 3 |
+| `strict` | high-risk | 12 | 2 | 5 |
 
-## Separation of responsibilities
+## Final PR pipeline
 
 ```text
-Tests/linters = does deterministic evidence pass?
-Regression    = what existing behavior might this break?
-Codex         = is the solution correct/safe?
-Security gate = is a touched trust boundary secure?
-Cleanup       = is the diff mechanically clean?
-Ponytail      = does it fit THIS project's quality/style/architecture bar?
-PR Summarizer = package the final evidence into a clean PR description
+Implementation
+   ↓
+checks
+   ↓
+Regression
+   ↓
+Codex adversarial/security (conditional)
+   ↓
+Cleanup
+   ↓
+checks
+   ↓
+provenance gate
+   ↓
+Ponytail quality gate
+   ↓
+design fidelity (when applicable)
+   ↓
+PR summary
+   ↓
+PR_READY / NEEDS_HUMAN / FAILED
 ```
 
-Ponytail never imposes SOLID on a functional project or FP on an OO project. Project evidence wins over generic preference.
+Cleanup removes unnecessary comments/debug residue and accidental Claude/Codex/AI provenance from newly generated source/docs/PR text. Existing commit history is **never silently rewritten**.
 
-## Upstream projects
+## Zero-footprint check
 
-- RTK: https://github.com/rtk-ai/rtk
-- Caveman: https://github.com/juliusbrussee/caveman
-- CodeGraph: https://github.com/colbymchenry/codegraph
-- OpenAI Codex plugin for Claude Code: https://github.com/openai/codex-plugin-cc
+```bash
+ai doctor
+ai status
+```
 
-See `docs/architecture.md` for the complete flow.
+Known framework artifacts tracked inside the work repository cause the zero-footprint check to fail.
+
+## Why Graphify + CodeGraph + CRG + Context7?
+
+```text
+Graphify  = map of the city's roads
+CodeGraph = GPS down to the exact function
+CRG       = impact scanner for the current diff and execution flows
+Context7  = current manual for the external vehicle/API
+RTK       = compressed telemetry
+Claude/Codex = decisions and implementation/review
+```
+
+The goal is to feed models the **smallest authoritative context** that can answer the current question.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+Third-party tools mentioned in this repository are distributed separately under their respective licenses.

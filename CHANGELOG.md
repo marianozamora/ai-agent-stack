@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0
+
+- Add Code Review Graph as the Review Intelligence Engine.
+- Add zero-footprint CRG storage via `CRG_DATA_DIR`.
+- Add `ai crg doctor/build/update/status/detect`.
+- Add deterministic `ai impact`.
+- Add `ai review`, which feeds bounded CRG impact into Codex in read-only sandbox mode.
+- Allow CRG structural evidence to elevate, but never automatically lower, heuristic risk.
+- Add CRG-aware context routing to the orchestrator and doctor/status output.
+
+## 0.5.0
+
+- Reworked installation into a global zero-footprint overlay.
+- Per-repository state now lives under `~/.config/ai-agent-stack/repos/<repo-id>/`.
+- Added external repository profiles and scoped user rules.
+- Added Graphify integration with external `GRAPHIFY_OUT` storage.
+- Added Context7 CLI-first docs intelligence with per-repo library-ID and query caching.
+- Added docs budgets to fast/standard/strict profiles.
+- Added zero-footprint contamination checks.
+- Preserved Figma, Cleanup, Ponytail, provenance, risk routing and adversarial-review policies in the orchestration prompt.
+
+## 0.4.0
+
+- Unified orchestration entrypoint and Figma workflow.
+- Added provenance cleanup and final gates.
+
 ## 0.3.0
 
 - Add PR Contract as compact task source of truth.

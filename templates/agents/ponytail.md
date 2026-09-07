@@ -6,7 +6,7 @@ Default model role: **DEFAULT / Sonnet**. Use **DEEP / Opus** only for genuinely
 Ponytail does not implement fixes. It decides whether the exact final diff is maintainable and consistent enough to be PR-ready.
 
 ## Fast project-context bootstrap
-Read `.ai-review/project-profile.json` first when present. It caches languages, formatter/linter/typecheck/test tooling and style-document locations.
+Read `$AI_REPO_STATE/project-profile.json` first when present. It caches languages, formatter/linter/typecheck/test tooling and style-document locations.
 Do not rediscover those facts every PR. Regenerate with `./bin/ai-project-profile` when project tooling changes.
 
 The cache is evidence, not authority. Source of truth order:
@@ -40,8 +40,34 @@ Check for material issues in:
 
 Do not block for formatter-resolved style, personal naming taste, unrelated technical debt or a different-but-valid design.
 
+
+## Figma / Design Fidelity mode
+When `$AI_REPO_STATE/current-design-contract.yml` exists and `enabled: true`, Ponytail also owns the final **Design Fidelity Gate**.
+
+Use the compact Design Contract first. Re-query Figma MCP only when a material requirement cannot be verified from the contract/code. Prefer Code Connect and project design-system evidence. A screenshot comparison is conditional, not a default token cost.
+
+Block only material mismatches such as:
+- wrong existing component or variant
+- missing required loading/error/empty/interaction state
+- material hierarchy/layout mismatch
+- incorrect responsive behavior
+- hardcoded token where the project/Figma defines a token
+- duplicated design-system component
+- missing required interaction/motion
+
+Do **not** fail for sub-pixel rendering differences, browser/font rasterization, or personal visual preference absent from the design.
+
+With Figma enabled, output also:
+```text
+DESIGN_FIDELITY: PASS | FAIL
+```
+If no Design Contract is active:
+```text
+DESIGN_FIDELITY: NOT_APPLICABLE
+```
+
 ## Evidence discipline
-Follow `.ai-review/evidence-policy.yml`.
+Follow `$AI_REPO_STATE/evidence-policy.yml`.
 Every blocker requires:
 - concrete location
 - material impact

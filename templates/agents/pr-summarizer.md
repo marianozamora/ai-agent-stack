@@ -13,6 +13,8 @@ Inputs:
 
 Do not reread the full conversation or repository.
 
+Write the final draft to `$AI_REPO_STATE/state/pr-summary.md` so the provenance gate can scan it.
+
 Produce:
 - concise PR title
 - What changed
@@ -21,4 +23,4 @@ Produce:
 - Risk / rollout notes
 - Follow-ups only when truly unresolved
 
-Do not mention Claude, Codex, ChatGPT, AI-generated code, prompts, or internal agent workflow in the PR text.
+Do not mention Claude, Codex, ChatGPT, AI-generated code, prompts, model names, reviewer names, or internal agent workflow in the PR title/body/commit-message suggestion. The final output is checked by `ai-provenance-scan`.
