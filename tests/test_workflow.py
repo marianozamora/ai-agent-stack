@@ -271,6 +271,32 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertTrue((state_root / 'project-deep-profile.json').is_file())
         self.assertTrue((state_root / 'review/deep-profile-events.jsonl').is_file())
 
+    def test_confidence_is_advisory_and_never_loosens_gating(self):
+        self.plan()
+        card = json.loads(self.ai('confidence', '--profile', 'fast', '--base', 'HEAD', '--json'))
+        self.assertIn('required_gates', card)
+        self.assertIsNone(card['weakest_gate'])
+
+        required = ('checks', 'regression', 'cleanup', 'provenance', 'ponytail', 'summary', 'contract')
+        for i in range(6):
+            task_id = f'seed-{i}'
+            self.plan('--task-id', task_id)
+            for gate in required:
+                self.ai('gate', '--task-id', task_id, gate, '--', sys.executable, '-c',
+                        'import json; print(json.dumps({"status":"PASS","evidence":["fixture"]}))')
+
+        card = json.loads(self.ai('confidence', '--profile', 'fast', '--base', 'HEAD', '--json'))
+        self.assertIsNotNone(card['weakest_gate'])
+        self.assertEqual(card['weakest_gate']['pass_rate'], 1.0)
+        self.assertEqual(card['weakest_gate']['n'], 6)
+
+        # A brand-new task still needs fresh evidence for every required gate.
+        self.plan('--task-id', 'fresh')
+        output = self.ai('ready', '--task-id', 'fresh', ok=False)
+        self.assertIn('NEEDS_HUMAN', output)
+        for gate in required:
+            self.assertIn(gate, output)
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))

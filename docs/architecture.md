@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.8.3)
+## Verified task lifecycle (0.8.4)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -246,3 +246,32 @@ references the file by path (never inlines it), so the injection costs no
 context budget until a task actually reads it. This file is deliberately kept
 out of `evidence_fingerprint()` — like `project-profile.json` before it, it is
 informational context, not gate evidence.
+
+## v0.8 "Learning" — Phase 3 (confidence engine)
+
+`outcome_stats()` in `ai_stack/workflow.py` is pure and stdlib-only
+(`statistics.median`, no third-party stats). It groups gate events by gate
+name for a given stratum filter (`profile`/`risk`/`task_type`) and returns,
+per gate, its own sample size `n`; below `min_n` (default 5) the row is
+`{"gate":..., "n":..., "sufficient": False}` with no rate fields at all — never
+a rate computed on too few observations. A sufficient row adds `pass_rate`,
+`first_attempt_pass_rate`, `median_attempts` (per distinct `task_key`, from
+each task's highest recorded `attempt`) and `median_usage_tokens`. There are
+deliberately no confidence intervals or significance tests.
+
+`confidence_card()` in `ai_stack/cli.py` is the single place that assembles a
+card from `outcome_stats()` plus `rebuild_patterns()` (patterns whose
+`scope_hint` glob-matches a file in the current `collect_scope()` result) plus
+`required_gates()` plus the profile's `usage_tokens` budget, and is reused by
+all three consumers so there is exactly one computation, not three: `ai
+confidence` (the full card), `cmd_planrun()` (three summary lines: weakest
+required gate, matched pattern count, projected spend vs. budget), and
+`cmd_pipeline()`'s preflight (a `print()` note when projected spend exceeds
+budget — never a `SystemExit`, so it cannot block a run).
+
+Confidence is structurally incapable of relaxing gating: `classify()`,
+`required_gates()` and `cmd_ready()` take no confidence input, and nothing
+here writes into `evidence_fingerprint()`'s inputs or a gate record. Where the
+card's `weakest_gate` and `projected_usage_tokens` are surfaced, the only
+actionable direction is toward a stricter profile — the same elevate-only
+asymmetry `elevate_risk()` already applies to Code Review Graph impact.

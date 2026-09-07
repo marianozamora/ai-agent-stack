@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.8.3)
+## Verified workflow (0.8.4)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -527,6 +527,31 @@ part of the evidence fingerprint, so re-planning invalidates stale evidence but
 confirming or deriving lessons mid-task does not. The repo-scoped `lessons.json`
 and `patterns.json` stay out of the fingerprint for the same reason `ai failures`
 recomputes freely: deriving lessons must never invalidate an in-flight task.
+
+```bash
+ai confidence
+ai confidence --profile strict --base main --json
+```
+
+`ai confidence` is a forecast card, not a score: observed historical pass
+rates for the current change's stratum (profile, risk, task type), each
+carrying its own sample size `n`. A gate with fewer than 5 recorded attempts
+is marked `LOW_EVIDENCE` and prints no rate at all — there is no blended
+confidence number, no confidence interval, no significance test, because at
+realistic task volumes those would look more certain than the data supports.
+It also reports failure patterns matching this change's scope and the
+projected token spend (median historical usage per required gate) against the
+profile's runtime budget.
+
+This is purely descriptive: `classify()`, `required_gates()` and `ai ready`
+never read it, and a repository with a perfect historical pass rate still runs
+every required gate for a brand-new task. The only direction confidence may
+push a human is toward more rigor (consider a stricter profile) — the same
+elevate-only asymmetry Code Review Graph impact already applies to risk. The
+same card feeds two other places: `ai plan`/`ai run` print the weakest
+required gate, matched pattern count and projected spend for the task being
+planned, and `ai pipeline` prints a non-blocking note (never a NEEDS_HUMAN)
+when projected spend from prior runs exceeds the profile's budget.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
 migration, UI copy change, integration work, a Figma-driven design task and a

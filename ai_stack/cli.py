@@ -4,10 +4,10 @@ import tempfile, uuid
 import argparse, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
-from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats
 from validators import INSTRUCTIONS, model_verdict, intact_record, run_codex_json
 
-VERSION = "0.8.3"
+VERSION = "0.8.4"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -842,6 +842,14 @@ def cmd_planrun(args,launch:bool):
     print('  Graphify:   ','ready' if (state/'graphify'/'graph.json').exists() else 'not built')
     print('  CRG:        ', 'ready' if plan.get('crg',{}).get('impact_cached') else ('installed/not-ready' if crg_cmd() else 'missing'))
     print('  prompt:     ',task_state(state)/'state'/'current-run.md')
+    card=confidence_card(root,state,args.base,args.profile)
+    weakest=card['weakest_gate']
+    print('  confidence: ','no sufficient history yet' if not weakest else
+          f"weakest gate {weakest['gate']} pass_rate={weakest['pass_rate']} (n={weakest['n']})")
+    print('  patterns:   ',f"{card['matched_patterns']} matched for this change's scope")
+    if card['usage_budget']:
+        note=' (exceeds budget)' if card['projected_usage_tokens']>card['usage_budget'] else ''
+        print('  projected:  ',f"{card['projected_usage_tokens']} / {card['usage_budget']} tokens{note}")
     if launch:
         claude=shutil.which('claude')
         if not claude: raise SystemExit('Claude CLI missing. Use ai plan to only prepare.')
@@ -1067,6 +1075,51 @@ def cmd_lessons(args):
         print(f"{l['id']}  [{l['status']}] {l.get('scope','**')}  {l['text']}")
 
 
+def confidence_card(root:Path,state:Path,base:str,profile:str)->dict:
+    """A forecast card: observed historical frequencies for this change's stratum, with n.
+
+    Purely descriptive. Never consulted by classify(), required_gates() or cmd_ready() —
+    confidence can only ever suggest more rigor (a higher profile), never relax gating.
+    """
+    scope=collect_scope(root,base); risk=classify(scope,profile)
+    plan=load_json(task_state(state)/'state/current-plan.json',{})
+    task_type=plan.get('task_type') if plan.get('scope',{}).get('base')==base and plan.get('profile')==profile else None
+    rows,_=load_metric_rows(state)
+    stats=outcome_stats(rows,profile=profile,risk=risk['risk'],task_type=task_type)
+    patterns=rebuild_patterns(state)['patterns']
+    matched_patterns=[p for p in patterns if p.get('scope_hint')
+                       and any(fnmatch.fnmatch(f,p['scope_hint']) for f in scope['files'])]
+    required=required_gates(root,{'scope':scope,'profile':profile,'risk':risk,'figma':plan.get('figma')})
+    by_gate={s['gate']:s for s in stats}
+    weakest=min((by_gate[g] for g in required if g in by_gate and by_gate[g]['sufficient']),
+                key=lambda s:s['pass_rate'],default=None)
+    projected=sum((by_gate[g].get('median_usage_tokens') or 0) for g in required
+                  if g in by_gate and by_gate[g]['sufficient'])
+    budget=context_caps(profile)['usage_tokens']
+    return {'risk':risk['risk'],'task_type':task_type,'profile':profile,'required_gates':required,
+            'stats':stats,'weakest_gate':weakest,'matched_patterns':len(matched_patterns),
+            'projected_usage_tokens':projected,'usage_budget':budget}
+
+
+def cmd_confidence(args):
+    root=git_root(); state=repo_state(root)
+    card=confidence_card(root,state,args.base,args.profile)
+    if args.json: print(json.dumps(card,indent=2)); return
+    print(f"Confidence card ({card['profile']}, risk {card['risk']}"
+          +(f", {card['task_type']}" if card['task_type'] else '')+')')
+    print('Required gates:',', '.join(card['required_gates']))
+    print(f"Matched failure patterns for this change's scope: {card['matched_patterns']}")
+    if card['usage_budget']:
+        note=' (exceeds budget)' if card['projected_usage_tokens']>card['usage_budget'] else ''
+        print(f"Projected usage: {card['projected_usage_tokens']} / {card['usage_budget']} tokens{note}")
+    print()
+    for s in card['stats']:
+        if not s['sufficient']:
+            print(f"  {s['gate']:10} LOW_EVIDENCE (n={s['n']})"); continue
+        print(f"  {s['gate']:10} pass_rate={s['pass_rate']} first_attempt={s['first_attempt_pass_rate']} "
+              f"median_attempts={s['median_attempts']} (n={s['n']})")
+
+
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
 
 
@@ -1210,6 +1263,10 @@ def cmd_pipeline(args):
         print(json.dumps({'order':required,'validators':{name:config[name] for name in required}},indent=2))
         return
     budget=plan['caps'].get('usage_tokens')
+    card=confidence_card(root,state,plan['scope']['base'],plan['profile'])
+    if budget and card['projected_usage_tokens']>budget:
+        print(f"Note: projected usage from prior runs ({card['projected_usage_tokens']} tokens, n-backed) "
+              f"exceeds this profile's budget ({budget}); consider a stricter profile. Continuing.")
     started=time.monotonic(); status='FAILED'; executed=[]; skipped=[]
     usage_total={'input_tokens':0,'output_tokens':0}
     try:
@@ -1390,6 +1447,7 @@ def parser():
     metrics=sp.add_parser('metrics'); metrics.add_argument('--all-tasks',action='store_true'); metrics.add_argument('--json',action='store_true')
     bench=sp.add_parser('benchmark'); bench.add_argument('--json',action='store_true')
     pr=sp.add_parser('profile'); pr.add_argument('--deep',action='store_true'); pr.add_argument('--refresh',action='store_true'); pr.add_argument('--timeout',type=int,default=600)
+    conf=sp.add_parser('confidence'); conf.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); conf.add_argument('--base',default='main'); conf.add_argument('--json',action='store_true')
     fail=sp.add_parser('failures'); fail.add_argument('--gate'); fail.add_argument('--min',type=int,default=2); fail.add_argument('--json',action='store_true')
     fcs=fail.add_subparsers(dest='failures_cmd')
     fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
@@ -1431,6 +1489,7 @@ def main():
     elif args.cmd=='pipeline': cmd_pipeline(args)
     elif args.cmd=='benchmark': cmd_benchmark(args)
     elif args.cmd=='profile': cmd_profile(args)
+    elif args.cmd=='confidence': cmd_confidence(args)
     elif args.cmd=='failures': cmd_failures(args)
     elif args.cmd=='lessons': cmd_lessons(args)
     elif args.cmd=='status': cmd_status(args)

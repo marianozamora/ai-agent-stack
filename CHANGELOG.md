@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.4
+
+- Add `ai confidence`: a forecast card of historical gate pass rates for the current change's stratum (profile/risk/task type), always showing sample size `n` and marking gates below `n=5` as `LOW_EVIDENCE` instead of computing a rate on too little data. No blended score, no confidence intervals. Purely advisory — `classify()`, `required_gates()` and `ai ready` never read it, and confidence can only ever suggest more rigor, never less. Also surfaces as three summary lines in `ai plan`/`ai run` and a non-blocking preflight note in `ai pipeline` when projected spend exceeds the profile's usage budget.
+
 ## 0.8.3
 
 - Add `ai profile --deep`: an explicit, opt-in, Codex-assisted read of the repository (architecture pattern, actual stack, database/schema, deployment/CI-CD, links to other repositories, and real summaries of key docs), distinct from the free static `ai profile` (languages/tooling by file presence). Cached by analyzed commit; never runs automatically, so no task pays for it unless asked. Output is explicitly labeled as an unverified model interpretation (`caveat` + `confidence_caveats`), referenced by path (not inlined) from the orchestration prompt.

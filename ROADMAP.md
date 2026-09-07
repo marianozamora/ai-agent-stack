@@ -37,7 +37,7 @@ reports the aggregated per-pipeline usage and how many runs hit their budget.
 - [x] Phase 1: failure pattern database (`ai failures`) — `(gate, finding hash)` pairs observed across >=2 tasks, cached and rebuildable, excluded from the evidence fingerprint
 - [x] Phase 2: repository lessons (`ai lessons`) — candidate lessons derived from patterns, human-only confirm/promote, scope-matched injection capped hard by profile (fast=0/standard=3/strict=5), promotion graduates into `rules.json`
 - [x] `ai profile --deep` (opt-in, not in the original 4-item scope) — Codex-assisted architecture/stack/database/deployment/related-repos/docs understanding, cached by commit, never automatic
-- [ ] Confidence engine
+- [x] Phase 3: confidence engine (`ai confidence`) — a forecast card of historical pass rates with sample size `n` per stratum (LOW_EVIDENCE below n=5), no blended score, elevate-only (never relaxes `required_gates`/`ai ready`); also surfaced in `ai plan` and as a non-blocking `ai pipeline` preflight note
 - [ ] Prompt optimizer with measured outcomes
 
 All four learning features are pure stdlib computation over existing `metrics.jsonl`/gate

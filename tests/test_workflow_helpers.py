@@ -56,6 +56,25 @@ class HelpersTests(unittest.TestCase):
         self.assertEqual(pattern['by_profile'], {'fast': 1, 'standard': 1})
         self.assertEqual(pattern['scope_hint'], 'src/**')
 
+    def test_outcome_stats_marks_low_evidence_below_min_n(self):
+        thin = [
+            {'event': 'gate', 'gate': 'checks', 'passed': True, 'attempt': 1, 'task_key': 't1', 'profile': 'fast'},
+            {'event': 'gate', 'gate': 'checks', 'passed': True, 'attempt': 1, 'task_key': 't2', 'profile': 'fast'},
+        ]
+        stats = workflow.outcome_stats(thin, profile='fast', min_n=5)
+        self.assertFalse(stats[0]['sufficient'])
+        self.assertNotIn('pass_rate', stats[0])
+
+        rich = [{'event': 'gate', 'gate': 'checks', 'passed': i != 0, 'attempt': 2 if i == 0 else 1,
+                 'task_key': f't{i}', 'profile': 'fast',
+                 'usage': {'input_tokens': 100, 'output_tokens': 10}} for i in range(6)]
+        stats = workflow.outcome_stats(rich, profile='fast', min_n=5)
+        row = stats[0]
+        self.assertTrue(row['sufficient'])
+        self.assertEqual(row['n'], 6)
+        self.assertAlmostEqual(row['pass_rate'], 5 / 6, places=3)
+        self.assertEqual(row['median_usage_tokens'], 110)
+
     def test_timeout_kills_child_tool(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

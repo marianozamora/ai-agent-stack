@@ -4,6 +4,7 @@ import math
 import os
 import re
 import signal
+import statistics
 import subprocess
 
 
@@ -150,6 +151,46 @@ def detect_patterns(rows, min_occurrences=2):
         })
     patterns.sort(key=lambda pattern: (-pattern['occurrences'], pattern['gate'], pattern['hash']))
     return patterns
+
+
+def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
+    """Historical gate outcome frequencies for a stratum, never a single blended score.
+
+    Every returned row carries its own sample size `n`. Below `min_n` a row is marked
+    `sufficient: False` and carries no rates at all, rather than a rate computed on too
+    few observations that would look more confident than it is. No confidence intervals
+    or significance tests: with realistic task volumes those would be theatre.
+    """
+    gates = [row for row in rows if row.get('event') == 'gate']
+    if profile is not None: gates = [row for row in gates if row.get('profile') == profile]
+    if risk is not None: gates = [row for row in gates if row.get('risk') == risk]
+    if task_type is not None: gates = [row for row in gates if row.get('task_type') == task_type]
+
+    by_gate = {}
+    for row in gates:
+        by_gate.setdefault(row.get('gate'), []).append(row)
+
+    stats = []
+    for gate, entries in sorted(by_gate.items()):
+        n = len(entries)
+        result = {'gate': gate, 'n': n, 'sufficient': n >= min_n}
+        if result['sufficient']:
+            first_attempts = [e for e in entries if e.get('attempt') == 1]
+            latest_attempt_per_task = {}
+            for e in entries:
+                key = e.get('task_key')
+                latest_attempt_per_task[key] = max(latest_attempt_per_task.get(key, 0), e.get('attempt') or 1)
+            usage_totals = [e['usage'].get('input_tokens', 0) + e['usage'].get('output_tokens', 0)
+                             for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
+            result['pass_rate'] = round(sum(1 for e in entries if e.get('passed') is True) / n, 3)
+            result['first_attempt_pass_rate'] = (
+                round(sum(1 for e in first_attempts if e.get('passed') is True) / len(first_attempts), 3)
+                if first_attempts else None)
+            result['median_attempts'] = (statistics.median(latest_attempt_per_task.values())
+                                          if latest_attempt_per_task else None)
+            result['median_usage_tokens'] = statistics.median(usage_totals) if usage_totals else None
+        stats.append(result)
+    return stats
 
 
 def summarize(rows):
