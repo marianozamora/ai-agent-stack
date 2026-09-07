@@ -96,3 +96,18 @@ Avoid:
 - more than two cross-model loops
 - escalating models before cheap tests/context gathering
 - feeding both agents the entire repository
+
+## Final PR agents
+
+### CLEANUP — Haiku by default
+A mutating but behavior-preserving pass after correctness fixes. Remove
+temporary residue, debug output, dead local scaffolding, and safe lint/format
+noise. Escalate to Sonnet only when proving an edit behavior-neutral requires
+non-trivial reasoning.
+
+### PONYTAIL — Sonnet by default
+The final read-only PR quality gate. Review the final diff against the project's
+actual conventions and architecture. Consider maintainability, cohesion,
+coupling, types, tests, complexity, and SOLID or functional-programming
+principles only where they suit the existing paradigm. Use Opus only when the
+quality question itself is architectural; never use Fable for routine review.

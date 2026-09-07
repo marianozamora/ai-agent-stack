@@ -7,6 +7,8 @@ Reusable, token-efficient Claude Code + Codex workflow with:
 - **Caveman** for concise Claude responses
 - **Codex plugin for Claude Code** for independent read-only reviews
 - risk-based **model routing** so expensive models are used only when justified
+- **Cleanup** for behavior-preserving removal of temporary residue and mechanical noise
+- **Ponytail** as the final read-only PR quality gate
 
 The goal is simple: **use cheap context and cheap models first, then escalate by evidence.**
 
@@ -18,6 +20,8 @@ The goal is simple: **use cheap context and cheap models first, then escalate by
 | Normal implementation | Sonnet | Terra reviewer |
 | High-risk design/debugging | Opus for strategy, Sonnet for implementation | Sol reviewer |
 | Long-horizon / extreme | Fable | Astra only in exceptional cases |
+| Final mechanical cleanup | Haiku | — |
+| Final PR quality gate | Sonnet; Opus only for architectural questions | — |
 
 Exact model IDs change over time. This repo intentionally stores **roles/tier names**, not hard-coded provider model IDs.
 See [`templates/model-routing.md`](templates/model-routing.md).
@@ -97,8 +101,13 @@ It creates:
 .ai-review/
   policy.md
   model-routing.md
+  orchestration.yml
+  agents/
+    cleanup.md
+    ponytail.md
 bin/
   ai-review-plan
+  ai-pr-ready
   ai-stack-doctor
 CLAUDE.md
 AGENTS.md
@@ -130,6 +139,14 @@ risk classification
           Claude verifies findings
                  ↓
           tests are the arbiter
+                 ↓
+              Cleanup
+                 ↓
+          tests/lint/typecheck
+                 ↓
+             Ponytail
+                 ↓
+             PR READY
 ```
 
 From the target repository, run:
@@ -139,6 +156,16 @@ From the target repository, run:
 ```
 
 The script gives a risk level, model-role recommendation, and a compact Codex review command.
+
+After implementation and correctness work are complete, inspect the final PR pipeline with:
+
+```bash
+./bin/ai-pr-ready main
+```
+
+The final order is correctness → Cleanup → checks → Ponytail. Cleanup may edit
+the diff but cannot change behavior. Ponytail evaluates the exact final diff and
+never edits code.
 
 ## Token rules
 
@@ -151,7 +178,10 @@ The script gives a risk level, model-role recommendation, and a compact Codex re
 7. No style review unless style creates a real correctness/maintenance risk.
 8. Codex reports evidence; Claude decides and implements fixes.
 9. Re-review only the correction when a second pass is actually justified.
-10. Never use an expensive model merely because the task is large in lines; use risk, dependency impact and failed attempts as escalation signals.
+10. Cleanup uses Haiku by default and is forbidden from behavioral refactors.
+11. Ponytail uses Sonnet by default, is read-only, and derives conventions from the project.
+12. Allow at most one targeted Ponytail correction loop.
+13. Never use an expensive model merely because the task is large in lines; use risk, dependency impact and failed attempts as escalation signals.
 
 ## Updating an installation
 
@@ -168,6 +198,8 @@ CodeGraph = what code deserves context
 RTK       = what output deserves context
 Claude    = builder / planner
 Codex     = independent challenger
+Cleanup   = behavior-preserving finalizer
+Ponytail  = final PR quality gate
 Tests     = arbiter
 ```
 

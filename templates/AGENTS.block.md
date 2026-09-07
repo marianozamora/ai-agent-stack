@@ -1,6 +1,10 @@
 <!-- ai-agent-stack:start -->
 ## Independent adversarial reviewer policy
 
+This is the correctness review. Cleanup and the final maintainability gate are
+defined separately in `.ai-review/agents/cleanup.md` and
+`.ai-review/agents/ponytail.md`.
+
 Follow `.ai-review/policy.md` and `.ai-review/model-routing.md`.
 
 ### Repository exploration

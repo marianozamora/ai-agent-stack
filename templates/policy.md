@@ -61,3 +61,21 @@ Examples of valid escalation signals:
 - architectural tradeoff with material rollback cost
 
 Do not escalate merely because a diff has many generated/test lines.
+
+## Final PR-readiness pipeline
+
+Correctness and final code quality are separate gates:
+
+1. Implement the solution.
+2. Run relevant tests, lint and type checking.
+3. Run at most one risk-appropriate Codex correctness review.
+4. Fix confirmed findings and verify behavior.
+5. Run Cleanup for behavior-preserving mechanical edits.
+6. Verify again because Cleanup mutates the diff.
+7. Run Ponytail as the read-only final quality gate.
+8. On failure, allow one targeted fix round, then Cleanup, checks and Ponytail once more.
+
+A PR is ready only when relevant checks pass, no HIGH/CRITICAL correctness issue
+remains, Cleanup passes, and Ponytail reports `PONYTAIL: PASS` and `PR_READY: YES`.
+Ponytail must follow project conventions, avoid unrelated refactors, and must
+not become a second correctness review.

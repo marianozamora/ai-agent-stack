@@ -1,0 +1,42 @@
+version: 1
+
+agents:
+  classifier: { role: cheap, preferred: haiku }
+  builder: { role: default_builder, preferred: sonnet }
+  planner: { role: deep, preferred: opus }
+  long_horizon: { role: long_horizon, preferred: fable }
+  cleanup: { role: cheap, preferred: haiku, mutates_code: true }
+  ponytail: { role: default_builder, preferred: sonnet, mutates_code: false }
+
+reviewers:
+  low: none
+  medium: terra
+  high: sol
+  critical: astra
+
+pipeline:
+  - { phase: implement, agent: builder }
+  - { phase: verify_behavior, tools: [rtk] }
+  - { phase: adversarial_review, when: "risk >= medium", agent: codex_reviewer }
+  - { phase: fix_confirmed_findings, agent: builder }
+  - { phase: cleanup, agent: cleanup }
+  - { phase: verify_after_cleanup, tools: [rtk] }
+  - { phase: ponytail, agent: ponytail }
+  - { phase: quality_fix, when: ponytail_failed, agent: builder }
+  - { phase: cleanup_after_quality_fix, when: quality_fix_ran, agent: cleanup }
+  - { phase: final_verification, when: quality_fix_ran, tools: [rtk] }
+  - { phase: ponytail_final, when: quality_fix_ran, agent: ponytail }
+
+limits:
+  max_adversarial_reviews: 1
+  max_quality_fix_rounds: 1
+  max_findings: 5
+  max_nonblocking_quality_notes: 3
+  diff_first: true
+  broad_repo_crawl: false
+
+pr_ready_requires:
+  - relevant_checks_pass
+  - no_unresolved_high_or_critical_correctness_findings
+  - cleanup_pass
+  - ponytail_pass

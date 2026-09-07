@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="${1:-main}"
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Not inside a git repository." >&2
+  exit 1
+fi
+
+if git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+  RANGE="$BASE...HEAD"
+else
+  RANGE="HEAD + working tree"
+fi
+
+cat <<MSG
+AI PR-readiness pipeline
+  scope: $RANGE
+
+Order:
+  1. Relevant tests/lint/typecheck
+  2. Risk-based Codex adversarial review (MEDIUM+ only)
+  3. Claude validates/fixes confirmed findings
+  4. Cleanup (Haiku default; mutating, behavior-preserving)
+  5. Relevant tests/lint/typecheck again
+  6. Ponytail (Sonnet default; read-only final quality gate)
+  7. On FAIL: one targeted fix, Cleanup, checks, then Ponytail once more
+
+PR_READY requires:
+  checks pass; no unresolved HIGH/CRITICAL correctness finding;
+  CLEANUP: PASS; PONYTAIL: PASS
+
+Agent specs: .ai-review/agents/{cleanup,ponytail}.md
+Policy: .ai-review/orchestration.yml
+Token policy: diff-first; CodeGraph for structure; RTK for command output;
+  max 1 adversarial review; max 1 Ponytail correction loop.
+MSG

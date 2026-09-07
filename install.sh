@@ -10,12 +10,16 @@ if ! git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$TARGET/.ai-review" "$TARGET/bin"
+mkdir -p "$TARGET/.ai-review/agents" "$TARGET/bin"
 cp "$KIT_DIR/templates/policy.md" "$TARGET/.ai-review/policy.md"
 cp "$KIT_DIR/templates/model-routing.md" "$TARGET/.ai-review/model-routing.md"
+cp "$KIT_DIR/templates/orchestration.yml" "$TARGET/.ai-review/orchestration.yml"
+cp "$KIT_DIR/templates/agents/cleanup.md" "$TARGET/.ai-review/agents/cleanup.md"
+cp "$KIT_DIR/templates/agents/ponytail.md" "$TARGET/.ai-review/agents/ponytail.md"
 cp "$KIT_DIR/bin/ai-review-plan" "$TARGET/bin/ai-review-plan"
+cp "$KIT_DIR/bin/ai-pr-ready" "$TARGET/bin/ai-pr-ready"
 cp "$KIT_DIR/bin/ai-stack-doctor" "$TARGET/bin/ai-stack-doctor"
-chmod +x "$TARGET/bin/ai-review-plan" "$TARGET/bin/ai-stack-doctor"
+chmod +x "$TARGET/bin/ai-review-plan" "$TARGET/bin/ai-pr-ready" "$TARGET/bin/ai-stack-doctor"
 
 append_managed_block() {
   local target_file="$1"
@@ -58,7 +62,11 @@ Installed AI Agent Stack into:
 Added/updated:
   .ai-review/policy.md
   .ai-review/model-routing.md
+  .ai-review/orchestration.yml
+  .ai-review/agents/cleanup.md
+  .ai-review/agents/ponytail.md
   bin/ai-review-plan
+  bin/ai-pr-ready
   bin/ai-stack-doctor
   CLAUDE.md managed block
   AGENTS.md managed block
@@ -76,3 +84,4 @@ echo
 echo "Next:"
 echo "  cd \"$TARGET\""
 echo "  ./bin/ai-review-plan main"
+echo "  ./bin/ai-pr-ready main"
