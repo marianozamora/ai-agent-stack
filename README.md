@@ -84,6 +84,87 @@ ai path
 ai status
 ```
 
+## Task lifecycle
+
+```mermaid
+flowchart LR
+    A["ai plan / ai run<br/>(profile, base, --figma, --ticket-file)"] --> B["Orchestration prompt<br/>rules + skills + lessons + contract"]
+    B --> C["Implementation<br/>(Claude, outside this diagram)"]
+    C --> D["ai gate NAME -- COMMAND<br/>(one per required gate)"]
+    D -->|PASS| E{More required<br/>gates?}
+    D -->|FAIL| D
+    E -->|yes| D
+    E -->|no| F["ai ready"]
+    F -->|fresh + passed| G["PR_READY"]
+    F -->|missing/stale| H["NEEDS_HUMAN"]
+    F -->|any failed| I["FAILED"]
+    J["ai pipeline"] -.->|runs every required gate,<br/>then ai ready, in one call| D
+```
+
+`ai gate`/`ai pipeline` bind every recorded PASS to a fingerprint of the repo,
+index, base, plan, rules and validator config (`evidence_fingerprint()`); any
+change invalidates it. `ai ready` never launches a model — it only recomputes
+that fingerprint against what's recorded, so certification stays reproducible
+offline.
+
+## Command reference
+
+Every command groups under `ai <command> [subcommand] [flags]`. `--json`
+is available on most report-style commands for scripting.
+
+**Core workflow**
+
+| Command | Purpose |
+|---|---|
+| `ai init` | Detect languages/tooling for the current repo; first-run setup. |
+| `ai plan "<task>"` | Build the orchestration prompt and task contract; print it (no launch). |
+| `ai run "<task>"` | Same as `plan`, then launch Claude with the prompt. |
+| `ai ready` | Certify `PR_READY`/`NEEDS_HUMAN`/`FAILED` from recorded gate evidence only. |
+| `ai gate NAME -- CMD` | Run one gate's command, record its verdict/evidence/usage. |
+| `ai pipeline [--dry-run\|--resume]` | Run every required gate in order, then `ai ready`. |
+| `ai status` / `ai doctor` | Repo state summary / tool-availability + zero-footprint check. |
+| `ai path` | Print this task's external state directory. |
+
+**Setup, validators & context tools**
+
+| Command | Purpose |
+|---|---|
+| `ai validators show\|install\|set\|remove` | Configure per-gate commands; `install` adds the bundled semantic ones. |
+| `ai validate NAME` | Entry point the bundled validators use internally (run via `ai gate`, not directly). |
+| `ai docs doctor\|setup\|detect\|library\|query` | Context7: version-specific library documentation. |
+| `ai figma doctor\|setup` | Figma MCP connectivity for design-driven tasks. |
+| `ai crg doctor\|build\|status\|update\|detect` | Code Review Graph: diff impact, blast radius, test gaps. |
+| `ai graph doctor\|build\|sync\|query\|path\|explain` | Graphify: macro architecture, routes, communities. |
+
+**Tickets, skills & rules**
+
+| Command | Purpose |
+|---|---|
+| `ai ticket check --file\|--text\|-` | Analyze pasted ticket text: acceptance criteria, Figma link, mentioned blockers. |
+| `ai skill list\|explain\|enable\|disable\|dry-run` | Inspect/tune the lazy skill router. |
+| `ai handoff "<note>" --next "<step>"` | Write a compact resume-point for a follow-up session. |
+| `ai optimize` | Print current token-policy/budget summary. |
+| `ai rules list\|add\|remove` | Repository-specific conventions injected into every prompt. |
+
+**Measurement (v0.9)**
+
+| Command | Purpose |
+|---|---|
+| `ai metrics [--by ...] [--budget N]` | Gate/pipeline outcomes and token usage; dimensional report, CSV export, advisory budget. |
+| `ai metrics prune --older-than SPEC --confirm` | Delete recorded events older than a window (human-gated). |
+| `ai benchmark` | Routing/skill-selection comparison across profiles for fixed fixtures (no execution). |
+| `ai benchmark run\|list\|report\|compare` | End-to-end sandboxed pipeline scenarios with pass/fail verdicts; fully isolated from real state. |
+
+**Learning (v0.8)**
+
+| Command | Purpose |
+|---|---|
+| `ai profile [--deep]` | Static project profile; `--deep` is an opt-in Codex read of architecture/stack/DB/deploy. |
+| `ai confidence` | Historical pass-rate forecast card for the current change (advisory only). |
+| `ai failures [show\|rebuild\|export]` | Recurring `(gate, finding)` patterns across tasks. |
+| `ai lessons [derive\|add\|confirm\|reject\|retire\|promote\|prune]` | Empirical, human-curated context injected into future prompts. |
+| `ai prompt [list\|show\|experiment\|report\|promote\|reset\|rollback\|history]` | A/B experiments and versioning on bundled validator instructions. |
+
 ## Token budgets
 
 The Context Governor enforces bounded defaults instead of unlimited context:

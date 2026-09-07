@@ -2,30 +2,36 @@
 
 AI Agent Stack is a zero-footprint overlay for existing repositories.
 
-```text
-~/.local/share/ai-agent-stack/           global engine
-~/.config/ai-agent-stack/repos/<id>/     repo-specific state
-~/work/repository/                       unchanged by the framework
+```mermaid
+flowchart TB
+    subgraph engine["~/.local/share/ai-agent-stack/"]
+        E["global engine (installed release)"]
+    end
+    subgraph repostate["~/.config/ai-agent-stack/repos/&lt;id&gt;/"]
+        direction TB
+        R1["rules.json · validators.json · lessons.json<br/>patterns.json · prompt-*.json(l) · metrics.jsonl · benchmarks/"]
+        R2["tasks/&lt;task-key&gt;/<br/>contracts/ · state/ · gates/ · review/ · handoffs/"]
+        R1 --- R2
+    end
+    subgraph checkout["~/work/repository/"]
+        C["unchanged by the framework"]
+    end
+    engine -->|reads/writes only external state| repostate
+    repostate -.->|never writes here| checkout
 ```
 
 The repository fingerprint is derived from the normalized `origin` URL (or the local root if no remote exists). Moving a checkout therefore does not normally lose its learned profile/rules.
 
 ## Context hierarchy
 
-```text
-PR / Design Contract
-       ↓
-Code Review Graph  — current diff, blast radius, flows, test gaps, minimal review set
-       ↓
-Graphify           — macro routes, communities, architecture graph
-       ↓
-CodeGraph          — exact symbol navigation when needed
-       ↓
-Context7           — external framework/library documentation only
-       ↓
-RTK                — compressed shell/git/test output
-       ↓
-Raw source         — only when implementation/evidence needs it
+```mermaid
+flowchart TD
+    A["PR / Design Contract"] --> B["Code Review Graph<br/><small>current diff, blast radius, flows, test gaps, minimal review set</small>"]
+    B --> C["Graphify<br/><small>macro routes, communities, architecture graph</small>"]
+    C --> D["CodeGraph<br/><small>exact symbol navigation when needed</small>"]
+    D --> E["Context7<br/><small>external framework/library documentation only</small>"]
+    E --> F["RTK<br/><small>compressed shell/git/test output</small>"]
+    F --> G["Raw source<br/><small>only when implementation/evidence needs it</small>"]
 ```
 
 The hierarchy is conditional, not a mandate to call every tool. CRG is the default structural source during review; Graphify is for macro architecture; CodeGraph is for precise implementation navigation; Context7 is only for version-sensitive external APIs.
@@ -128,6 +134,25 @@ across a whole run, not just per-gate figures.
 every profile, without touching git history, an active task or a model call.
 It is a deterministic regression check on risk classification and skill
 selection across profiles as those functions evolve.
+
+## v0.8 "Learning" — data flow overview
+
+Every phase below reads the same append-only log and writes its own derived,
+freely-recomputable view. Nothing here ever feeds back into gating — only
+`ai gate`'s own fresh, fingerprinted evidence does that.
+
+```mermaid
+flowchart LR
+    M["metrics.jsonl<br/><small>every gate/pipeline event: risk, task_type, attempt,<br/>findings, usage, prompt_variants</small>"]
+    M --> P["ai failures<br/><small>detect_patterns()<br/>(gate, finding) seen ≥2 tasks</small>"]
+    P --> L["ai lessons<br/><small>derive → candidate → human confirm<br/>→ injected into future prompts (capped)</small>"]
+    L -->|promote| RULES["rules.json<br/><small>always-injected, normative</small>"]
+    M --> C["ai confidence<br/><small>outcome_stats()<br/>pass-rate forecast, n-gated</small>"]
+    M --> PR["ai prompt<br/><small>variant_stats()<br/>A/B on validator instructions</small>"]
+    PR -->|promote + history| PO["prompt-overrides.json<br/>prompt-history.jsonl"]
+    C -.->|advisory only| PLAN["ai plan / ai pipeline<br/>(never gates)"]
+    L -.->|advisory prompt context| PLAN
+```
 
 ## v0.8 "Learning" — Phase 0 (metrics enrichment)
 
