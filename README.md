@@ -1,5 +1,8 @@
 # AI Agent Stack
 
+> Looking for a one-page recap of every command and diagram? See the
+> [Field Guide](docs/field-guide.md).
+
 ## v0.7 Skills + token efficiency
 
 Skills are strategies, not additional agents. The router reads only compact registry metadata and lazy-loads at most 1/2/3 skill prompts in fast/standard/strict.
