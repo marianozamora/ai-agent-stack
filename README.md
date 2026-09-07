@@ -43,7 +43,7 @@ It combines:
 ## Install
 
 ```bash
-unzip ai-agent-stack-v0.7.0.zip
+git clone https://github.com/marianozamora/ai-agent-stack.git
 cd ai-agent-stack
 ./install.sh
 ```
@@ -201,7 +201,7 @@ The orchestrator uses Figma as an input to a compact Design Contract. Raw design
 |---|---|---:|---:|---:|
 | `fast` | trivial/local | 4 | 0 | 1 |
 | `standard` | normal feature | 8 | 1 | 3 |
-| `strict` | high-risk | 12 | 2 | 5 |
+| `strict` | high-risk | 12 | 1 | 5 |
 
 ## Final PR pipeline
 
@@ -257,3 +257,65 @@ The goal is to feed models the **smallest authoritative context** that can answe
 
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
+
+## Verified workflow (0.7.1)
+
+Select a task identity when working on multiple tickets in the same checkout:
+
+```bash
+export AI_TASK_ID=ticket-1450
+ai plan "implement ticket #1450" --profile standard
+ai path
+# Implement the task, then run the actual project checks:
+ai gate checks -- npm test
+ai gate regression -- npm run test:regression
+ai ready
+```
+
+Use the check commands provided by your project. `ai gate` executes the command
+without an implicit shell, records its exit code and output outside the checkout,
+and binds evidence to the repository contents, index, HEAD, base revision, plan,
+contracts and repository rules. Put options before the gate name, for example
+`ai gate --timeout 120 checks -- npm test`.
+
+Required gates are `checks`, `regression`, `contract`, `cleanup`, `provenance`,
+`ponytail` and `summary`. `review` is also required for standard/strict or elevated
+risk, `security` for security-sensitive changes, and `design` for Figma tasks.
+Run your project-specific validator or review adapter through each named gate.
+For gates other than checks/regression, its final stdout line must be a JSON object
+such as `{"status":"PASS","evidence":["Acceptance criteria verified against test results"]}`.
+A failed review must emit `FAIL` or exit nonzero. A successful model process alone
+is insufficient. The framework checks recorded evidence and freshness; the chosen
+validators remain responsible for the accuracy of their conclusions.
+
+`ai ready` never launches a model. It returns `PR_READY` only when every required
+gate has fresh successful evidence; missing/stale evidence returns `NEEDS_HUMAN`
+and a failed gate returns `FAILED`, both with a nonzero exit status. Perform cleanup
+before recording final gates. Any change during a gate invalidates its result;
+rerun against the final state. Re-run affected checks after fixes.
+
+Artifacts live under `repos/<repo-id>/tasks/<task-key>/`. The key includes the
+checkout path and task ID. The default ID is the branch (HEAD for detached
+checkouts); `--task-id` overrides `AI_TASK_ID`. Rules, skills preferences and tool
+caches remain shared per repository. Existing 0.7.0 artifacts are left intact;
+run `ai plan` to initialize the new task state. `ai path` now prints that task's
+artifact directory. Use different IDs for concurrent tasks in the same checkout.
+
+Generated orchestration/review prompts and serialized handoffs are rejected when
+they exceed the selected character budget. Shorten the input or explicitly select
+a larger profile; no acceptance criteria are silently discarded. Limits on tools,
+retries and agent calls inside an independently launched model remain instructions
+for that model, not runtime counters enforced by this CLI.
+
+Installation validates a separate release before switching the active symlink.
+Failed activation restores the previous installation; previous releases are kept
+under `~/.local/share/ai-agent-stack-releases/`. Only the runtime files and license
+are copied. Reinstalling from the installed directory is supported.
+
+Run the same checks as CI locally:
+
+```bash
+python3 tests/validate.py
+python3 -m unittest discover -s tests -v
+bash tests/smoke.sh
+```

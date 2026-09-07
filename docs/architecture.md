@@ -69,3 +69,22 @@ Task
 ```
 
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
+
+
+## Verified task lifecycle (0.7.1)
+
+Repository preferences and intelligence caches are shared. Mutable contracts,
+plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
+key includes the checkout path and the explicit task ID (branch by default).
+
+`ai gate` executes a validator and records its command, exit code, output hash,
+structured verdict for semantic gates, and a fingerprint of the validated tree
+and task inputs. Gates that modify those inputs fail and must be rerun.
+`ai ready` evaluates required gates against the current fingerprint and emits a
+machine-readable readiness artifact plus a terminal status. It never invokes an
+LLM or treats a prior model statement as sufficient proof of readiness.
+
+Character budgets are enforced before writing generated prompts or handoffs.
+Model-internal tool/retry counts remain orchestration instructions. Installation
+uses validated release directories and an active symlink, with rollback when
+activation fails. CI covers Python 3.10/3.13 on Linux and macOS.

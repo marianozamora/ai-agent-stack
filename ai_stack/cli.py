@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import tempfile, uuid
 import argparse, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
+TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
 
@@ -56,7 +58,35 @@ def load_json(p:Path, default):
     try: return json.loads(p.read_text())
     except Exception: return default
 
-def save_json(p:Path,obj:Any): p.write_text(json.dumps(obj,indent=2,sort_keys=True)+"\n")
+def save_json(p:Path,obj:Any):
+    with tempfile.NamedTemporaryFile(mode='w', dir=p.parent, delete=False) as f:
+        tmp=Path(f.name)
+        try:
+            f.write(json.dumps(obj,indent=2,sort_keys=True)+"\n")
+            f.close()
+            tmp.replace(p)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
+def task_state(state:Path)->Path:
+    root=git_root()
+    branch=run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root)
+    identity=TASK_ID or os.environ.get('AI_TASK_ID') or branch
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}',identity):
+        raise SystemExit('Invalid task ID.')
+    # Worktrees sharing a remote must never share mutable task artifacts.
+    key=shasum(str(root.resolve())+'\0'+identity)[:24]
+    d=state/'tasks'/key
+    for sub in ('state','contracts','handoffs','review','gates'): (d/sub).mkdir(parents=True,exist_ok=True)
+    save_json(d/'task.json',{'id':identity,'root':str(root.resolve())})
+    return d
+
+
+def enforce_budget(text:str,limit:int,label:str):
+    if len(text)>limit:
+        raise SystemExit(f'NEEDS_HUMAN: {label} exceeds budget ({len(text)} > {limit} characters). Shorten input or select a larger profile.')
+
 
 
 def profile_repo(root:Path,state:Path)->dict:
@@ -236,7 +266,7 @@ def record_metric(state:Path,event:str,**data):
     with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
 
 def ensure_contract(state:Path,task:str,figma:str|None=None):
-    p=state/'contracts'/'current-pr.yml'
+    p=task_state(state)/'contracts'/'current-pr.yml'
     if not p.exists():
         p.write_text(textwrap.dedent(f'''\
         objective: {json.dumps(task)}
@@ -249,7 +279,7 @@ def ensure_contract(state:Path,task:str,figma:str|None=None):
     elif task:
         s=p.read_text(); s=re.sub(r'^objective:.*$',f'objective: {json.dumps(task)}',s,count=1,flags=re.M); p.write_text(s)
     if figma:
-        d=state/'contracts'/'current-design.yml'
+        d=task_state(state)/'contracts'/'current-design.yml'
         d.write_text(textwrap.dedent(f'''\
         source: figma
         url: {json.dumps(figma)}
@@ -278,7 +308,6 @@ def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|No
     if profile!='fast' and crg_cmd():
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
         risk=elevate_risk(risk,parse_crg_risk(crg_text))
-    ensure_contract(state,task,figma)
     graph=str(state/'graphify'/'graph.json')
     prompt=f'''# AI Agent Stack orchestration
 
@@ -290,8 +319,8 @@ Risk: {risk['risk']} ({risk['reason']})
 Security boundary: {risk['security']}
 
 External state (NEVER commit these files): {state}
-PR Contract: {state/'contracts/current-pr.yml'}
-Design Contract: {(state/'contracts/current-design.yml') if figma else 'off'}
+PR Contract: {task_state(state)/'contracts/current-pr.yml'}
+Design Contract: {(task_state(state)/'contracts/current-design.yml') if figma else 'off'}
 Graphify graph: {graph if Path(graph).exists() else 'not built'}
 Code Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd() else 'missing')}
 
@@ -349,11 +378,13 @@ Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then dis
 
 Zero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.
 
-Return terminal state PR_READY, NEEDS_HUMAN, or FAILED with concise evidence.
+Record final gates with `ai gate NAME -- COMMAND ...`: checks, regression, contract, cleanup, provenance, ponytail, summary; review for standard/strict or elevated risk; security for security boundaries; design for Figma. Except checks/regression, validators must finish with single-line JSON containing status PASS and a nonempty evidence list. Run cleanup before recording final checks. Only `ai ready` may certify PR_READY from fresh recorded evidence. Return NEEDS_HUMAN or FAILED when evidence is missing.
 '''
-    (state/'state'/'current-run.md').write_text(prompt)
+    enforce_budget(prompt,caps['context_chars'],'orchestration context')
+    ensure_contract(state,task,figma)
+    (task_state(state)/'state'/'current-run.md').write_text(prompt)
     cache_key=task_cache_key(root,task,profile,base,selected_skills)
-    save_json(state/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
+    save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
     record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
     return prompt
 
@@ -508,10 +539,10 @@ def crg_impact(root:Path,state:Path,base:str,refresh=False,build_if_missing=Fals
         # update --brief re-parses current changes and then reports impact.
         rc,out=crg_exec(root,state,['update','--base',base,'--brief'],check=False)
         if rc==0 and out:
-            (state/'review'/'last-impact.txt').write_text(out+'\n'); return out
+            (task_state(state)/'review'/'last-impact.txt').write_text(out+'\n'); return out
     rc,out=crg_exec(root,state,['detect-changes','--base',base,'--brief'],check=False)
     if rc==0 and out:
-        (state/'review'/'last-impact.txt').write_text(out+'\n')
+        (task_state(state)/'review'/'last-impact.txt').write_text(out+'\n')
         return out
     return ''
 
@@ -562,9 +593,10 @@ def build_review_prompt(root:Path,state:Path,base:str,profile:str,impact:str)->s
     cr=parse_crg_risk(impact); risk=elevate_risk(heuristic,cr)
     caps=context_caps(profile)
     compact=impact[-12000:] if impact else '(CRG unavailable; use git diff plus targeted graph evidence.)'
-    prompt=f'''# Independent adversarial review\n\nBase: {base}\nProfile: {profile}\nRisk: {risk['risk']} ({risk['reason']})\nChanged files: {scope['file_count']}\n\nCode Review Graph compact impact:\n```text\n{compact}\n```\n\nYou are the independent reviewer. Work read-only.\n\nContext policy:\n1. Start from the git diff and the CRG impact above.\n2. If more evidence is needed, use code-review-graph with CRG_DATA_DIR already provided by the environment. Prefer `detect-changes --brief`, affected flows, callers/importers/tests, and bounded/minimal context.\n3. Use Graphify only for architecture/community/path questions not answered by CRG.\n4. Use CodeGraph only when exact symbol navigation is materially better.\n5. Use Context7 only for version-sensitive external library/API facts.\n6. Read raw source only for changed/impacted locations needed to prove a finding.\n\nReview only for correctness, security/auth, data integrity, concurrency, backwards compatibility, concrete regression risks, and missing tests. No style-only findings; Ponytail handles final code quality.\n\nReturn at most {caps['findings']} findings. Each finding: SEVERITY | CONFIDENCE | FILE:LINE | CONCRETE FAILURE SCENARIO | EVIDENCE.\nDo not modify files and do not propose broad rewrites.\n'''
-    path=state/'state'/'current-review.md'; path.write_text(prompt)
-    save_json(state/'state'/'current-review.json',{'base':base,'profile':profile,'risk':risk,'scope':scope,'created_at':int(time.time())})
+    prompt=f'''# Independent adversarial review\n\nBase: {base}\nProfile: {profile}\nRisk: {risk['risk']} ({risk['reason']})\nChanged files: {scope['file_count']}\n\nCode Review Graph compact impact:\n```text\n{compact}\n```\n\nYou are the independent reviewer. Work read-only.\n\nContext policy:\n1. Start from the git diff and the CRG impact above.\n2. If more evidence is needed, use code-review-graph with CRG_DATA_DIR already provided by the environment. Prefer `detect-changes --brief`, affected flows, callers/importers/tests, and bounded/minimal context.\n3. Use Graphify only for architecture/community/path questions not answered by CRG.\n4. Use CodeGraph only when exact symbol navigation is materially better.\n5. Use Context7 only for version-sensitive external library/API facts.\n6. Read raw source only for changed/impacted locations needed to prove a finding.\n\nReview only for correctness, security/auth, data integrity, concurrency, backwards compatibility, concrete regression risks, and missing tests. No style-only findings; Ponytail handles final code quality.\n\nReturn at most {caps['findings']} findings. Each finding: SEVERITY | CONFIDENCE | FILE:LINE | CONCRETE FAILURE SCENARIO | EVIDENCE.\nDo not modify files and do not propose broad rewrites.\nFinish with a single-line JSON object containing status (PASS only when no unresolved findings, otherwise FAIL) and a nonempty evidence list of concrete checked facts.\n'''
+    enforce_budget(prompt,caps['context_chars'],'review context')
+    path=task_state(state)/'state'/'current-review.md'; path.write_text(prompt)
+    save_json(task_state(state)/'state'/'current-review.json',{'base':base,'profile':profile,'risk':risk,'scope':scope,'created_at':int(time.time())})
     return prompt
 
 
@@ -572,7 +604,7 @@ def cmd_review(args):
     root=git_root(); state=repo_state(root)
     impact=crg_impact(root,state,args.base,refresh=args.refresh,build_if_missing=args.build) if crg_cmd() else ''
     prompt=build_review_prompt(root,state,args.base,args.profile,impact)
-    print('Review context: ',state/'state'/'current-review.md')
+    print('Review context: ',task_state(state)/'state'/'current-review.md')
     print('CRG:            ','ready' if impact else ('installed but graph unavailable' if crg_cmd() else 'missing'))
     if not args.launch:return
     codex=shutil.which('codex')
@@ -634,7 +666,7 @@ def cmd_planrun(args,launch:bool):
         figma=m.group(0) if m else None
     if args.no_figma: figma=None
     prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None))
-    plan=load_json(state/'state'/'current-plan.json',{})
+    plan=load_json(task_state(state)/'state'/'current-plan.json',{})
     print('AI plan')
     print('  repo state: ',state)
     print('  profile:    ',args.profile)
@@ -647,11 +679,13 @@ def cmd_planrun(args,launch:bool):
     print('  Context7:   ','ready' if ctx7_cmd() else 'missing')
     print('  Graphify:   ','ready' if (state/'graphify'/'graph.json').exists() else 'not built')
     print('  CRG:        ', 'ready' if plan.get('crg',{}).get('impact_cached') else ('installed/not-ready' if crg_cmd() else 'missing'))
-    print('  prompt:     ',state/'state'/'current-run.md')
+    print('  prompt:     ',task_state(state)/'state'/'current-run.md')
     if launch:
         claude=shutil.which('claude')
         if not claude: raise SystemExit('Claude CLI missing. Use ai plan to only prepare.')
-        os.execvpe(claude,[claude,prompt],crg_env(state))
+        env=crg_env(state)
+        env['AI_TASK_ID']=load_json(task_state(state)/'task.json',{})['id']
+        os.execvpe(claude,[claude,prompt],env)
 
 
 def cmd_skill(args):
@@ -691,7 +725,7 @@ def cmd_skill(args):
 
 def cmd_handoff(args):
     root=git_root(); state=repo_state(root); caps=context_caps(args.profile)
-    plan=load_json(state/'state'/'current-plan.json',{})
+    plan=load_json(task_state(state)/'state'/'current-plan.json',{})
     scope=collect_scope(root,args.base)
     payload={
       'task': args.task or plan.get('task','Current task'),
@@ -706,11 +740,8 @@ def cmd_handoff(args):
       'created_at': int(time.time())
     }
     text=json.dumps(payload,indent=2)
-    if len(text)>caps['handoff_chars']:
-        payload['changed_files']=payload['changed_files'][:5]
-        payload['evidence']=payload['evidence'][:3]
-        text=json.dumps(payload,indent=2)
-    p=state/'handoffs'/f"handoff-{int(time.time())}.json"; p.write_text(text+'\n')
+    enforce_budget(text+'\n',caps['handoff_chars'],'handoff')
+    p=task_state(state)/'handoffs'/f"handoff-{uuid.uuid4().hex}.json"; p.write_text(text+'\n')
     record_metric(state,'handoff',profile=args.profile,chars=len(text),files=len(payload['changed_files']))
     print('Handoff:',p)
     print(text)
@@ -736,7 +767,7 @@ def cmd_optimize(args):
 def cmd_status(args):
     root=git_root(); state=repo_state(root); print('Repository:',root); print('State:',state)
     print('Profile:', 'present' if (state/'project-profile.json').exists() else 'missing')
-    print('Contract:', 'present' if (state/'contracts/current-pr.yml').exists() else 'missing')
+    print('Contract:', 'present' if (task_state(state)/'contracts/current-pr.yml').exists() else 'missing')
     print('Graphify:', 'ready' if (state/'graphify/graph.json').exists() else 'off')
     print('Context7 mappings:',len(load_json(state/'context7-libraries.json',{})))
     enabled=sum(1 for x in enabled_skills(state).values() if x['enabled']); print('Skills:',enabled,'enabled /',len(enabled_skills(state)),'installed')
@@ -766,14 +797,90 @@ def cmd_metrics(args):
     lines=p.read_text().splitlines(); print('Events:',len(lines)); print('\n'.join(lines[-10:]))
 
 
+GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
+
+
+def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
+    digest=hashlib.sha256()
+    for value in (safe_head(root), run(['git','rev-parse','--verify',plan['scope']['base']],cwd=root),
+                  run(['git','ls-files','--stage'],cwd=root), run(['git','diff','--binary','HEAD'],cwd=root), json.dumps(plan,sort_keys=True)):
+        digest.update(value.encode()); digest.update(b'\0')
+    names=run(['git','ls-files','-z','--cached','--others','--exclude-standard'],cwd=root).split('\0')
+    for name in sorted(set(filter(None,names))):
+        path=root/name
+        digest.update(name.encode()); digest.update(b'\0')
+        if path.is_symlink(): digest.update(os.readlink(path).encode())
+        elif path.is_file():
+            digest.update(str(path.stat().st_mode).encode())
+            with path.open('rb') as f:
+                for block in iter(lambda:f.read(1024*1024),b''): digest.update(block)
+        else: digest.update(b'<missing>')
+    for path in [state/'rules.json',state/'skill-overrides.json',*sorted((task_state(state)/'contracts').glob('*'))]:
+        if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
+    return digest.hexdigest()
+
+
+def current_plan(state:Path)->dict:
+    plan=load_json(task_state(state)/'state/current-plan.json',{})
+    if not plan: raise SystemExit('NEEDS_HUMAN: run ai plan for this task first.')
+    return plan
+
+
+def cmd_gate(args):
+    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    command=args.command
+    if command[:1]==['--']: command=command[1:]
+    if not command: raise SystemExit('A gate requires an executable command after --.')
+    before=evidence_fingerprint(root,state,plan)
+    directory=task_state(state)/'gates'
+    log=directory/(args.name+'-'+uuid.uuid4().hex+'.log')
+    env=dict(os.environ,AI_TASK_ID=TASK_ID or os.environ.get('AI_TASK_ID','') or run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root))
+    with log.open('w') as out:
+        try:
+            result=subprocess.run(command,cwd=root,env=env,stdout=out,stderr=subprocess.STDOUT,timeout=args.timeout)
+            code=result.returncode
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            out.write(str(exc)); code=124
+    after=evidence_fingerprint(root,state,current_plan(state))
+    verdict=None
+    if args.name not in ('checks','regression'):
+        try:
+            verdict=json.loads(log.read_text(errors='replace').strip().splitlines()[-1])
+        except (ValueError,IndexError): pass
+    valid_verdict=(isinstance(verdict,dict) and verdict.get('status')=='PASS'
+        and isinstance(verdict.get('evidence'),list) and bool(verdict['evidence'])
+        and all(isinstance(item,str) and item.strip() for item in verdict['evidence']))
+    passed=code==0 and before==after and (args.name in ('checks','regression') or valid_verdict)
+    save_json(directory/(args.name+'.json'),{'gate':args.name,'passed':passed,'exit_code':code,
+        'verdict':verdict,'fingerprint':after,'command':command,'log':str(log),'log_hash':hashlib.sha256(log.read_bytes()).hexdigest(),'created_at':time.time()})
+    print(f"{args.name}: {'PASS' if passed else 'FAIL'} | {log}")
+    if before!=after: print('Repository or task changed during gate; rerun against the final state.')
+    if args.name not in ('checks','regression') and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')
+    if not passed: raise SystemExit(1)
+
+
 def cmd_ready(args):
-    root=git_root(); state=repo_state(root); bad=contamination(root)
-    if bad:
-        print('ZERO_FOOTPRINT: FAIL'); [print(' ',x) for x in bad]; raise SystemExit(2)
-    # Use the same orchestration prompt but explicitly final-gate only.
-    task='Final PR readiness: Cleanup -> checks -> provenance -> Ponytail -> PR summary. Do not change behavior.'
-    ns=argparse.Namespace(task=task,profile=args.profile,base=args.base,figma=None,no_figma=True,skill=None)
-    cmd_planrun(ns,args.launch)
+    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    if contamination(root): raise SystemExit('FAILED: zero-footprint check failed.')
+    risk=classify(collect_scope(root,plan['scope']['base']),plan['profile'])
+    required=list(GATES[:7])
+    if plan['profile']!='fast' or risk['risk']!='LOW' or plan['risk']['risk']!='LOW': required.append('review')
+    if risk['security'] or plan['risk']['security']: required.append('security')
+    if plan.get('figma'): required.append('design')
+    fingerprint=evidence_fingerprint(root,state,plan)
+    missing=[]; failed=[]
+    for name in required:
+        record=load_json(task_state(state)/'gates'/(name+'.json'),{})
+        if record.get('fingerprint')!=fingerprint: missing.append(name); continue
+        log=Path(record.get('log',''))
+        if not log.is_file() or hashlib.sha256(log.read_bytes()).hexdigest()!=record.get('log_hash'): missing.append(name)
+        elif not record.get('passed'): failed.append(name)
+    status='FAILED' if failed else ('NEEDS_HUMAN' if missing else 'PR_READY')
+    save_json(task_state(state)/'state/readiness.json',{'status':status,'required':required,'missing_or_stale':missing,'failed':failed,'fingerprint':fingerprint})
+    print(status)
+    if missing: print('Missing or stale: '+', '.join(missing))
+    if failed: print('Failed: '+', '.join(failed))
+    if status!='PR_READY': raise SystemExit(1)
 
 
 def parser():
@@ -785,7 +892,8 @@ def parser():
         q=sp.add_parser(name); q.add_argument('task',nargs='?',default=''); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--figma'); q.add_argument('--no-figma',action='store_true'); q.add_argument('--skill',action='append',default=None,help='Force a skill (repeatable; still capped by profile)')
     rev=sp.add_parser('review'); rev.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); rev.add_argument('--base',default='main'); rev.add_argument('--refresh',action='store_true'); rev.add_argument('--build',action='store_true'); rev.add_argument('--no-launch',dest='launch',action='store_false',default=True)
     imp=sp.add_parser('impact'); imp.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); imp.add_argument('--base',default='main'); imp.add_argument('--refresh',action='store_true'); imp.add_argument('--build',action='store_true')
-    q=sp.add_parser('ready'); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--no-launch',dest='launch',action='store_false',default=True)
+    q=sp.add_parser('ready'); q.add_argument('--no-launch',action='store_true',help=argparse.SUPPRESS)
+    gate=sp.add_parser('gate'); gate.add_argument('name',choices=GATES); gate.add_argument('--timeout',type=int,default=600); gate.add_argument('command',nargs=argparse.REMAINDER)
     sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('metrics'); sp.add_parser('path'); sp.add_parser('optimize')
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default='main'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next')
@@ -794,11 +902,15 @@ def parser():
     f=sp.add_parser('figma'); fs=f.add_subparsers(dest='figma_cmd',required=True); fs.add_parser('doctor'); fsetup=fs.add_parser('setup'); fsetup.add_argument('--claude-only',action='store_true'); fsetup.add_argument('--codex-only',action='store_true')
     c=sp.add_parser('crg'); cs=c.add_subparsers(dest='crg_cmd',required=True); cs.add_parser('doctor'); cs.add_parser('build'); st=cs.add_parser('status'); up=cs.add_parser('update'); up.add_argument('--base',default='main'); up.add_argument('--brief',action='store_true',default=True); de=cs.add_parser('detect'); de.add_argument('--base',default='main'); de.add_argument('--brief',action='store_true',default=True)
     g=sp.add_parser('graph'); gs=g.add_subparsers(dest='graph_cmd',required=True); gs.add_parser('doctor'); gs.add_parser('build'); gs.add_parser('sync'); q=gs.add_parser('query'); q.add_argument('query'); pa=gs.add_parser('path'); pa.add_argument('start'); pa.add_argument('end'); e=gs.add_parser('explain'); e.add_argument('node')
+    for command in sp.choices.values():
+        command.add_argument('--task-id',help='Task identity; defaults to AI_TASK_ID or current branch/worktree')
     return p
 
 
 def main():
+    global TASK_ID
     p=parser(); args=p.parse_args()
+    TASK_ID=getattr(args,'task_id',None)
     if not args.cmd: p.print_help(); return
     if args.cmd=='init': cmd_init(args)
     elif args.cmd=='run': cmd_planrun(args,True)
@@ -806,13 +918,14 @@ def main():
     elif args.cmd=='review': cmd_review(args)
     elif args.cmd=='impact': cmd_impact(args)
     elif args.cmd=='ready': cmd_ready(args)
+    elif args.cmd=='gate': cmd_gate(args)
     elif args.cmd=='status': cmd_status(args)
     elif args.cmd=='doctor': cmd_doctor(args)
     elif args.cmd=='metrics': cmd_metrics(args)
     elif args.cmd=='skill': cmd_skill(args)
     elif args.cmd=='handoff': cmd_handoff(args)
     elif args.cmd=='optimize': cmd_optimize(args)
-    elif args.cmd=='path': print(repo_state(git_root()))
+    elif args.cmd=='path': print(task_state(repo_state(git_root())))
     elif args.cmd=='rules': cmd_rules(args)
     elif args.cmd=='docs': cmd_docs(args)
     elif args.cmd=='figma': cmd_figma(args)

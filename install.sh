@@ -4,13 +4,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 BIN_HOME="${HOME}/.local/bin"
 DEST="$DATA_HOME/ai-agent-stack"
-mkdir -p "$DATA_HOME" "$BIN_HOME" "${XDG_CONFIG_HOME:-$HOME/.config}/ai-agent-stack/repos"
-rm -rf "$DEST"
-mkdir -p "$DEST"
-cp -R "$SRC"/. "$DEST"/
-rm -rf "$DEST/.git" 2>/dev/null || true
-chmod +x "$DEST/bin/ai" "$DEST/ai_stack/cli.py"
-ln -sfn "$DEST/bin/ai" "$BIN_HOME/ai"
+python3 "$SRC/ai_stack/install.py" "$SRC" "$DEST" "$BIN_HOME"
 cat <<EOF
 Installed AI Agent Stack $($DEST/bin/ai --version) globally.
 

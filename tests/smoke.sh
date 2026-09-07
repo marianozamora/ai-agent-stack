@@ -30,7 +30,7 @@ env "${E[@]}" "$AI" optimize >/dev/null
 [ -z "$(git status --porcelain)" ]
 STATE="$(env "${E[@]}" "$AI" path)"
 [ -f "$STATE/state/current-plan.json" ]
-[ -f "$STATE/metrics.jsonl" ]
-[ -f "$STATE/skill-overrides.json" ]
+[ -f "$STATE/../../metrics.jsonl" ]
+[ -f "$STATE/../../skill-overrides.json" ]
 find "$STATE/handoffs" -type f | grep -q .
 printf '%s\n' 'smoke: PASS'

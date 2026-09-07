@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+- Require fresh recorded gate evidence before certifying PR_READY.
+- Isolate task artifacts by task ID and checkout; preserve shared repository preferences.
+- Reject oversized orchestration/review context and handoffs.
+- Stage and verify installations with rollback on activation failure.
+- Add Linux/macOS CI and regression tests for gates, budgets, isolation and installation recovery.
+
 ## 0.7.0
 - Added lazy Skills Engine with 8 strategies.
 - Added hard Token Efficiency Policy and per-profile context/skill/finding budgets.
