@@ -87,6 +87,21 @@ class WorkflowTests(unittest.TestCase):
         self.ai('rules', 'add', 'New acceptance rule')
         self.assertIn('NEEDS_HUMAN', self.ai('ready', ok=False))
 
+    def test_doctor_reports_status_and_corrupt_state_files(self):
+        self.plan()
+        clean = self.ai('doctor')
+        self.assertIn('State files: PASS', clean)
+        self.assertIn('Zero-footprint: PASS', clean)
+
+        state_root = Path(self.ai('path').strip()).parents[1]
+        (state_root / 'rules.json').write_text('{"not":"closed"')
+        corrupt = self.ai('doctor')
+        self.assertIn('State files: CORRUPT (1)', corrupt)
+        self.assertIn('rules.json', corrupt)
+        # A corrupt rules.json still doesn't crash the rest of the command,
+        # and load_json() keeps degrading it to [] rather than raising.
+        self.assertIn('Zero-footprint: PASS', corrupt)
+
     def test_task_and_worktree_isolation(self):
         self.plan('--task-id', 'one')
         one = Path(self.ai('path', '--task-id', 'one').strip())

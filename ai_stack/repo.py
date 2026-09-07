@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json, shutil, time
-from core import STACK_ROOT, VERSION, contamination, git_root, load_json, profile_repo, repo_state, safe_head, save_json, task_state
+from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, safe_head, save_json, task_state
 from crg import crg_cmd, crg_exec
 from skills import enabled_skills, skill_registry
 from validators import run_codex_json
@@ -111,6 +111,12 @@ def cmd_doctor(args):
         print('\nRepository:',root); print('External state:',state)
         print('Zero-footprint:', 'PASS' if not bad else 'FAIL')
         for x in bad: print('  tracked:',x)
+        state_files=['rules.json','lessons.json','patterns.json','validators.json',
+            'prompt-overrides.json','prompt-experiments.json','skill-overrides.json',
+            'context7-libraries.json','project-profile.json','project-deep-profile.json']
+        corrupt=[name for name in state_files if json_file_health(state/name)=='corrupt']
+        print('State files:', 'PASS' if not corrupt else f'CORRUPT ({len(corrupt)})')
+        for name in corrupt: print('  corrupt:',state/name)
     except SystemExit: pass
 
 

@@ -5,13 +5,13 @@ from typing import Any
 from workflow import ORDER
 
 
-VERSION = "0.9.4"
-
-
 TASK_ID = None
 
 
 STACK_ROOT = Path(__file__).resolve().parents[1]
+
+
+VERSION = (STACK_ROOT/"VERSION").read_text().strip()
 
 
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -68,6 +68,25 @@ def shasum(s:str)->str: return hashlib.sha256(s.encode()).hexdigest()
 def load_json(p:Path, default):
     try: return json.loads(p.read_text())
     except Exception: return default
+
+
+def json_file_health(p:Path)->str:
+    """'missing' | 'ok' | 'corrupt' for one JSON state file.
+
+    load_json() itself stays lenient on purpose — it has ~40 call sites across
+    every module, all written assuming it never raises, so changing its
+    contract would ripple everywhere for no real benefit. This is the
+    detection path `ai doctor` uses instead: a corrupt rules.json/lessons.json/
+    validators.json currently degrades silently to load_json's default (often
+    `{}`/`[]`), which looks identical to "nothing configured yet" — this makes
+    that distinguishable and visible.
+    """
+    if not p.is_file(): return 'missing'
+    try:
+        json.loads(p.read_text())
+        return 'ok'
+    except Exception:
+        return 'corrupt'
 
 
 def save_json(p:Path,obj:Any):
