@@ -51,3 +51,21 @@ CLI-first by default. Library IDs are cached in `context7-libraries.json`; query
 ## Graphify
 
 The wrapper sets `GRAPHIFY_OUT` to the external per-repo state directory. This uses Graphify without placing `graphify-out/` in the checkout. `EXTRACTED` edges count as stronger evidence; `INFERRED` edges are discovery hints and cannot independently block a PR.
+
+## v0.7 Skills Engine and token funnel
+
+Skills are lightweight strategies. Routing reads only `skills/registry.json`; prompt bodies are loaded only after selection and are capped by profile (fast=1, standard=2, strict=3). Work-repository state is never used for framework configuration.
+
+```text
+Task
+  -> deterministic task type
+  -> compact skill metadata
+  -> select <= profile cap
+  -> load selected skill prompts only
+  -> PR Contract
+  -> CRG/Graphify/CodeGraph/Context7 only by need
+  -> snippets
+  -> raw source only with evidence
+```
+
+The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.

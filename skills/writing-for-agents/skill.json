@@ -1,0 +1,23 @@
+{
+  "name": "writing-for-agents",
+  "version": 1,
+  "category": "efficiency",
+  "cost": "low",
+  "priority": 30,
+  "task_types": [
+    "feature",
+    "architecture",
+    "planning"
+  ],
+  "triggers": [
+    "prompt",
+    "instructions",
+    "agent"
+  ],
+  "always_consider": true,
+  "stages": [
+    "remove redundancy",
+    "conditionalize context",
+    "compact outputs"
+  ]
+}

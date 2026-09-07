@@ -1,0 +1,23 @@
+{
+  "name": "tdd",
+  "version": 1,
+  "category": "implementation",
+  "cost": "low",
+  "priority": 70,
+  "task_types": [
+    "bug",
+    "feature"
+  ],
+  "triggers": [
+    "test",
+    "behavior",
+    "regression"
+  ],
+  "always_consider": true,
+  "stages": [
+    "choose testing seam",
+    "red",
+    "green",
+    "regression"
+  ]
+}

@@ -1,4 +1,4 @@
-version: 4
+version: 5
 
 default_profile: standard
 
@@ -42,6 +42,9 @@ reviewers:
   security: strong_codex
 
 pipeline:
+  - phase: skill_routing
+    tool: skills_engine
+    policy: lazy_load_selected_only
   - phase: contract
     tool: pr_contract
   - phase: design_contract
@@ -120,6 +123,11 @@ limits:
   max_cleanup_ratio_of_original_diff: 0.15
   diff_first: true
   broad_repo_crawl: false
+  model_debate_loops: false
+  progressive_context: true
+  one_tool_per_question: true
+  cache_before_fetch: true
+  pass_output: minimal
 
 human_required:
   - destructive_or_irreversible_change

@@ -1,0 +1,23 @@
+{
+  "name": "prototype",
+  "version": 1,
+  "category": "exploration",
+  "cost": "medium",
+  "priority": 80,
+  "task_types": [
+    "prototype",
+    "design"
+  ],
+  "triggers": [
+    "prototype",
+    "spike",
+    "poc",
+    "feasibility"
+  ],
+  "stages": [
+    "question",
+    "smallest experiment",
+    "evidence",
+    "discard-or-promote"
+  ]
+}

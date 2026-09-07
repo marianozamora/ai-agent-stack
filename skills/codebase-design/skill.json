@@ -1,0 +1,23 @@
+{
+  "name": "codebase-design",
+  "version": 1,
+  "category": "quality",
+  "cost": "low",
+  "priority": 60,
+  "task_types": [
+    "architecture",
+    "design"
+  ],
+  "triggers": [
+    "refactor",
+    "architecture",
+    "module",
+    "boundary"
+  ],
+  "stages": [
+    "identify seam",
+    "preserve dependency direction",
+    "locality",
+    "verify"
+  ]
+}

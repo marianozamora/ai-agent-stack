@@ -1,5 +1,21 @@
 # AI Agent Stack
 
+## v0.7 Skills + token efficiency
+
+Skills are strategies, not additional agents. The router reads only compact registry metadata and lazy-loads at most 1/2/3 skill prompts in fast/standard/strict.
+
+```bash
+ai skill list
+ai skill list --task "login regression"
+ai skill explain diagnosing-bugs
+ai skill dry-run tdd
+ai handoff "continue auth fix" --next "run focused regression test"
+ai optimize
+```
+
+Token policy: classify first, progressive disclosure, one tool per question, diff-first review, cache before fetch, evidence before model debate, compact PASS outputs, and hard per-profile budgets. All mutable state remains under `~/.config/ai-agent-stack/repos/<repo-id>/`.
+
+
 A **zero-footprint**, token-aware orchestration layer for Claude Code + Codex over existing repositories.
 
 It combines:
@@ -27,7 +43,7 @@ It combines:
 ## Install
 
 ```bash
-unzip ai-agent-stack-v0.6.0.zip
+unzip ai-agent-stack-v0.7.0.zip
 cd ai-agent-stack
 ./install.sh
 ```
@@ -67,6 +83,18 @@ The external repo state can be inspected with:
 ai path
 ai status
 ```
+
+## Token budgets
+
+The Context Governor enforces bounded defaults instead of unlimited context:
+
+| Profile | Skills | Raw files | Review files | Findings | Context7 queries | Review rounds |
+|---|---:|---:|---:|---:|---:|---:|
+| fast | 1 | 4 | 5 | 3 | 1 | 0 |
+| standard | 2 | 8 | 10 | 3 | 3 | 1 |
+| strict | 3 | 12 | 15 | 5 | 5 | 1 |
+
+Strict means stronger evidence/review, not unlimited agent debate.
 
 ## Per-repository rules
 

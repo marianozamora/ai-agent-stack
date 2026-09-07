@@ -1,0 +1,27 @@
+{
+  "name": "diagnosing-bugs",
+  "version": 1,
+  "category": "debugging",
+  "cost": "medium",
+  "priority": 100,
+  "task_types": [
+    "bug"
+  ],
+  "triggers": [
+    "bug",
+    "regression",
+    "failing test",
+    "exception",
+    "crash",
+    "timeout"
+  ],
+  "stages": [
+    "reproduce",
+    "minimize",
+    "rank hypotheses",
+    "instrument",
+    "fix",
+    "regression test",
+    "cleanup"
+  ]
+}

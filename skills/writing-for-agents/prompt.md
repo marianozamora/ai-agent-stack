@@ -1,0 +1,1 @@
+Optimize agent instructions for context load. Remove generic advice the model already knows, duplicate constraints, repeated repository facts, and unconditional specialist guidance. Prefer short invariants, structured contracts, conditional loading, and compact output schemas. Preserve constraints that are project-specific, safety-critical, or easy to violate.

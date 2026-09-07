@@ -1,0 +1,1 @@
+Decompose work into independently valuable vertical slices rather than layer-by-layer tickets. Each ticket should have a narrow objective, acceptance criteria, affected seam, tests/evidence, dependencies, and a size suitable for a fresh agent context. Prefer tracer-bullet slices that cross the minimum required layers end-to-end.

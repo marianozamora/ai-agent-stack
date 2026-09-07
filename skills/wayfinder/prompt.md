@@ -1,0 +1,1 @@
+For large or ambiguous work, map decisions rather than implementation tasks. Identify the smallest set of unresolved architectural/product decisions, gather targeted evidence for each, record chosen direction and rejected alternatives concisely, and stop once implementation can proceed without reopening major decisions. Avoid broad codebase reading.

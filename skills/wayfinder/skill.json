@@ -1,0 +1,22 @@
+{
+  "name": "wayfinder",
+  "version": 1,
+  "category": "planning",
+  "cost": "high",
+  "priority": 90,
+  "task_types": [
+    "architecture"
+  ],
+  "triggers": [
+    "architecture",
+    "migration",
+    "redesign",
+    "multi-repo"
+  ],
+  "stages": [
+    "open decisions",
+    "evidence",
+    "decision map",
+    "exit criteria"
+  ]
+}

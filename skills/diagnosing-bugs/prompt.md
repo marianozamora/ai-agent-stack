@@ -1,0 +1,1 @@
+Use evidence-first debugging. Do not commit to a root-cause hypothesis before obtaining a reproduction or concrete failing signal. Minimize the failure, rank a small number of hypotheses, instrument only discriminating points, implement the smallest fix, add a focused regression test, then remove diagnostic scaffolding. Tests and reproducible evidence outrank model speculation.

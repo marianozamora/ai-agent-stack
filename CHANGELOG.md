@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+- Added lazy Skills Engine with 8 strategies.
+- Added hard Token Efficiency Policy and per-profile context/skill/finding budgets.
+- Added deterministic task classification and skill routing.
+- Added `ai skill list|explain|enable|disable|dry-run`.
+- Added compact external `ai handoff`.
+- Added `ai optimize` prompt/context audit.
+- Added semantic repository fingerprints, task cache keys, and plan metrics.
+- Reduced strict review rounds to one by default; rigor escalates evidence/model strength, not unlimited debate.
+- Preserved zero-footprint work repositories.
+
 ## 0.6.0
 
 - Add Code Review Graph as the Review Intelligence Engine.

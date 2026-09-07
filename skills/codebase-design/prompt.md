@@ -1,0 +1,1 @@
+Evaluate design against this repository before generic principles. Preserve established dependency direction, useful module boundaries, locality, deep interfaces, and existing architectural seams. Prefer minimal changes with high leverage. Flag new coupling or bypassed layers only when supported by concrete repository evidence.

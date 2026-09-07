@@ -1,0 +1,22 @@
+{
+  "name": "to-tickets",
+  "version": 1,
+  "category": "planning",
+  "cost": "medium",
+  "priority": 50,
+  "task_types": [
+    "planning"
+  ],
+  "triggers": [
+    "tickets",
+    "epic",
+    "decompose",
+    "break down"
+  ],
+  "stages": [
+    "vertical slices",
+    "acceptance",
+    "dependencies",
+    "order"
+  ]
+}

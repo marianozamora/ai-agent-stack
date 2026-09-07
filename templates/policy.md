@@ -153,3 +153,15 @@ A PR is ready only when:
 - `ai-provenance-scan` checks added code/docs, commit messages in the PR range, and generated PR artifacts.
 - Never silently rewrite existing git history. If a commit message fails, return `NEEDS_ATTENTION` with the commit hash.
 - Legitimate product references must use a narrow `$AI_REPO_STATE/provenance.allow` regex rather than globally disabling the gate.
+
+
+## Token efficiency
+
+- Skills are lazy-loaded after deterministic routing; never load the full skills catalog into an agent prompt.
+- Fast/standard/strict cap active skills at 1/2/3, raw files at 4/8/12, and findings at 3/3/5.
+- Prefer metadata and graph summaries before snippets; prefer snippets before complete files.
+- Route one structural question to the most appropriate engine instead of querying every graph tool.
+- Reuse Context7 mappings/docs, project profile, Graphify graph, CRG DB and semantic fingerprints before fetching/rebuilding.
+- Tests and static evidence arbitrate disagreement. Do not spend turns on agent debates.
+- A passing reviewer/gate returns a compact PASS result.
+- Retry a failed approach only within profile budget; then escalate or require human input.

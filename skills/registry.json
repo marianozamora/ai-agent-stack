@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "policy": "metadata-only routing; prompt bodies are lazy-loaded after selection",
+  "skills": {
+    "diagnosing-bugs": {
+      "enabled": true,
+      "category": "debugging",
+      "cost": "medium",
+      "priority": 100,
+      "task_types": [
+        "bug"
+      ],
+      "triggers": [
+        "bug",
+        "regression",
+        "failing test",
+        "exception",
+        "crash",
+        "timeout"
+      ],
+      "stages": [
+        "reproduce",
+        "minimize",
+        "rank hypotheses",
+        "instrument",
+        "fix",
+        "regression test",
+        "cleanup"
+      ]
+    },
+    "handoff": {
+      "enabled": true,
+      "category": "workflow",
+      "cost": "tiny",
+      "priority": 20,
+      "task_types": [],
+      "triggers": [
+        "handoff",
+        "continue tomorrow",
+        "switch model"
+      ],
+      "stages": [
+        "state",
+        "evidence",
+        "next action"
+      ]
+    },
+    "prototype": {
+      "enabled": true,
+      "category": "exploration",
+      "cost": "medium",
+      "priority": 80,
+      "task_types": [
+        "prototype",
+        "design"
+      ],
+      "triggers": [
+        "prototype",
+        "spike",
+        "poc",
+        "feasibility"
+      ],
+      "stages": [
+        "question",
+        "smallest experiment",
+        "evidence",
+        "discard-or-promote"
+      ]
+    },
+    "writing-for-agents": {
+      "enabled": true,
+      "category": "efficiency",
+      "cost": "low",
+      "priority": 30,
+      "task_types": [
+        "feature",
+        "architecture",
+        "planning"
+      ],
+      "triggers": [
+        "prompt",
+        "instructions",
+        "agent"
+      ],
+      "always_consider": true,
+      "stages": [
+        "remove redundancy",
+        "conditionalize context",
+        "compact outputs"
+      ]
+    },
+    "wayfinder": {
+      "enabled": true,
+      "category": "planning",
+      "cost": "high",
+      "priority": 90,
+      "task_types": [
+        "architecture"
+      ],
+      "triggers": [
+        "architecture",
+        "migration",
+        "redesign",
+        "multi-repo"
+      ],
+      "stages": [
+        "open decisions",
+        "evidence",
+        "decision map",
+        "exit criteria"
+      ]
+    },
+    "tdd": {
+      "enabled": true,
+      "category": "implementation",
+      "cost": "low",
+      "priority": 70,
+      "task_types": [
+        "bug",
+        "feature"
+      ],
+      "triggers": [
+        "test",
+        "behavior",
+        "regression"
+      ],
+      "always_consider": true,
+      "stages": [
+        "choose testing seam",
+        "red",
+        "green",
+        "regression"
+      ]
+    },
+    "codebase-design": {
+      "enabled": true,
+      "category": "quality",
+      "cost": "low",
+      "priority": 60,
+      "task_types": [
+        "architecture",
+        "design"
+      ],
+      "triggers": [
+        "refactor",
+        "architecture",
+        "module",
+        "boundary"
+      ],
+      "stages": [
+        "identify seam",
+        "preserve dependency direction",
+        "locality",
+        "verify"
+      ]
+    },
+    "to-tickets": {
+      "enabled": true,
+      "category": "planning",
+      "cost": "medium",
+      "priority": 50,
+      "task_types": [
+        "planning"
+      ],
+      "triggers": [
+        "tickets",
+        "epic",
+        "decompose",
+        "break down"
+      ],
+      "stages": [
+        "vertical slices",
+        "acceptance",
+        "dependencies",
+        "order"
+      ]
+    }
+  }
+}

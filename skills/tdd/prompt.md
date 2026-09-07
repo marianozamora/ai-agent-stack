@@ -1,0 +1,1 @@
+Choose an agreed public testing seam before adding tests. Express one externally meaningful behavior, make it fail for the right reason, implement the smallest change to pass, then add only regression cases justified by the contract or discovered failure. Avoid testing private implementation details unless the repository already treats them as stable seams.

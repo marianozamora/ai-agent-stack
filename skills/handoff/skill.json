@@ -1,0 +1,18 @@
+{
+  "name": "handoff",
+  "version": 1,
+  "category": "workflow",
+  "cost": "tiny",
+  "priority": 20,
+  "task_types": [],
+  "triggers": [
+    "handoff",
+    "continue tomorrow",
+    "switch model"
+  ],
+  "stages": [
+    "state",
+    "evidence",
+    "next action"
+  ]
+}

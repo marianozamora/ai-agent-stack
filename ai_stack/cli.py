@@ -4,7 +4,7 @@ import argparse, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
 
@@ -40,12 +40,13 @@ def repo_state(root:Path|None=None, create=True)->Path:
     root=root or git_root(); rid,remote=remote_id(root)
     d=CONFIG_ROOT/"repos"/rid
     if create:
-        for sub in ["contracts","state","graphify","docs-cache","code-review-graph","review"]: (d/sub).mkdir(parents=True,exist_ok=True)
+        for sub in ["contracts","state","graphify","docs-cache","code-review-graph","review","task-cache","handoffs","skill-state"]: (d/sub).mkdir(parents=True,exist_ok=True)
         meta={"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())}
         (d/"repo.json").write_text(json.dumps(meta,indent=2)+"\n")
         if not (d/"rules.json").exists(): (d/"rules.json").write_text("[]\n")
         if not (d/"observations.json").exists(): (d/"observations.json").write_text("[]\n")
         if not (d/"context7-libraries.json").exists(): (d/"context7-libraries.json").write_text("{}\n")
+        if not (d/"skill-overrides.json").exists(): (d/"skill-overrides.json").write_text("{}\n")
     return d
 
 
@@ -126,11 +127,113 @@ def classify(scope:dict, profile:str)->dict:
 
 def context_caps(profile:str)->dict:
     return {
-      'fast': {'raw_files':4,'review_files':6,'agent_calls':3,'reviews':0,'docs_queries':1,'graph_queries':2},
-      'standard': {'raw_files':8,'review_files':12,'agent_calls':5,'reviews':1,'docs_queries':3,'graph_queries':4},
-      'strict': {'raw_files':12,'review_files':18,'agent_calls':7,'reviews':2,'docs_queries':5,'graph_queries':6}
+      'fast': {
+        'raw_files':4,'review_files':5,'agent_calls':3,'reviews':0,'docs_queries':1,'graph_queries':2,
+        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1
+      },
+      'standard': {
+        'raw_files':8,'review_files':10,'agent_calls':5,'reviews':1,'docs_queries':3,'graph_queries':4,
+        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2
+      },
+      'strict': {
+        'raw_files':12,'review_files':15,'agent_calls':7,'reviews':1,'docs_queries':5,'graph_queries':6,
+        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2
+      }
     }[profile]
 
+
+def skill_root()->Path:
+    return STACK_ROOT/'skills'
+
+
+def skill_registry()->dict:
+    p=skill_root()/'registry.json'
+    return load_json(p,{"skills":{}})
+
+
+def skill_overrides(state:Path)->dict:
+    return load_json(state/'skill-overrides.json',{})
+
+
+def enabled_skills(state:Path)->dict:
+    reg=skill_registry().get('skills',{})
+    overrides=skill_overrides(state)
+    out={}
+    for name,meta in reg.items():
+        m=dict(meta); m['enabled']=bool(overrides.get(name,m.get('enabled',True)))
+        out[name]=m
+    return out
+
+
+def classify_task(task:str,figma:str|None=None)->str:
+    t=(task or '').lower()
+    if figma or 'figma.com/' in t: return 'design'
+    if re.search(r'\b(bug|regression|exception|crash|failing|fails|failure|broken|incorrect|timeout|403|401|500)\b',t): return 'bug'
+    if re.search(r'\b(migrate|migration|redesign|architecture|refactor|multi[- ]repo|rewrite|replace|deprecate)\b',t): return 'architecture'
+    if re.search(r'\b(prototype|spike|proof of concept|poc|feasibility|can we|whether)\b',t): return 'prototype'
+    if re.search(r'\b(ticket|tickets|epic|break down|decompose|roadmap)\b',t): return 'planning'
+    return 'feature'
+
+
+def select_skills(state:Path,task:str,profile:str,figma:str|None=None, explicit:list[str]|None=None)->list[str]:
+    caps=context_caps(profile); registry=enabled_skills(state); explicit=explicit or []
+    if explicit:
+        unknown=[x for x in explicit if x not in registry]
+        if unknown: raise SystemExit('Unknown skill(s): '+', '.join(unknown))
+        return [x for x in explicit if registry[x]['enabled']][:caps['skills']]
+    kind=classify_task(task,figma)
+    scores=[]
+    tl=(task or '').lower()
+    for name,meta in registry.items():
+        if not meta['enabled']: continue
+        score=0
+        if kind in meta.get('task_types',[]): score+=5
+        if kind=='bug' and meta.get('category')=='debugging': score+=3
+        if kind=='prototype' and name=='prototype': score+=3
+        if kind=='architecture' and name=='wayfinder': score+=3
+        if kind=='planning' and name=='to-tickets': score+=3
+        for trig in meta.get('triggers',[]):
+            if trig.lower() in tl: score+=2
+        if meta.get('always_consider') and kind in ('feature','bug','design'): score+=1
+        if score: scores.append((score, int(meta.get('priority',0)), name))
+    scores.sort(reverse=True)
+    return [name for _,_,name in scores[:caps['skills']]]
+
+
+def load_skill_context(names:list[str], max_chars:int)->str:
+    if not names:return '(none)'
+    chunks=[]; used=0
+    for name in names:
+        p=skill_root()/name/'prompt.md'
+        if not p.exists(): continue
+        body=p.read_text().strip()
+        remaining=max_chars-used
+        if remaining<=0: break
+        if len(body)>remaining: body=body[:remaining].rstrip()+"\n[skill context truncated by budget]"
+        chunks.append(f"## Skill: {name}\n{body}")
+        used+=len(body)
+    return '\n\n'.join(chunks) if chunks else '(none)'
+
+
+def semantic_fingerprint(root:Path)->dict:
+    files=['package.json','tsconfig.json','pyproject.toml','go.mod','Cargo.toml','eslint.config.js','eslint.config.mjs','eslint.config.ts','biome.json','biome.jsonc']
+    out={}
+    for rel in files:
+        p=root/rel
+        if p.exists() and p.is_file():
+            try: out[rel]=hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+            except Exception: pass
+    return out
+
+
+def task_cache_key(root:Path,task:str,profile:str,base:str,skills:list[str])->str:
+    payload=json.dumps({"task":task,"profile":profile,"base":base,"skills":skills,"fingerprint":semantic_fingerprint(root)},sort_keys=True)
+    return shasum(payload)[:24]
+
+
+def record_metric(state:Path,event:str,**data):
+    p=state/'metrics.jsonl'; row={"ts":int(time.time()),"event":event,**data}
+    with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
 
 def ensure_contract(state:Path,task:str,figma:str|None=None):
     p=state/'contracts'/'current-pr.yml'
@@ -167,19 +270,92 @@ def rules_text(state:Path)->str:
     return '\n'.join(f"- [{r.get('scope','**')}] {r['rule']}" for r in rules)
 
 
-def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None)->str:
+def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None)->str:
     scope=collect_scope(root,base); risk=classify(scope,profile); caps=context_caps(profile)
+    selected_skills=select_skills(state,task,profile,figma,explicit_skills)
+    skill_context=load_skill_context(selected_skills, max(2000,caps['context_chars']//3))
     crg_text=''
     if profile!='fast' and crg_cmd():
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
         risk=elevate_risk(risk,parse_crg_risk(crg_text))
     ensure_contract(state,task,figma)
     graph=str(state/'graphify'/'graph.json')
-    prompt=f'''# AI Agent Stack orchestration\n\nTask: {task}\nProfile: {profile}\nBase: {base}\nRisk: {risk['risk']} ({risk['reason']})\nSecurity boundary: {risk['security']}\n\nExternal state (NEVER commit these files): {state}\nPR Contract: {state/'contracts/current-pr.yml'}\nDesign Contract: {(state/'contracts/current-design.yml') if figma else 'off'}\nGraphify graph: {graph if Path(graph).exists() else 'not built'}\nCode Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd() else 'missing')}\n\nRepository rules:\n{rules_text(state)}\n\nContext budget:\n- raw files <= {caps['raw_files']} unless evidence requires escalation\n- review files <= {caps['review_files']}\n- agent calls <= {caps['agent_calls']}\n- review rounds <= {caps['reviews']}\n- Context7 docs queries <= {caps['docs_queries']}\n- Graphify structural queries <= {caps['graph_queries']}\n\nContext order:\n1. PR/design contract\n2. Code Review Graph for diff impact, blast radius, affected flows, tests and minimal review context\n3. Graphify for macro architecture/routes/communities when CRG cannot answer the architecture question\n4. CodeGraph for exact symbol navigation when materially better than CRG\n5. Context7 ONLY for external library/framework/API documentation; prefer exact installed version and cached library IDs\n6. RTK for git/tests/lint/search output\n7. raw source reads only when needed to prove/implement something\n\nExternal docs policy:\n- Never rely on memory for version-sensitive library APIs when Context7 can verify them.\n- Query only the library/topic needed for the current implementation.\n- Do not dump broad documentation into context.\n- Repository code and tests remain the source of truth for project-specific behavior.\n\nCorrectness pipeline:\nBuilder -> deterministic checks -> regression check -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> Cleanup -> checks -> provenance gate -> Ponytail -> PR summary.\nPonytail judges project-specific quality; it does not impose SOLID or FP contrary to repo conventions.\nCleanup removes AI provenance/references and unnecessary comments without changing behavior.\n\nFigma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then discard raw design context.' if figma else 'off'}\n\nZero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.\n\nReturn terminal state PR_READY, NEEDS_HUMAN, or FAILED with concise evidence.\n'''
-    (state/'state'/'current-run.md').write_text(prompt)
-    save_json(state/'state'/'current-plan.json',{"task":task,"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
-    return prompt
+    prompt=f'''# AI Agent Stack orchestration
 
+Task: {task}
+Task type: {classify_task(task,figma)}
+Profile: {profile}
+Base: {base}
+Risk: {risk['risk']} ({risk['reason']})
+Security boundary: {risk['security']}
+
+External state (NEVER commit these files): {state}
+PR Contract: {state/'contracts/current-pr.yml'}
+Design Contract: {(state/'contracts/current-design.yml') if figma else 'off'}
+Graphify graph: {graph if Path(graph).exists() else 'not built'}
+Code Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd() else 'missing')}
+
+Repository rules:
+{rules_text(state)}
+
+Active skills (lazy-loaded; max {caps['skills']}): {', '.join(selected_skills) if selected_skills else 'none'}
+
+Skill instructions:
+{skill_context}
+
+Token Efficiency Policy:
+- Classify first; do not explore broadly before routing.
+- Progressive disclosure: metadata -> compact graph evidence -> snippets -> raw files.
+- Prefer one tool per question; do not call Graphify, CRG, CodeGraph and Context7 for the same need.
+- Reuse external repo state/cache; never rediscover stable project facts in every task.
+- Tests/static evidence arbitrate disagreements; do not create model-to-model debate loops.
+- PASS outputs must be minimal. Findings must be capped and actionable.
+- Escalate model/context only on concrete failed evidence, security/data risk, or unresolved high-risk ambiguity.
+
+Context budget:
+- raw files <= {caps['raw_files']} unless evidence requires escalation
+- review files <= {caps['review_files']}
+- agent calls <= {caps['agent_calls']}
+- review rounds <= {caps['reviews']}
+- Context7 docs queries <= {caps['docs_queries']}
+- Graphify structural queries <= {caps['graph_queries']}
+- active skills <= {caps['skills']}
+- findings <= {caps['findings']}
+- retries per failing approach <= {caps['retries']}
+- injected context target <= {caps['context_chars']} characters before evidence-driven escalation
+
+Context order:
+1. PR/design contract
+2. Code Review Graph for diff impact, blast radius, affected flows, tests and minimal review context
+3. Graphify for macro architecture/routes/communities when CRG cannot answer the architecture question
+4. CodeGraph for exact symbol navigation when materially better than CRG
+5. Context7 ONLY for external library/framework/API documentation; prefer exact installed version and cached library IDs
+6. RTK for git/tests/lint/search output
+7. raw source reads only when needed to prove/implement something
+
+External docs policy:
+- Never rely on memory for version-sensitive library APIs when Context7 can verify them.
+- Query only the library/topic needed for the current implementation.
+- Do not dump broad documentation into context.
+- Repository code and tests remain the source of truth for project-specific behavior.
+
+Correctness pipeline:
+Builder -> deterministic checks -> regression check -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> Cleanup -> checks -> provenance gate -> Ponytail -> PR summary.
+Ponytail judges project-specific quality; it does not impose SOLID or FP contrary to repo conventions.
+Cleanup removes AI provenance/references and unnecessary comments without changing behavior.
+If a gate passes, return only its compact PASS contract unless more detail is required by a failure.
+
+Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then discard raw design context.' if figma else 'off'}
+
+Zero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.
+
+Return terminal state PR_READY, NEEDS_HUMAN, or FAILED with concise evidence.
+'''
+    (state/'state'/'current-run.md').write_text(prompt)
+    cache_key=task_cache_key(root,task,profile,base,selected_skills)
+    save_json(state/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
+    record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
+    return prompt
 
 def contamination(root:Path)->list[str]:
     tracked=run(["git","ls-files"],cwd=root,check=False).splitlines(); bad=[]
@@ -386,7 +562,7 @@ def build_review_prompt(root:Path,state:Path,base:str,profile:str,impact:str)->s
     cr=parse_crg_risk(impact); risk=elevate_risk(heuristic,cr)
     caps=context_caps(profile)
     compact=impact[-12000:] if impact else '(CRG unavailable; use git diff plus targeted graph evidence.)'
-    prompt=f'''# Independent adversarial review\n\nBase: {base}\nProfile: {profile}\nRisk: {risk['risk']} ({risk['reason']})\nChanged files: {scope['file_count']}\n\nCode Review Graph compact impact:\n```text\n{compact}\n```\n\nYou are the independent reviewer. Work read-only.\n\nContext policy:\n1. Start from the git diff and the CRG impact above.\n2. If more evidence is needed, use code-review-graph with CRG_DATA_DIR already provided by the environment. Prefer `detect-changes --brief`, affected flows, callers/importers/tests, and bounded/minimal context.\n3. Use Graphify only for architecture/community/path questions not answered by CRG.\n4. Use CodeGraph only when exact symbol navigation is materially better.\n5. Use Context7 only for version-sensitive external library/API facts.\n6. Read raw source only for changed/impacted locations needed to prove a finding.\n\nReview only for correctness, security/auth, data integrity, concurrency, backwards compatibility, concrete regression risks, and missing tests. No style-only findings; Ponytail handles final code quality.\n\nReturn at most {min(5,max(3,caps['review_files']//4))} findings. Each finding: SEVERITY | CONFIDENCE | FILE:LINE | CONCRETE FAILURE SCENARIO | EVIDENCE.\nDo not modify files and do not propose broad rewrites.\n'''
+    prompt=f'''# Independent adversarial review\n\nBase: {base}\nProfile: {profile}\nRisk: {risk['risk']} ({risk['reason']})\nChanged files: {scope['file_count']}\n\nCode Review Graph compact impact:\n```text\n{compact}\n```\n\nYou are the independent reviewer. Work read-only.\n\nContext policy:\n1. Start from the git diff and the CRG impact above.\n2. If more evidence is needed, use code-review-graph with CRG_DATA_DIR already provided by the environment. Prefer `detect-changes --brief`, affected flows, callers/importers/tests, and bounded/minimal context.\n3. Use Graphify only for architecture/community/path questions not answered by CRG.\n4. Use CodeGraph only when exact symbol navigation is materially better.\n5. Use Context7 only for version-sensitive external library/API facts.\n6. Read raw source only for changed/impacted locations needed to prove a finding.\n\nReview only for correctness, security/auth, data integrity, concurrency, backwards compatibility, concrete regression risks, and missing tests. No style-only findings; Ponytail handles final code quality.\n\nReturn at most {caps['findings']} findings. Each finding: SEVERITY | CONFIDENCE | FILE:LINE | CONCRETE FAILURE SCENARIO | EVIDENCE.\nDo not modify files and do not propose broad rewrites.\n'''
     path=state/'state'/'current-review.md'; path.write_text(prompt)
     save_json(state/'state'/'current-review.json',{'base':base,'profile':profile,'risk':risk,'scope':scope,'created_at':int(time.time())})
     return prompt
@@ -457,7 +633,7 @@ def cmd_planrun(args,launch:bool):
         m=re.search(r'https?://\S*figma\.com/\S+',args.task or '')
         figma=m.group(0) if m else None
     if args.no_figma: figma=None
-    prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma)
+    prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None))
     plan=load_json(state/'state'/'current-plan.json',{})
     print('AI plan')
     print('  repo state: ',state)
@@ -465,6 +641,9 @@ def cmd_planrun(args,launch:bool):
     print('  risk:       ',plan.get('risk',{}).get('risk'))
     print('  files:      ',plan.get('scope',{}).get('file_count'))
     print('  figma:      ',figma or 'off')
+    print('  task type:  ',plan.get('task_type'))
+    print('  skills:     ', ', '.join(plan.get('skills',[])) or 'none')
+    print('  cache key:  ',plan.get('cache_key'))
     print('  Context7:   ','ready' if ctx7_cmd() else 'missing')
     print('  Graphify:   ','ready' if (state/'graphify'/'graph.json').exists() else 'not built')
     print('  CRG:        ', 'ready' if plan.get('crg',{}).get('impact_cached') else ('installed/not-ready' if crg_cmd() else 'missing'))
@@ -475,12 +654,93 @@ def cmd_planrun(args,launch:bool):
         os.execvpe(claude,[claude,prompt],crg_env(state))
 
 
+def cmd_skill(args):
+    root=git_root(); state=repo_state(root); registry=enabled_skills(state)
+    if args.skill_cmd in (None,'list'):
+        print('Skills')
+        for name,meta in registry.items():
+            mark='✓' if meta['enabled'] else '·'
+            print(f"{mark} {name:20} {meta.get('category','')}  cost={meta.get('cost','?')}")
+        if getattr(args,'task',None):
+            selected=select_skills(state,args.task,args.profile,None,None)
+            print('\nRecommended:', ', '.join(selected) or 'none')
+        return
+    name=args.name
+    if name not in registry: raise SystemExit(f'Unknown skill: {name}')
+    if args.skill_cmd=='explain':
+        meta=registry[name]
+        print(json.dumps({k:v for k,v in meta.items() if k!='enabled'},indent=2))
+        p=skill_root()/name/'README.md'
+        if p.exists(): print('\n'+p.read_text().strip())
+        return
+    if args.skill_cmd in ('enable','disable'):
+        o=skill_overrides(state); o[name]=(args.skill_cmd=='enable'); save_json(state/'skill-overrides.json',o)
+        print(f"{name}: {'enabled' if o[name] else 'disabled'}")
+        return
+    if args.skill_cmd=='dry-run':
+        caps=context_caps(args.profile)
+        print('SKILL DRY RUN')
+        print('  name:       ',name)
+        print('  category:   ',registry[name].get('category'))
+        print('  cost:       ',registry[name].get('cost'))
+        print('  max skills: ',caps['skills'])
+        print('  stages:     ', ' -> '.join(registry[name].get('stages',[])))
+        print('  repo writes: NO')
+        return
+
+
+def cmd_handoff(args):
+    root=git_root(); state=repo_state(root); caps=context_caps(args.profile)
+    plan=load_json(state/'state'/'current-plan.json',{})
+    scope=collect_scope(root,args.base)
+    payload={
+      'task': args.task or plan.get('task','Current task'),
+      'state': args.state or 'in_progress',
+      'profile': args.profile,
+      'risk': plan.get('risk',{}).get('risk'),
+      'skills': plan.get('skills',[]),
+      'changed_files': scope['files'][:caps['review_files']],
+      'evidence': args.evidence or [],
+      'next_action': args.next or '',
+      'head': safe_head(root),
+      'created_at': int(time.time())
+    }
+    text=json.dumps(payload,indent=2)
+    if len(text)>caps['handoff_chars']:
+        payload['changed_files']=payload['changed_files'][:5]
+        payload['evidence']=payload['evidence'][:3]
+        text=json.dumps(payload,indent=2)
+    p=state/'handoffs'/f"handoff-{int(time.time())}.json"; p.write_text(text+'\n')
+    record_metric(state,'handoff',profile=args.profile,chars=len(text),files=len(payload['changed_files']))
+    print('Handoff:',p)
+    print(text)
+
+
+def cmd_optimize(args):
+    root=git_root(); state=repo_state(root)
+    files=[root/'templates/policy.md',root/'templates/orchestration.yml']
+    # The optimization target is the installed stack, not the work repo.
+    targets=[STACK_ROOT/'templates/policy.md',STACK_ROOT/'templates/orchestration.yml']
+    skill_prompts=list((STACK_ROOT/'skills').glob('*/prompt.md'))
+    rows=[]
+    for p in targets+skill_prompts:
+        if not p.exists(): continue
+        txt=p.read_text(); lines=[x.strip() for x in txt.splitlines() if x.strip()]
+        dup=len(lines)-len(set(lines)); rows.append((str(p.relative_to(STACK_ROOT)),len(txt),len(lines),dup))
+    print('Prompt/context optimization audit')
+    for name,chars,lines,dup in sorted(rows,key=lambda r:r[1],reverse=True):
+        print(f"  {name:42} chars={chars:5} lines={lines:3} duplicate_lines={dup}")
+    print('\nPolicy: lazy skills; progressive context; evidence-first escalation; compact PASS outputs; hard per-profile budgets.')
+    print('Repository modified: NO')
+
 def cmd_status(args):
     root=git_root(); state=repo_state(root); print('Repository:',root); print('State:',state)
     print('Profile:', 'present' if (state/'project-profile.json').exists() else 'missing')
     print('Contract:', 'present' if (state/'contracts/current-pr.yml').exists() else 'missing')
     print('Graphify:', 'ready' if (state/'graphify/graph.json').exists() else 'off')
     print('Context7 mappings:',len(load_json(state/'context7-libraries.json',{})))
+    enabled=sum(1 for x in enabled_skills(state).values() if x['enabled']); print('Skills:',enabled,'enabled /',len(enabled_skills(state)),'installed')
+    print('Token policy: lazy skills + hard profile budgets')
     print('Code Review Graph:', 'ready' if crg_cmd() and crg_exec(root,state,['status'],check=False)[0]==0 else ('installed/not-built' if crg_cmd() else 'off'))
     bad=contamination(root); print('Zero-footprint:', 'PASS' if not bad else 'FAIL');
     if bad:
@@ -489,6 +749,7 @@ def cmd_status(args):
 
 def cmd_doctor(args):
     print('AI Agent Stack',VERSION)
+    print('Skills Engine:',len(skill_registry().get('skills',{})),'skills installed')
     for name in ['git','python3','node','claude','codex','rtk','codegraph','graphify','code-review-graph','ctx7','gh']:
         print(('✓' if shutil.which(name) else '·'),f'{name:10}', 'installed' if shutil.which(name) else 'missing')
     try:
@@ -511,7 +772,7 @@ def cmd_ready(args):
         print('ZERO_FOOTPRINT: FAIL'); [print(' ',x) for x in bad]; raise SystemExit(2)
     # Use the same orchestration prompt but explicitly final-gate only.
     task='Final PR readiness: Cleanup -> checks -> provenance -> Ponytail -> PR summary. Do not change behavior.'
-    ns=argparse.Namespace(task=task,profile=args.profile,base=args.base,figma=None,no_figma=True)
+    ns=argparse.Namespace(task=task,profile=args.profile,base=args.base,figma=None,no_figma=True,skill=None)
     cmd_planrun(ns,args.launch)
 
 
@@ -521,11 +782,13 @@ def parser():
     sp=p.add_subparsers(dest='cmd')
     sp.add_parser('init')
     for name in ['run','plan']:
-        q=sp.add_parser(name); q.add_argument('task',nargs='?',default=''); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--figma'); q.add_argument('--no-figma',action='store_true')
+        q=sp.add_parser(name); q.add_argument('task',nargs='?',default=''); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--figma'); q.add_argument('--no-figma',action='store_true'); q.add_argument('--skill',action='append',default=None,help='Force a skill (repeatable; still capped by profile)')
     rev=sp.add_parser('review'); rev.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); rev.add_argument('--base',default='main'); rev.add_argument('--refresh',action='store_true'); rev.add_argument('--build',action='store_true'); rev.add_argument('--no-launch',dest='launch',action='store_false',default=True)
     imp=sp.add_parser('impact'); imp.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); imp.add_argument('--base',default='main'); imp.add_argument('--refresh',action='store_true'); imp.add_argument('--build',action='store_true')
     q=sp.add_parser('ready'); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--no-launch',dest='launch',action='store_false',default=True)
-    sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('metrics'); sp.add_parser('path')
+    sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('metrics'); sp.add_parser('path'); sp.add_parser('optimize')
+    sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
+    ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default='main'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next')
     r=sp.add_parser('rules'); rs=r.add_subparsers(dest='rules_cmd'); rs.add_parser('list'); a=rs.add_parser('add'); a.add_argument('rule'); a.add_argument('--scope',default='**'); rm=rs.add_parser('remove'); rm.add_argument('index',type=int)
     d=sp.add_parser('docs'); ds=d.add_subparsers(dest='docs_cmd',required=True); ds.add_parser('doctor'); setup=ds.add_parser('setup'); setup.add_argument('--mcp',action='store_true'); setup.add_argument('--universal',action='store_true'); ds.add_parser('detect'); l=ds.add_parser('library'); l.add_argument('name'); l.add_argument('query',nargs='?',default=''); q=ds.add_parser('query'); q.add_argument('library'); q.add_argument('query'); q.add_argument('--refresh',action='store_true')
     f=sp.add_parser('figma'); fs=f.add_subparsers(dest='figma_cmd',required=True); fs.add_parser('doctor'); fsetup=fs.add_parser('setup'); fsetup.add_argument('--claude-only',action='store_true'); fsetup.add_argument('--codex-only',action='store_true')
@@ -546,6 +809,9 @@ def main():
     elif args.cmd=='status': cmd_status(args)
     elif args.cmd=='doctor': cmd_doctor(args)
     elif args.cmd=='metrics': cmd_metrics(args)
+    elif args.cmd=='skill': cmd_skill(args)
+    elif args.cmd=='handoff': cmd_handoff(args)
+    elif args.cmd=='optimize': cmd_optimize(args)
     elif args.cmd=='path': print(repo_state(git_root()))
     elif args.cmd=='rules': cmd_rules(args)
     elif args.cmd=='docs': cmd_docs(args)

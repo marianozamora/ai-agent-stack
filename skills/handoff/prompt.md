@@ -1,0 +1,1 @@
+Produce a compact transfer of state, not a conversation summary. Preserve only task, confirmed decisions, evidence, changed scope, unresolved blocker, and the single best next action. Refer to existing files/commits instead of restating them. Never include hidden reasoning or redundant repository background.

@@ -1,0 +1,1 @@
+A prototype answers one explicit uncertainty. Build the smallest reversible experiment that can produce evidence. Avoid production architecture, broad abstractions, exhaustive tests, and unrelated cleanup. End with QUESTION, RESULT, EVIDENCE, KEEP, DISCARD. Prototype code is disposable unless explicitly promoted.
