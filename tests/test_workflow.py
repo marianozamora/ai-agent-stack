@@ -22,7 +22,11 @@ class WorkflowTests(unittest.TestCase):
         self.home = Path(self.temp.name)
         self.repo = self.home / 'repo'
         self.repo.mkdir()
-        self.env = dict(os.environ, HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / 'config'), AI_TASK_ID='one')
+        # Strip any ambient AI_GATE/AI_TASK_DIR (e.g. this suite running as a validator
+        # command itself, under `ai gate checks -- pytest`) so tests start from a clean,
+        # reproducible "outside a gate" baseline regardless of how they were invoked.
+        base_env = {k: v for k, v in os.environ.items() if k not in ('AI_GATE', 'AI_TASK_DIR')}
+        self.env = dict(base_env, HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / 'config'), AI_TASK_ID='one')
         for args in [('init', '-q'), ('config', 'user.name', 'Test'), ('config', 'user.email', 'test@example.com')]:
             self.git(*args)
         (self.repo / 'app.txt').write_text('initial\n')
