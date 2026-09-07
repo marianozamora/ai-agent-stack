@@ -75,6 +75,31 @@ class HelpersTests(unittest.TestCase):
         self.assertAlmostEqual(row['pass_rate'], 5 / 6, places=3)
         self.assertEqual(row['median_usage_tokens'], 110)
 
+    def test_analyze_ticket_text_extracts_acceptance_figma_and_blockers(self):
+        text = (
+            "Implement the retry handler.\n\n"
+            "## Acceptance Criteria\n"
+            "- Retries on 5xx\n"
+            "- Gives up after 3 attempts\n\n"
+            "Design: https://www.figma.com/file/abc123/Retry-Flow\n"
+            "Blocked by: PROJ-42\n"
+        )
+        result = workflow.analyze_ticket_text(text)
+        self.assertEqual(result['acceptance_items'], ['Retries on 5xx', 'Gives up after 3 attempts'])
+        self.assertTrue(result['has_acceptance'])
+        self.assertEqual(result['figma_url'], 'https://www.figma.com/file/abc123/Retry-Flow')
+        self.assertEqual(result['blockers_mentioned'], ['PROJ-42'])
+
+    def test_analyze_ticket_text_checklist_and_empty_input(self):
+        checklist = "- [ ] Handles empty input\n- [x] Logs the error\n"
+        result = workflow.analyze_ticket_text(checklist)
+        self.assertEqual(result['acceptance_items'], ['Handles empty input', 'Logs the error'])
+
+        empty = workflow.analyze_ticket_text("No structure here at all.")
+        self.assertFalse(empty['has_acceptance'])
+        self.assertIsNone(empty['figma_url'])
+        self.assertEqual(empty['blockers_mentioned'], [])
+
     def test_bucket_ts_uses_utc_day_and_iso_week(self):
         import datetime
         ts = datetime.datetime(2026, 1, 1, 23, 30, tzinfo=datetime.timezone.utc).timestamp()

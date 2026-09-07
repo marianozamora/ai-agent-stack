@@ -254,6 +254,41 @@ def variant_stats(rows, slot, since=None):
 _WINDOW = re.compile(r'^(\d+)([dw])$')
 
 
+_FIGMA_URL = re.compile(r'https?://\S*figma\.com/\S+')
+_BLOCKER_MENTION = re.compile(r'(?im)^\s*(?:[-*]\s*)?(?:blocked by|blocker|depends on|dependency|waiting on)\s*[:\-]?\s*(.+)$')
+_ACCEPTANCE_HEADING = re.compile(r'(?im)^#{0,6}\s*acceptance\s*criteria\s*:?\s*$')
+_CHECKLIST_ITEM = re.compile(r'(?m)^\s*[-*]\s*\[[ xX]?\]\s*(.+)$')
+_PLAIN_BULLET = re.compile(r'(?m)^\s*[-*]\s+(.+)$')
+
+
+def analyze_ticket_text(text):
+    """Deterministic, regex-based completeness read of pasted ticket content.
+
+    No model call, no network, no external fetch: this only reports what a pattern
+    matches, never an interpretation of whether the ticket is actually sufficient to
+    start work. Blockers/dependencies are advisory-only for the same reason — there is
+    no live source to verify whether a mentioned blocker is still actually open.
+    """
+    figma = _FIGMA_URL.search(text)
+    blockers = [m.group(1).strip() for m in _BLOCKER_MENTION.finditer(text)]
+    acceptance_items = [m.group(1).strip() for m in _CHECKLIST_ITEM.finditer(text)]
+    heading = _ACCEPTANCE_HEADING.search(text)
+    if heading:
+        rest = text[heading.end():]
+        next_heading = re.search(r'(?m)^#{1,6}\s', rest)
+        block = rest[:next_heading.start()] if next_heading else rest
+        for m in _PLAIN_BULLET.finditer(block):
+            item = m.group(1).strip()
+            if item not in acceptance_items: acceptance_items.append(item)
+    return {
+        'figma_url': figma.group(0) if figma else None,
+        'acceptance_items': acceptance_items,
+        'blockers_mentioned': blockers,
+        'has_acceptance': bool(acceptance_items),
+        'length': len(text),
+    }
+
+
 def parse_window(spec):
     """'30d'/'12w' -> epoch cutoff N days/weeks ago; 'YYYY-MM-DD' -> that UTC midnight."""
     match = _WINDOW.match(spec)

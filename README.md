@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.9.2)
+## Verified workflow (0.9.3)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -514,6 +514,37 @@ references the file by path in the orchestration prompt (`not generated — run
 ai profile --deep` when absent) rather than inlining its content, so the
 injection itself costs no extra context budget; a task that needs the detail
 reads the file.
+
+```bash
+ai ticket check --file ticket.txt
+ai ticket check --text "$(pbpaste)"
+cat ticket.txt | ai ticket check
+ai plan "..." --ticket-file ticket.txt
+```
+
+`ai ticket check` reads pasted ticket content — copied from Jira, GitHub
+Issues, Linear, anywhere — and analyzes it with plain regex, no model call and
+no network: whether acceptance criteria are present (a `## Acceptance
+Criteria` heading with bullets, or `- [ ]` checklist items), a Figma link, and
+any text mentioning a blocker or dependency (`blocked by`, `depends on`,
+`waiting on`). Unlike `ai profile --deep`, there is no external fetch to
+manage credentials or connectivity for — you paste the content, it stays
+entirely local, and the analysis is deterministic pattern matching, not an
+interpretation of whether the ticket is actually sufficient to start work.
+
+`ai plan "..." --ticket-file FILE` runs the same analysis and wires the result
+into the task automatically: a detected Figma link is adopted the same way an
+inline URL in the task description already is, and detected acceptance items
+fill the contract's `acceptance: []` — using the exact same emptiness check
+the `contract` gate itself uses, so this can only ever fill a blank list,
+never overwrite a human-authored one. Blockers/dependencies mentioned in the
+text are printed as advisory lines in `ai plan`'s output and saved in the
+snapshot, never a gate: there is no live source here to confirm a mentioned
+blocker is still actually open, so surfacing it for a human to judge is the
+honest ceiling for what a pasted, un-verifiable string can support. The
+snapshot (`state/ticket.json`) is part of the evidence fingerprint, so
+re-running `--ticket-file` with different content invalidates stale evidence
+the same way `ai lessons`'/`ai prompt`'s task-scoped snapshots already do.
 
 ```bash
 ai lessons derive

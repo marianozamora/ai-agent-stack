@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.9.2)
+## Verified task lifecycle (0.9.3)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -461,3 +461,46 @@ seeded defects. Recommendation was synthetic-by-default; shipping synthetic mode
 first keeps the feature's cost at exactly zero and defers the real design work
 (cost preflight, ground-truth authoring, nondeterminism handling) to when it's
 actually wanted rather than speculatively building it now.
+
+## Ticket content analysis (`ai ticket check`, `--ticket-file`)
+
+A scoped-down version of an earlier, larger design for a live Jira integration
+(fetch-by-API, credential management, blocker-link-graph traversal). The
+actual request was simpler and the simplification is deliberate, not a
+fallback: paste the ticket's own text — from any tracker — and analyze it
+locally. This removes every failure mode the fetch-based design had to solve
+for (auth expiry, rate limiting, network outages, credential storage,
+provider abstraction) by not touching the network at all, and fits the
+existing stdlib-only, zero-footprint mold more tightly than a fetch-based
+version could.
+
+`analyze_ticket_text()` in `ai_stack/workflow.py` is pure regex: an
+`## Acceptance Criteria` heading followed by bullets, `- [ ]`/`- [x]`
+checklist items anywhere, a `figma.com` URL, and lines mentioning `blocked
+by`/`depends on`/`waiting on`. It returns facts about pattern matches, never
+an interpretation of ticket quality — there is no model call here at all,
+unlike `ai profile --deep`.
+
+`populate_acceptance_if_empty()` in `cli.py` reuses the *exact* regex
+`cmd_validate()`'s contract gate already uses to detect an empty acceptance
+list (`^acceptance:\s*\[\s*\]\s*$`), so "is the list empty" is one predicate
+shared by the writer and the gate — the same discipline
+`run_benchmark_scenario()`'s contract population already established. This
+guarantees a human-authored acceptance list can never be silently overwritten
+by a later `--ticket-file` run; only a blank list is ever filled.
+
+Blockers/dependencies are advisory-only, permanently — not a placeholder for
+a future hard gate. The Jira-fetch design that preceded this one argued a
+*verified* blocker (queried live, checked for actual resolution) could
+reasonably gate `ai plan`; a blocker merely *mentioned in pasted text* has no
+such verification available, so treating it as a gate would be enforcing on
+an unverifiable string, which this project's evidence discipline
+(`evidence_fingerprint()`, `intact_record()`) exists specifically to prevent
+elsewhere. Surfacing it for a human to judge is the honest ceiling.
+
+The task-scoped `state/ticket.json` snapshot joins `evidence_fingerprint()`'s
+file list (same treatment as `state/lessons.json`/`state/prompt-assignment.json`):
+it is read by validators via `build_prompt()`'s by-path reference, so it is an
+input to what a gate's evidence means, and re-running `--ticket-file` with
+different content must invalidate stale evidence the same way re-planning
+already does for lessons and prompt-variant assignment.

@@ -48,8 +48,8 @@ CLI surface, sequencing (patterns → lessons → confidence → prompt optimize
 open questions (cross-repo sharing, auto-promotion, retention, naming, min sample size)
 still needing a decision before each phase ships.
 
-## v0.9 — Measurement
-- [ ] Cost/token dashboard: richer `ai metrics` (time-series, top-N, CSV export, advisory budget) plus `ai metrics prune` retention
+## v0.9 — Measurement (shipped)
+- [x] Cost/token dashboard: richer `ai metrics` (time-series, top-N, CSV export, advisory budget) plus `ai metrics prune` retention
 - [x] Benchmark suite: end-to-end sandboxed pipeline scenarios (`ai benchmark run/list/report/compare`), synthetic only for now, fully isolated from the real `metrics.jsonl` (deferred: opt-in `--live` mode against real bundled validators)
 - [x] Prompt A/B evaluation (shipped as `ai prompt` in v0.8 Phase 4)
 - [x] Prompt versioning: promotion history and rollback (`ai prompt history`/`rollback`)
@@ -59,6 +59,22 @@ approach for the benchmark suite, and 12 open questions (live-mode cost,
 dollar estimates, retention policy, benchmark/metrics isolation, corpus
 ownership, naming, bucketing timezone, budget persistence) — this summary
 follows the design's own recommendations for all of them.
+
+## Ticket content analysis
+- [x] `ai ticket check` / `ai plan --ticket-file`: paste a ticket's own text (from
+  any tracker) and analyze it locally with regex — detected acceptance criteria fill
+  an empty contract, a detected Figma link is adopted, mentioned blockers/dependencies
+  are reported as advisory (never a gate, since there is no live source to verify one
+  is still actually open). No network, no credentials, no model call.
+
+A larger live-fetch design (Jira REST API, credential management, verified
+blocker-link-graph traversal, multi-tracker abstraction) was scoped down after
+discussion: the actual need was simpler, and the smaller version removes an entire
+category of new failure modes (auth, rate limits, outages) that a fetch-based
+integration would have introduced as this project's first networked feature. If
+live tracker integration is wanted later, the recorded design for it still exists
+and can be revisited — the analysis logic here (`analyze_ticket_text()`) is
+provider-agnostic and would be reusable as the "interpret what came back" step.
 
 ## v1.0+ — Architecture refactor
 - [ ] Driver interfaces

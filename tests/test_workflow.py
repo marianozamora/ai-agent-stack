@@ -254,6 +254,42 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         fake.chmod(0o755)
         self.env['PATH'] = str(fakebin) + os.pathsep + self.env['PATH']
 
+    def test_ticket_check_and_plan_ticket_file_populate_contract(self):
+        ticket_text = (
+            "## Acceptance Criteria\n"
+            "- Retries on 5xx\n"
+            "- Gives up after 3 attempts\n\n"
+            "Design: https://www.figma.com/file/abc123/Retry-Flow\n"
+            "Blocked by: PROJ-42\n"
+        )
+        ticket_path = self.repo / 'ticket.txt'
+        ticket_path.write_text(ticket_text)
+
+        checked = json.loads(self.ai('ticket', 'check', '--file', str(ticket_path), '--json'))
+        self.assertEqual(len(checked['acceptance_items']), 2)
+        self.assertEqual(checked['figma_url'], 'https://www.figma.com/file/abc123/Retry-Flow')
+        self.assertEqual(checked['blockers_mentioned'], ['PROJ-42'])
+
+        self.ai('plan', 'small change', '--profile', 'fast', '--base', 'HEAD', '--ticket-file', str(ticket_path))
+        task = Path(self.ai('path').strip())
+        contract = (task / 'contracts/current-pr.yml').read_text()
+        self.assertIn('Retries on 5xx', contract)
+        self.assertIn('Gives up after 3 attempts', contract)
+        design = (task / 'contracts/current-design.yml')
+        self.assertTrue(design.is_file())
+        self.assertIn('figma.com/file/abc123', design.read_text())
+        snapshot = json.loads((task / 'state/ticket.json').read_text())
+        self.assertEqual(snapshot['blockers_mentioned'], ['PROJ-42'])
+
+        # A human-authored acceptance list is never overwritten by a later --ticket-file.
+        contract_path = task / 'contracts/current-pr.yml'
+        text = contract_path.read_text().replace(
+            'acceptance: ["Retries on 5xx", "Gives up after 3 attempts"]', 'acceptance: ["Human wrote this"]')
+        contract_path.write_text(text)
+        self.ai('plan', 'small change', '--profile', 'fast', '--base', 'HEAD', '--ticket-file', str(ticket_path))
+        self.assertIn('Human wrote this', contract_path.read_text())
+        self.assertNotIn('Retries on 5xx', contract_path.read_text())
+
     def test_profile_static_and_deep_with_caching(self):
         profile = json.loads(self.ai('profile'))
         self.assertIn('languages', profile)

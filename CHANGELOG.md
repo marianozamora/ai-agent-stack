@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.3
+
+- Add `ai ticket check` / `ai plan --ticket-file`: paste a ticket's own text (from Jira, GitHub Issues, Linear, anywhere) and analyze it locally with regex, no network and no model call. Detected acceptance criteria fill an empty contract using the exact same emptiness check the `contract` gate already uses (never overwrites a human-authored list); a detected Figma link is adopted like an inline task URL already is; mentioned blockers/dependencies are reported as advisory only, permanently, since there's no live source to verify one is still actually open. Scoped down from a larger live-fetch/Jira-API design after discussion — see ROADMAP.md.
+
 ## 0.9.2
 
 - Add `ai benchmark run/list/report/compare`: a 5-scenario corpus (`templates/benchmarks/pipeline/*.json`) run end-to-end through the real `ai plan` -> `ai pipeline` -> `ai ready` flow, each in a fully isolated sandbox (fresh temp git repo, `HOME`/`XDG_CONFIG_HOME` redirected, `AI_GATE`/`AI_TASK_DIR` stripped) so a benchmark run can never touch the real `metrics.jsonl` or contaminate `ai confidence`/`ai prompt`'s sample counts. Every gate's verdict is scripted synthetically — no model calls, zero cost. `compare` refuses across differing `corpus_digest`s. The pre-existing `ai benchmark` (routing/skill-selection comparison) is unchanged as the bare command.

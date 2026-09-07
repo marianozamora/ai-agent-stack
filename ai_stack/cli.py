@@ -4,10 +4,10 @@ import tempfile, uuid
 import argparse, csv, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
-from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats, variant_stats, parse_window, bucket_ts, usage_report
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats, variant_stats, parse_window, bucket_ts, usage_report, analyze_ticket_text
 from validators import INSTRUCTIONS, model_verdict, intact_record, run_codex_json
 
-VERSION = "0.9.2"
+VERSION = "0.9.3"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -307,6 +307,42 @@ def ensure_contract(state:Path,task:str,figma:str|None=None):
         '''))
 
 
+def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
+    """Fill an empty acceptance list from detected ticket content; never touch a human's own list.
+
+    Uses the exact regex the contract gate's own emptiness check uses (cmd_validate),
+    so "is this list empty" is one predicate shared by the writer and the gate — this
+    can never overwrite a human-authored acceptance list, only fill a blank one.
+    """
+    if not items: return False
+    text=contract_path.read_text()
+    if not re.search(r'^acceptance:\s*\[\s*\]\s*$',text,re.M): return False
+    contract_path.write_text(re.sub(r'^acceptance:\s*\[\s*\]\s*$','acceptance: '+json.dumps(items),text,flags=re.M))
+    return True
+
+
+def cmd_ticket(args):
+    if args.file: text=Path(args.file).read_text()
+    elif args.text is not None: text=args.text
+    else: text=sys.stdin.read()
+    if not text.strip(): raise SystemExit('No ticket content provided (use --file, --text, or pipe via stdin).')
+    state=repo_state(git_root()); task=task_state(state)
+    analysis=analyze_ticket_text(text)
+    snapshot={'version':1,'fetched_at':time.time(),'source':'pasted','length':analysis['length'],
+              'figma_url':analysis['figma_url'],'acceptance_items':analysis['acceptance_items'],
+              'blockers_mentioned':analysis['blockers_mentioned'],'has_acceptance':analysis['has_acceptance'],
+              'caveat':'Deterministic regex read of pasted content; not a verified analysis of ticket sufficiency.'}
+    save_json(task/'state/ticket.json',snapshot)
+    if args.json: print(json.dumps(snapshot,indent=2)); return
+    print(f"Ticket content: {analysis['length']} chars")
+    print(f"Acceptance criteria detected: {len(analysis['acceptance_items'])}")
+    for item in analysis['acceptance_items']: print(f"  - {item}")
+    print(f"Figma link: {analysis['figma_url'] or 'none'}")
+    if analysis['blockers_mentioned']:
+        print('Blockers/dependencies mentioned (advisory; not verified against any live source):')
+        for b in analysis['blockers_mentioned']: print(f"  - {b}")
+
+
 def rules_text(state:Path)->str:
     rules=load_json(state/'rules.json',[])
     if not rules:return "(none)"
@@ -407,6 +443,7 @@ Design Contract: {(task_state(state)/'contracts/current-design.yml') if figma el
 Graphify graph: {graph if Path(graph).exists() else 'not built'}
 Code Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd() else 'missing')}
 Deep repository profile (AI-generated interpretation; verify before relying on it): {(state/'project-deep-profile.json') if (state/'project-deep-profile.json').exists() else 'not generated — run `ai profile --deep`'}
+Ticket content snapshot (pasted, regex-analyzed, advisory only): {(task_state(state)/'state/ticket.json') if (task_state(state)/'state/ticket.json').exists() else 'none — pass --ticket-file to ai plan/ai run'}
 
 Repository rules:
 {rules_text(state)}
@@ -830,8 +867,20 @@ def cmd_planrun(args,launch:bool):
         m=re.search(r'https?://\S*figma\.com/\S+',args.task or '')
         figma=m.group(0) if m else None
     if args.no_figma: figma=None
+    ticket_analysis=None
+    if getattr(args,'ticket_file',None):
+        ticket_analysis=analyze_ticket_text(Path(args.ticket_file).read_text())
+        if not figma and ticket_analysis['figma_url']: figma=ticket_analysis['figma_url']
     prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None))
     plan=load_json(task_state(state)/'state'/'current-plan.json',{})
+    if ticket_analysis is not None:
+        task=task_state(state)
+        populate_acceptance_if_empty(task/'contracts/current-pr.yml',ticket_analysis['acceptance_items'])
+        save_json(task/'state/ticket.json',{'version':1,'fetched_at':time.time(),'source':'pasted',
+            'length':ticket_analysis['length'],'figma_url':ticket_analysis['figma_url'],
+            'acceptance_items':ticket_analysis['acceptance_items'],'blockers_mentioned':ticket_analysis['blockers_mentioned'],
+            'has_acceptance':ticket_analysis['has_acceptance'],
+            'caveat':'Deterministic regex read of pasted content; not a verified analysis of ticket sufficiency.'})
     print('AI plan')
     print('  repo state: ',state)
     print('  profile:    ',args.profile)
@@ -853,6 +902,11 @@ def cmd_planrun(args,launch:bool):
     if card['usage_budget']:
         note=' (exceeds budget)' if card['projected_usage_tokens']>card['usage_budget'] else ''
         print('  projected:  ',f"{card['projected_usage_tokens']} / {card['usage_budget']} tokens{note}")
+    if ticket_analysis is not None:
+        print('  ticket:     ',f"{len(ticket_analysis['acceptance_items'])} acceptance item(s) detected"
+              +(', figma link found' if ticket_analysis['figma_url'] else ''))
+        if ticket_analysis['blockers_mentioned']:
+            print('  blockers:   ','; '.join(ticket_analysis['blockers_mentioned'])+' (advisory; not verified)')
     if launch:
         claude=shutil.which('claude')
         if not claude: raise SystemExit('Claude CLI missing. Use ai plan to only prepare.')
@@ -1319,7 +1373,7 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
     # Any file that changes what a gate/validator is told (config, curated context, prompt
     # choice) belongs in this list, alongside the PR/design contracts it already covers.
     for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',state/'prompt-overrides.json',
-                 task/'state/lessons.json',task/'state/prompt-assignment.json',
+                 task/'state/lessons.json',task/'state/prompt-assignment.json',task/'state/ticket.json',
                  *sorted((task/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
     return digest.hexdigest()
@@ -1844,7 +1898,9 @@ def parser():
     sp=p.add_subparsers(dest='cmd')
     sp.add_parser('init')
     for name in ['run','plan']:
-        q=sp.add_parser(name); q.add_argument('task',nargs='?',default=''); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--figma'); q.add_argument('--no-figma',action='store_true'); q.add_argument('--skill',action='append',default=None,help='Force a skill (repeatable; still capped by profile)')
+        q=sp.add_parser(name); q.add_argument('task',nargs='?',default=''); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default='main'); q.add_argument('--figma'); q.add_argument('--no-figma',action='store_true'); q.add_argument('--skill',action='append',default=None,help='Force a skill (repeatable; still capped by profile)'); q.add_argument('--ticket-file',help='Path to pasted ticket content; auto-fills empty acceptance criteria and Figma link')
+    tk=sp.add_parser('ticket'); tks=tk.add_subparsers(dest='ticket_cmd',required=True)
+    tkc=tks.add_parser('check'); tkc.add_argument('--file'); tkc.add_argument('--text'); tkc.add_argument('--json',action='store_true')
     rev=sp.add_parser('review'); rev.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); rev.add_argument('--base',default='main'); rev.add_argument('--refresh',action='store_true'); rev.add_argument('--build',action='store_true'); rev.add_argument('--no-launch',dest='launch',action='store_false',default=True)
     imp=sp.add_parser('impact'); imp.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); imp.add_argument('--base',default='main'); imp.add_argument('--refresh',action='store_true'); imp.add_argument('--build',action='store_true')
     q=sp.add_parser('ready'); q.add_argument('--no-launch',action='store_true',help=argparse.SUPPRESS)
@@ -1926,6 +1982,7 @@ def main():
     elif args.cmd=='pipeline': cmd_pipeline(args)
     elif args.cmd=='benchmark': cmd_benchmark(args)
     elif args.cmd=='profile': cmd_profile(args)
+    elif args.cmd=='ticket': cmd_ticket(args)
     elif args.cmd=='confidence': cmd_confidence(args)
     elif args.cmd=='prompt': cmd_prompt(args)
     elif args.cmd=='failures': cmd_failures(args)
