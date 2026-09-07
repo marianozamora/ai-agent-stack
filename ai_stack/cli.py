@@ -1029,7 +1029,7 @@ def cmd_failures(args):
 
 def cmd_lessons(args):
     state=repo_state(git_root())
-    guarded=('confirm','reject','promote')
+    guarded=('confirm','reject','retire','promote','add')
     if args.lessons_cmd in guarded and (os.environ.get('AI_GATE') or os.environ.get('AI_TASK_DIR')):
         raise SystemExit('Lesson curation is human-only; run this outside a gate/validator environment.')
     lessons=load_lessons(state)
@@ -1153,10 +1153,12 @@ def cmd_prompt(args):
     if args.prompt_cmd=='report':
         experiment=prompt_experiment(state)
         if not experiment: raise SystemExit('No active experiment; nothing to report.')
-        rows,_=load_metric_rows(state); stats=variant_stats(rows,experiment['slot'])
+        rows,_=load_metric_rows(state)
+        stats=variant_stats(rows,experiment['slot'],since=experiment['started_at'])
         if args.json: print(json.dumps({'slot':experiment['slot'],
             'min_samples_per_variant':experiment['min_samples_per_variant'],'stats':stats},indent=2)); return
-        print(f"Prompt experiment: {experiment['slot']} (min {experiment['min_samples_per_variant']} samples/variant)")
+        print(f"Prompt experiment: {experiment['slot']} (min {experiment['min_samples_per_variant']} samples/variant, "
+              f"since this experiment started)")
         if len({s['sha'] for s in stats})>len({s['variant'] for s in stats}):
             print("Note: this slot's text changed mid-experiment; rows below are grouped by (variant, sha), not directly comparable across a change.")
         for s in stats:
@@ -1170,19 +1172,31 @@ def cmd_prompt(args):
         slot=prompt_slot(args.name)
         if args.variant not in available_variants(slot): raise SystemExit(f'Unknown variant: {slot}/{args.variant}')
         experiment=prompt_experiment(state)
+        # Always show the comparison before applying, --confirm or not: promotion is a
+        # decision a human makes from evidence, never a formula, so the evidence must be seen.
         if experiment and experiment['slot']==slot:
-            rows,_=load_metric_rows(state); stats=variant_stats(rows,slot)
-            by_variant={s['variant']:s for s in stats}
+            rows,_=load_metric_rows(state)
+            stats=variant_stats(rows,slot,since=experiment['started_at'])
+            by_key={(s['variant'],s['sha']):s for s in stats}
             min_samples=experiment['min_samples_per_variant']
-            short=[v for v in experiment['variants'] if by_variant.get(v,{}).get('n',0)<min_samples]
-            if short: raise SystemExit(f"Not enough samples yet for {', '.join(short)} (need >= {min_samples} each). Run `ai prompt report`.")
-            if not args.confirm:
-                print(f"Promoting {slot} -> {args.variant}. These are observed frequencies over small samples, not a controlled experiment.")
-                for s in stats: print(f"  {s['variant']} n={s['n']} pass_rate={s['pass_rate']} "
-                                      f"first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}")
-                raise SystemExit('Re-run with --confirm to apply.')
-        elif not args.confirm:
-            raise SystemExit('Re-run with --confirm to apply.')
+            print(f"Prompt promotion candidate: {slot} -> {args.variant} "
+                  f"(evidence since this experiment started, min {min_samples} samples/variant)")
+            short=[]
+            for v in experiment['variants']:
+                current_sha=shasum(variant_text(args.name,slot,v))[:12]
+                s=by_key.get((v,current_sha))
+                n=s['n'] if s else 0
+                stale=[k for k in by_key if k[0]==v and k[1]!=current_sha]
+                note=' (stale text edited since collected; not counted)' if stale and not s else ''
+                print(f"  {v} n={n}{note}"+('' if not s else
+                      f" pass_rate={s['pass_rate']} first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}"))
+                if n<min_samples: short.append(v)
+            print('These are observed frequencies over small samples, not a controlled experiment.')
+            if short: raise SystemExit(f"Not enough samples yet against the current text for {', '.join(short)} "
+                                        f"(need >= {min_samples} each). Run `ai prompt report`.")
+        else:
+            print(f"Prompt promotion candidate: {slot} -> {args.variant} (no active experiment for this slot; no evidence to show).")
+        if not args.confirm: raise SystemExit('Re-run with --confirm to apply.')
         data=prompt_overrides(state)
         data['slots'][slot]={'variant':args.variant,'sha':shasum(variant_text(args.name,slot,args.variant))[:12],
                               'promoted_at':int(time.time()),'promoted_by':'user'}

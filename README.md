@@ -504,10 +504,11 @@ nothing synthesized to hallucinate. Re-running `derive` refreshes an existing
 candidate's counts but never touches a `confirmed`, `rejected` or `retired`
 lesson, so a rejection is sticky and a confirmed lesson's text is stable.
 
-Only a human curates lessons: `confirm`, `reject` and `promote` all refuse to
-run when `AI_GATE` or `AI_TASK_DIR` is set, so a model running inside a gate
-cannot confirm its own finding into future prompt context. `promote` copies a
-confirmed lesson into `rules.json` (with `source: "lesson"`) and retires the
+Only a human curates lessons: `add`, `confirm`, `reject`, `retire` and
+`promote` all refuse to run when `AI_GATE` or `AI_TASK_DIR` is set, so a model
+running inside a gate cannot inject a confirmed lesson of its own, retire an
+inconvenient one, or confirm its own finding into future prompt context.
+`promote` copies a confirmed lesson into `rules.json` (with `source: "lesson"`) and retires the
 lesson, so there is exactly one always-injected normative store, not two
 competing ones. `ai lessons add` records a human-authored empirical note
 (status `confirmed` immediately, no derivation needed).

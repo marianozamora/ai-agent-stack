@@ -200,9 +200,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(candidates[0]['status'], 'candidate')
         self.assertEqual(candidates[0]['scope'], 'src/workers/**')
 
-        # A model running inside a gate cannot confirm its own lesson.
+        # A model running inside a gate cannot confirm, inject or retire a lesson itself.
         self.env['AI_GATE'] = 'cleanup'
         self.ai('lessons', 'confirm', lesson_id, ok=False)
+        self.ai('lessons', 'add', 'Sneaked-in lesson', ok=False)
+        self.ai('lessons', 'retire', lesson_id, ok=False)
         del self.env['AI_GATE']
         self.ai('lessons', 'confirm', lesson_id)
         self.assertEqual(json.loads(self.ai('lessons', '--status', 'confirmed', '--json'))[0]['status'], 'confirmed')
@@ -358,6 +360,14 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertEqual(assignment['validator.cleanup']['variant'], 'b')
 
         self.ai('prompt', 'reset', 'cleanup')
+
+        # Restarting an experiment on the same slot must not let stale samples (from
+        # before this run, or against edited text) satisfy the new sample requirement.
+        variant_b.write_text('A different alternate cleanup instruction, edited later.\n')
+        self.ai('prompt', 'experiment', 'start', 'cleanup', '--variants', 'a,b', '--min-samples', '2')
+        output = self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm', ok=False)
+        self.assertIn('Not enough samples', output)
+        self.ai('prompt', 'experiment', 'stop')
 
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))

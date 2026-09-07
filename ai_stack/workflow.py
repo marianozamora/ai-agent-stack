@@ -193,14 +193,18 @@ def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
     return stats
 
 
-def variant_stats(rows, slot):
+def variant_stats(rows, slot, since=None):
     """Per-variant outcome stats for one prompt slot, keyed by (variant, sha).
 
     Grouping by sha too means a mid-experiment text change (a stack upgrade that
     edited a variant file) never silently pools two different prompts under one id.
+    `since` (a timestamp) excludes samples recorded before it, so restarting an
+    experiment on the same slot never lets an earlier, unrelated run's history
+    silently satisfy this run's sample-size requirement.
     """
     gates = [row for row in rows if row.get('event') == 'gate'
-             and isinstance(row.get('prompt_variants'), dict) and slot in row['prompt_variants']]
+             and isinstance(row.get('prompt_variants'), dict) and slot in row['prompt_variants']
+             and (since is None or row.get('ts', 0) >= since)]
     by_key = {}
     for row in gates:
         info = row['prompt_variants'][slot]

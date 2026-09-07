@@ -207,9 +207,14 @@ same reason `ai failures` recomputes freely: their own derivation must never
 invalidate a running task.
 
 Curation is human-only by construction, not just convention: `cmd_lessons()`
-refuses `confirm`, `reject` and `promote` whenever `AI_GATE` or `AI_TASK_DIR`
-is set in the environment — the same guard `cmd_validate()` already uses to
-stop a model from certifying its own gate. `promote` appends the lesson's text
+refuses `add`, `confirm`, `reject`, `retire` and `promote` whenever `AI_GATE`
+or `AI_TASK_DIR` is set in the environment — the same guard `cmd_validate()`
+already uses to stop a model from certifying its own gate. Every command that
+creates a confirmed lesson or changes an existing one's status is covered, not
+just the ones with the most obviously adversarial names — `add` creates a
+`confirmed` entry immediately, and `retire` can make an inconvenient
+lesson disappear from future prompts, so both are as sensitive as `confirm`.
+`promote` appends the lesson's text
 to `rules.json` with `source: "lesson"` and retires the lesson, so a durable
 observation graduates into the one always-injected normative store instead of
 lessons and rules becoming two competing prompt-injection paths.
