@@ -1,11 +1,15 @@
 # Roadmap
 
 ## Next release — Workflow automation and measurement
+
+- [x] Bundled validators: contract, cleanup, provenance, quality (ponytail), summary and review; security and design when applicable.
 - [x] Reusable JSON and exit-code validator adapters
 - [x] Sequential pipeline with preflight and evidence-aware resume
 - [x] Task-scoped gate outcomes, durations and reported usage
 - [ ] Real-task benchmark fixtures and profile comparisons
 - [ ] End-to-end model usage capture and runtime budgets
+
+`ai validators install` completes semantic validator configuration while preserving project-specific `checks` and `regression`. Configuration stays outside the repository. Live semantic review requires authenticated Codex and populated task contracts; tests use a fixture reviewer to verify orchestration without model calls.
 
 ## v0.7 — Skills + Token Efficiency
 - [x] Lazy Skills Engine

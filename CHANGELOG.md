@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.7.2
+
+- Bundle read-only semantic validators for contract, cleanup, review, security, quality, design, summary and provenance; install them while preserving custom commands.
+- Validate structured reviewer responses and capture reported review tokens.
+- Generate the external PR summary before provenance review and bind both gates to its artifact hash.
 
 - Add reusable JSON/exit-code validators stored outside work repositories.
 - Add sequential `ai pipeline` with preflight, fail-fast execution and fresh-evidence resume.

@@ -26,7 +26,7 @@ def execute(command, cwd, env, output, timeout):
 
 
 ORDER = ('cleanup', 'checks', 'regression', 'contract', 'review', 'security',
-         'provenance', 'ponytail', 'design', 'summary')
+         'ponytail', 'design', 'summary', 'provenance')
 
 
 def validate_config(config):

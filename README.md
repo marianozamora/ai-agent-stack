@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.7.1)
+## Verified workflow (0.7.2)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -330,12 +330,7 @@ externally in `repos/<repo-id>/validators.json`, shared across tasks.
 # Options precede the gate name. Use the real commands from your project.
 ai validators set --adapter exit-code --evidence "Unit tests passed" checks -- npm test
 ai validators set --adapter exit-code --evidence "Regression suite passed" regression -- npm run test:regression
-ai validators set contract -- ./scripts/validate-contract
-ai validators set cleanup -- ./scripts/check-cleanup
-ai validators set provenance -- ./scripts/check-provenance
-ai validators set ponytail -- ./scripts/check-quality
-ai validators set summary -- ./scripts/validate-pr-summary
-ai validators set --timeout 300 review -- ./scripts/review-adapter
+ai validators install
 ai validators show
 
 ai pipeline --dry-run
@@ -346,7 +341,10 @@ ai metrics --json
 ai metrics --all-tasks --json
 ```
 
-The script names above are project-specific examples, not bundled executables.
+The test commands above are project-specific examples. `ai validators install`
+adds bundled contract, cleanup, review, security, ponytail, design, summary and
+provenance validators. It preserves custom commands, including checks/regression,
+and refreshes previously installed bundled commands after an upgrade.
 The reusable adapters are `json` (default) and `exit-code`. The JSON adapter
 requires a final stdout line containing `status: "PASS"` and a nonempty `evidence`
 array, even for checks/regression. The exit-code adapter translates a successful
@@ -357,11 +355,12 @@ Remove a configuration with `ai validators remove NAME`.
 
 Validators receive `AI_TASK_ID`, `AI_TASK_DIR`, `AI_REPO_STATE`, `AI_GATE` and
 `AI_BASE`. They can read task contracts, plans and prior gate logs from those
-external directories. No model is launched unless a configured command does so.
+external directories. Bundled semantic validators launch Codex; custom commands
+control their own execution.
 
 Pipeline preflight requires every applicable validator before running anything.
 Order is cleanup → checks → regression → contract → review → security →
-provenance → ponytail → design → summary, omitting conditional gates when not
+ponytail → design → summary → provenance, omitting conditional gates when not
 required. Cleanup here is a read-only check: apply cleanup fixes before running
 the pipeline. Any validator that changes repository/task inputs fails and stops
 the sequence. Timeouts terminate the process group on Linux/macOS. There are no
@@ -369,7 +368,37 @@ automatic retries. Final certification still goes through `ai ready`.
 
 `--resume` reuses successful evidence only when its fingerprint and log hash are
 current. Changes to validator configuration invalidate prior evidence, as do code,
-contracts and rules changes. Run one pipeline per task at a time.
+contracts and rules changes. Summary and provenance records also bind the generated
+summary hash, so editing or deleting that artifact invalidates their evidence.
+Run one pipeline per task at a time.
+
+Bundled validators require an installed, authenticated Codex CLI supporting
+`exec --output-schema`, `--output-last-message` and `--json`. They use the
+configured default model with a read-only sandbox and no approval escalation.
+The protocol follows [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
+Each required semantic gate makes one reviewer invocation; provider usage/billing
+applies. Token counts are captured from completion events; cost is not estimated.
+
+Before running, fill the external `contracts/current-pr.yml` printed by `ai path`
+with concrete acceptance criteria and constraints. For design tasks, populate the
+design contract and provide verifiable design evidence. A reviewer must return
+`NEEDS_HUMAN` for missing evidence. An empty acceptance list is rejected before
+review. Cleanup is a read-only residue review, contract maps requirements to
+evidence, review checks correctness, security inspects trust boundaries, ponytail
+checks local conventions and design verifies material requirements.
+
+Summary and provenance require all preceding applicable gates to have fresh
+successful evidence. The summary wrapper writes `state/pr-summary.md` externally;
+provenance then reviews that draft, changed deliverables and commit messages,
+distinguishing legitimate integration names from accidental attribution. Nothing
+is published or rewritten. Reviewer output is independently checked: process
+success alone, malformed JSON, missing output, PASS with blockers, and empty
+evidence cannot pass. These are model reviews, not deterministic proofs.
+Diagnostics are retained in the task's `review/*-events.jsonl` files.
+
+Run a bundled validator individually through the gate recorder, for example
+`ai gate contract -- ai validate contract`. The `validate` entry point requires
+the gate environment so execution remains covered by its timeout and fingerprint.
 
 Metrics are scoped to the current checkout and task by default. They report gate
 attempts, passes, failures, elapsed gate time, repeated attempts and pipeline

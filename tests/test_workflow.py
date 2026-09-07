@@ -193,6 +193,98 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('security',output)
         self.assertIn('review',output)
 
+    def bundled_pipeline(self, design=False):
+        fakebin=self.home/'tools'
+        fakebin.mkdir()
+        fake=fakebin/'codex'
+        fake.write_text('#!'+sys.executable+'\n'+'''import json, os, sys
+from pathlib import Path
+args=sys.argv
+assert args[1]=='exec' and args[args.index('-s')+1]=='read-only'
+assert 'approval_policy="never"' in args
+assert '--output-schema' in args and '--ephemeral' in args
+prompt=sys.stdin.read()
+assert 'Read-only review' in prompt
+name=os.environ['AI_GATE']
+task=Path(os.environ['AI_TASK_DIR'])
+with (task/'review/calls').open('a') as out: out.write(name+'\\n')
+mode=os.environ.get('FAKE_VERDICT','PASS')
+value={'status':mode if mode in ('PASS','FAIL','NEEDS_HUMAN') else 'PASS',
+       'evidence':['app.txt:1 inspected fixture'], 'findings':[],
+       'summary_markdown':'# Fixture change\\nVerified fixture tests.' if name=='summary' else ''}
+if mode=='contradiction': value['findings']=['app.txt:1 unresolved blocker']
+if mode!='missing': Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))
+print(json.dumps({'type':'turn.completed','usage':{'input_tokens':10,'output_tokens':2}}))
+if mode=='exit': sys.exit(2)
+''')
+        fake.chmod(0o755)
+        self.env['PATH']=str(fakebin)+os.pathsep+self.env['PATH']
+        if design:
+            self.plan('--figma','https://figma.com/design/fixture')
+        else:
+            self.plan()
+        task=Path(self.ai('path').strip())
+        contract=task/'contracts/current-pr.yml'
+        contract.write_text(contract.read_text().replace('acceptance: []','acceptance: ["Fixture remains readable"]'))
+        for name in ('checks','regression'):
+            self.ai('validators','set','--adapter','exit-code','--evidence','Fixture check passed',
+                    name,'--',sys.executable,'-c','pass')
+        self.ai('validators','install')
+        return task
+
+    def test_bundled_pipeline_summary_provenance_and_resume(self):
+        task=self.bundled_pipeline()
+        config=json.loads(self.ai('validators','show'))
+        self.ai('validators','install')
+        self.assertEqual(config,json.loads(self.ai('validators','show')))
+        self.assertEqual(config['validators']['checks']['adapter'],'exit-code')
+        self.assertIn('PR_READY',self.ai('pipeline'))
+        self.assertEqual((task/'review/calls').read_text().splitlines(),
+                         ['cleanup','contract','ponytail','summary','provenance'])
+        self.assertTrue((task/'state/pr-summary.md').is_file())
+        report=json.loads(self.ai('metrics','--json'))
+        self.assertEqual(report['usage']['input_tokens']['reported_total'],50)
+        self.ai('pipeline','--resume')
+        self.assertEqual(len((task/'review/calls').read_text().splitlines()),5)
+        (task/'state/pr-summary.md').write_text('tampered')
+        self.assertIn('summary',self.ai('ready',ok=False))
+        self.assertIn('PR_READY',self.ai('pipeline','--resume'))
+        self.assertEqual((task/'review/calls').read_text().splitlines()[-1],'summary')
+        # Restoring the identical reviewed summary may reuse provenance evidence.
+        self.assertEqual(self.git('status','--porcelain'),'')
+
+    def test_bundled_validator_fails_closed(self):
+        task=self.bundled_pipeline()
+        for mode in ('FAIL','NEEDS_HUMAN','contradiction','missing','exit'):
+            with self.subTest(mode=mode):
+                self.env['FAKE_VERDICT']=mode
+                self.ai('pipeline',ok=False)
+                record=json.loads((task/'gates/cleanup.json').read_text())
+                self.assertFalse(record['passed'])
+        self.assertEqual(set((task/'review/calls').read_text().splitlines()),{'cleanup'})
+
+    def test_bundled_contract_requires_criteria_and_gates(self):
+        task=self.bundled_pipeline()
+        self.assertIn('through ai pipeline',self.ai('validate','contract',ok=False))
+        self.ai('gate','contract','--',sys.executable,str(ROOT/'ai_stack/cli.py'),'validate','contract',ok=False)
+        contract=task/'contracts/current-pr.yml'
+        contract.write_text('objective: fixture\nacceptance: []\n')
+        self.ai('pipeline',ok=False)
+        record=json.loads((task/'gates/contract.json').read_text())
+        self.assertIn('no acceptance criteria',Path(record['log']).read_text())
+        self.assertEqual((task/'review/calls').read_text().splitlines(),['cleanup'])
+
+    def test_bundled_conditional_review_security_and_design(self):
+        task=self.bundled_pipeline(design=True)
+        (self.repo/'auth').mkdir()
+        (self.repo/'auth/token.py').write_text('token = 1')
+        self.assertIn('PR_READY',self.ai('pipeline'))
+        calls=(task/'review/calls').read_text().splitlines()
+        self.assertIn('review',calls)
+        self.assertIn('security',calls)
+        self.assertIn('design',calls)
+        self.assertEqual(calls[-2:],['summary','provenance'])
+
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):

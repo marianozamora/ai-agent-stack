@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.7.1)
+## Verified task lifecycle (0.7.2)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -98,6 +98,16 @@ validated first; semantic gates use JSON verdicts or an explicitly configured
 exit-code adapter. Failure stops execution. Resume requires matching fingerprints
 and intact log hashes. Final readiness is recomputed rather than inferred from
 process completion.
+
+`ai_stack/validators.py` implements the bundled semantic review protocol.
+`ai validators install` adds missing semantic commands without replacing custom
+validators. Reviewers run in Codex's read-only sandbox and inherit the enclosing
+gate's process group, so its timeout terminates the reviewer and its child tools.
+Structured output is validated independently of process success. Summary creation
+is performed by the wrapper outside the checkout, before provenance review;
+both gate records include the summary artifact hash. Missing prerequisites stop
+bundled validators before model execution. Reviewer completion events supply
+token counts, while missing cost data remains unreported.
 
 `ai_stack/workflow.py` holds reusable configuration validation, process execution,
 usage normalization and aggregation. The CLI retains repository/task resolution
