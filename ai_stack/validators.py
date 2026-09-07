@@ -79,17 +79,18 @@ def run_codex_json(executable, root, review_dir, name, prompt, schema, checker, 
         schema_path.write_text(json.dumps(schema))
         events = directory/'events.jsonl'
         diagnostics = review_dir/f'{name}-events.jsonl'
-        with events.open('w') as output:
-            try:
-                result = subprocess.run([executable, 'exec', '-s', 'read-only',
-                    '-c', 'approval_policy="never"', '--ephemeral', '--json',
-                    '--output-schema', str(schema_path), '--output-last-message', str(final), '-'],
-                    input=prompt, text=True, cwd=root, stdout=output, stderr=subprocess.STDOUT, timeout=timeout)
-            except subprocess.TimeoutExpired:
-                diagnostics.write_bytes(events.read_bytes())
-                raise ValueError(f'Reviewer timed out after {timeout}s; diagnostics: {diagnostics}')
-        # Keep process diagnostics externally for failures, including missing final output.
-        diagnostics.write_bytes(events.read_bytes())
+        try:
+            with events.open('w') as output:
+                try:
+                    result = subprocess.run([executable, 'exec', '-s', 'read-only',
+                        '-c', 'approval_policy="never"', '--ephemeral', '--json',
+                        '--output-schema', str(schema_path), '--output-last-message', str(final), '-'],
+                        input=prompt, text=True, cwd=root, stdout=output, stderr=subprocess.STDOUT, timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    raise ValueError(f'Reviewer timed out after {timeout}s; diagnostics: {diagnostics}')
+        finally:
+            # Keep process diagnostics externally for failures, including a timeout or missing output.
+            diagnostics.write_bytes(events.read_bytes())
         if result.returncode:
             raise ValueError(f'Reviewer exited {result.returncode}; diagnostics: {diagnostics}')
         if not final.is_file() or final.stat().st_size > 64000:

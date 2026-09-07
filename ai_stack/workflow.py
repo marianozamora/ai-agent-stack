@@ -102,6 +102,34 @@ def _shared_scope_hint(texts):
     return f'{prefix}/**' if count >= 2 else None
 
 
+def _usage_totals(entries):
+    """Reported input+output tokens per entry that carried any usage at all."""
+    return [e['usage'].get('input_tokens', 0) + e['usage'].get('output_tokens', 0)
+            for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
+
+
+def _pass_rate_stats(entries):
+    """Overall and first-attempt pass rate for a group of gate events. None if not applicable."""
+    n = len(entries)
+    first_attempts = [e for e in entries if e.get('attempt') == 1]
+    return {
+        'pass_rate': round(sum(1 for e in entries if e.get('passed') is True) / n, 3) if n else None,
+        'first_attempt_pass_rate': (
+            round(sum(1 for e in first_attempts if e.get('passed') is True) / len(first_attempts), 3)
+            if first_attempts else None),
+    }
+
+
+def _bucket_counts(entries, keys):
+    """Occurrence counts per distinct value, one bucket per requested row key."""
+    buckets = {key: {} for key in keys}
+    for e in entries:
+        for key, bucket in buckets.items():
+            value = e.get(key)
+            if value: bucket[value] = bucket.get(value, 0) + 1
+    return buckets
+
+
 def detect_patterns(rows, min_occurrences=2):
     """A pattern is a (gate, finding hash) pair observed across >=2 distinct tasks.
 
@@ -112,8 +140,11 @@ def detect_patterns(rows, min_occurrences=2):
     attempts_by_task_gate = {}
     for row in gates:
         attempts_by_task_gate.setdefault((row.get('task_key'), row.get('gate')), []).append(row)
+    row_index = {}
     for entries in attempts_by_task_gate.values():
         entries.sort(key=lambda row: row.get('attempt') or 0)
+        for i, entry in enumerate(entries):
+            row_index[id(entry)] = i
 
     occurrences = {}
     for row in gates:
@@ -129,14 +160,11 @@ def detect_patterns(rows, min_occurrences=2):
         distinct_tasks = {row.get('task_key') for row, _ in items}
         if len(items) < min_occurrences or len(distinct_tasks) < 2:
             continue
-        by_profile, by_risk, by_task_type = {}, {}, {}
+        buckets = _bucket_counts([row for row, _ in items], ('profile', 'risk', 'task_type'))
         resolved_next_attempt = 0
         for row, _ in items:
-            for bucket, key in ((by_profile, 'profile'), (by_risk, 'risk'), (by_task_type, 'task_type')):
-                value = row.get(key)
-                if value: bucket[value] = bucket.get(value, 0) + 1
             entries = attempts_by_task_gate.get((row.get('task_key'), gate), [])
-            index = next((i for i, entry in enumerate(entries) if entry is row), None)
+            index = row_index.get(id(row))
             if index is not None and index + 1 < len(entries) and entries[index + 1].get('passed') is True:
                 resolved_next_attempt += 1
         timestamps = [row.get('ts') for row, _ in items if isinstance(row.get('ts'), (int, float))]
@@ -145,7 +173,7 @@ def detect_patterns(rows, min_occurrences=2):
             'occurrences': len(items), 'distinct_tasks': len(distinct_tasks),
             'first_seen': min(timestamps) if timestamps else None,
             'last_seen': max(timestamps) if timestamps else None,
-            'by_profile': by_profile, 'by_risk': by_risk, 'by_task_type': by_task_type,
+            'by_profile': buckets['profile'], 'by_risk': buckets['risk'], 'by_task_type': buckets['task_type'],
             'scope_hint': _shared_scope_hint(text for _, text in items),
             'resolved_next_attempt': resolved_next_attempt,
         })
@@ -175,19 +203,14 @@ def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
         n = len(entries)
         result = {'gate': gate, 'n': n, 'sufficient': n >= min_n}
         if result['sufficient']:
-            first_attempts = [e for e in entries if e.get('attempt') == 1]
             latest_attempt_per_task = {}
             for e in entries:
                 key = e.get('task_key')
                 latest_attempt_per_task[key] = max(latest_attempt_per_task.get(key, 0), e.get('attempt') or 1)
-            usage_totals = [e['usage'].get('input_tokens', 0) + e['usage'].get('output_tokens', 0)
-                             for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
-            result['pass_rate'] = round(sum(1 for e in entries if e.get('passed') is True) / n, 3)
-            result['first_attempt_pass_rate'] = (
-                round(sum(1 for e in first_attempts if e.get('passed') is True) / len(first_attempts), 3)
-                if first_attempts else None)
+            result.update(_pass_rate_stats(entries))
             result['median_attempts'] = (statistics.median(latest_attempt_per_task.values())
                                           if latest_attempt_per_task else None)
+            usage_totals = _usage_totals(entries)
             result['median_usage_tokens'] = statistics.median(usage_totals) if usage_totals else None
         stats.append(result)
     return stats
@@ -212,23 +235,13 @@ def variant_stats(rows, slot, since=None):
 
     stats = []
     for (variant, sha), entries in sorted(by_key.items()):
-        n = len(entries)
-        first_attempts = [e for e in entries if e.get('attempt') == 1]
-        usage_totals = [e['usage'].get('input_tokens', 0) + e['usage'].get('output_tokens', 0)
-                         for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
-        by_task_type, by_risk = {}, {}
-        for e in entries:
-            for bucket, key in ((by_task_type, 'task_type'), (by_risk, 'risk')):
-                value = e.get(key)
-                if value: bucket[value] = bucket.get(value, 0) + 1
+        usage_totals = _usage_totals(entries)
+        buckets = _bucket_counts(entries, ('task_type', 'risk'))
         stats.append({
-            'variant': variant, 'sha': sha, 'n': n,
-            'pass_rate': round(sum(1 for e in entries if e.get('passed') is True) / n, 3),
-            'first_attempt_pass_rate': (
-                round(sum(1 for e in first_attempts if e.get('passed') is True) / len(first_attempts), 3)
-                if first_attempts else None),
+            'variant': variant, 'sha': sha, 'n': len(entries),
+            **_pass_rate_stats(entries),
             'median_usage_tokens': statistics.median(usage_totals) if usage_totals else None,
-            'by_task_type': by_task_type, 'by_risk': by_risk,
+            'by_task_type': buckets['task_type'], 'by_risk': buckets['risk'],
         })
     return stats
 

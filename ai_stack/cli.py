@@ -275,15 +275,8 @@ def record_metric(state:Path,event:str,**data):
 
 def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     """Count prior recorded attempts of this gate for this task, for a fresh 1-based number."""
-    p=state/'metrics.jsonl'
-    if not p.exists(): return 1
-    count=0
-    for line in p.read_text().splitlines():
-        try: row=json.loads(line)
-        except ValueError: continue
-        if isinstance(row,dict) and row.get('event')=='gate' and row.get('task_key')==task_key and row.get('gate')==gate:
-            count+=1
-    return count+1
+    rows,_=load_metric_rows(state)
+    return 1+sum(1 for row in rows if row.get('event')=='gate' and row.get('task_key')==task_key and row.get('gate')==gate)
 
 def ensure_contract(state:Path,task:str,figma:str|None=None):
     p=task_state(state)/'contracts'/'current-pr.yml'
@@ -331,6 +324,12 @@ def save_lessons(state:Path,lessons:list[dict]):
     save_json(state/'lessons.json',lessons)
 
 
+def find_lesson(lessons:list[dict],lesson_id:str)->dict:
+    match=next((l for l in lessons if l['id']==lesson_id),None)
+    if not match: raise SystemExit(f'Unknown lesson: {lesson_id}')
+    return match
+
+
 def derive_lessons(state:Path)->tuple[int,int]:
     """Create candidate lessons from failure patterns. Never mutates a confirmed/rejected/retired one."""
     report=rebuild_patterns(state)
@@ -359,14 +358,17 @@ def derive_lessons(state:Path)->tuple[int,int]:
     return created,updated
 
 
+def scope_matches(pattern:str|None,files:list[str])->bool:
+    """Whether a stored scope glob (None/'**' = everywhere) touches any file in the change."""
+    pattern=pattern or '**'
+    return pattern=='**' or any(fnmatch.fnmatch(f,pattern) for f in files)
+
+
 def select_lessons(state:Path,scope:dict,profile:str)->list[dict]:
     top_k=LESSON_TOP_K[profile]
     if top_k==0: return []
     files=scope.get('files',[])
-    def matches(lesson):
-        pattern=lesson.get('scope') or '**'
-        return pattern=='**' or any(fnmatch.fnmatch(f,pattern) for f in files)
-    candidates=[l for l in load_lessons(state) if l.get('status')=='confirmed' and matches(l)]
+    candidates=[l for l in load_lessons(state) if l.get('status')=='confirmed' and scope_matches(l.get('scope'),files)]
     candidates.sort(key=lambda l:(-l.get('observations',0),-(l.get('last_seen') or 0),l['id']))
     return candidates[:top_k]
 
@@ -843,7 +845,7 @@ def cmd_planrun(args,launch:bool):
     print('  Graphify:   ','ready' if (state/'graphify'/'graph.json').exists() else 'not built')
     print('  CRG:        ', 'ready' if plan.get('crg',{}).get('impact_cached') else ('installed/not-ready' if crg_cmd() else 'missing'))
     print('  prompt:     ',task_state(state)/'state'/'current-run.md')
-    card=confidence_card(root,state,args.base,args.profile)
+    card=confidence_card(root,state,args.base,args.profile,scope=plan.get('scope'),risk=plan.get('risk'))
     weakest=card['weakest_gate']
     print('  confidence: ','no sufficient history yet' if not weakest else
           f"weakest gate {weakest['gate']} pass_rate={weakest['pass_rate']} (n={weakest['n']})")
@@ -1027,11 +1029,21 @@ def cmd_failures(args):
         print(f"    {p['example']}")
 
 
+def require_human(action:str):
+    """Refuse when running inside a gate/validator's own environment.
+
+    One implementation for the "curation is human-only" invariant, so a model running
+    inside a gate can never confirm/inject/retire its own future prompt context (lessons)
+    or promote its own validator's prompt (experiments) — shared by every caller instead
+    of each command re-typing the same env check, which drifted out of sync once already.
+    """
+    if os.environ.get('AI_GATE') or os.environ.get('AI_TASK_DIR'):
+        raise SystemExit(f'{action} is human-only; run this outside a gate/validator environment.')
+
+
 def cmd_lessons(args):
     state=repo_state(git_root())
-    guarded=('confirm','reject','retire','promote','add')
-    if args.lessons_cmd in guarded and (os.environ.get('AI_GATE') or os.environ.get('AI_TASK_DIR')):
-        raise SystemExit('Lesson curation is human-only; run this outside a gate/validator environment.')
+    if args.lessons_cmd in ('confirm','reject','retire','promote','add'): require_human('Lesson curation')
     lessons=load_lessons(state)
     if args.lessons_cmd=='derive':
         created,updated=derive_lessons(state)
@@ -1046,15 +1058,13 @@ def cmd_lessons(args):
                'created_at':now,'confirmed_at':now,'confirmed_by':'user','injections':0}
         lessons.append(entry); save_lessons(state,lessons); print('Lesson added:',entry['id']); return
     if args.lessons_cmd in ('confirm','reject','retire'):
-        match=next((l for l in lessons if l['id']==args.lesson_id),None)
-        if not match: raise SystemExit(f'Unknown lesson: {args.lesson_id}')
+        match=find_lesson(lessons,args.lesson_id)
         if args.lessons_cmd=='confirm': match['status']='confirmed'; match['confirmed_at']=time.time(); match['confirmed_by']='user'
         elif args.lessons_cmd=='reject': match['status']='rejected'
         else: match['status']='retired'
         save_lessons(state,lessons); print(f"{args.lesson_id}: {match['status']}"); return
     if args.lessons_cmd=='promote':
-        match=next((l for l in lessons if l['id']==args.lesson_id),None)
-        if not match: raise SystemExit(f'Unknown lesson: {args.lesson_id}')
+        match=find_lesson(lessons,args.lesson_id)
         if match.get('status')!='confirmed': raise SystemExit('Only a confirmed lesson can be promoted.')
         rules=load_json(state/'rules.json',[])
         rules.append({'rule':match['text'],'scope':match.get('scope','**'),'source':'lesson',
@@ -1076,26 +1086,28 @@ def cmd_lessons(args):
         print(f"{l['id']}  [{l['status']}] {l.get('scope','**')}  {l['text']}")
 
 
-def confidence_card(root:Path,state:Path,base:str,profile:str)->dict:
+def confidence_card(root:Path,state:Path,base:str,profile:str,*,scope:dict|None=None,risk:dict|None=None)->dict:
     """A forecast card: observed historical frequencies for this change's stratum, with n.
 
     Purely descriptive. Never consulted by classify(), required_gates() or cmd_ready() —
     confidence can only ever suggest more rigor (a higher profile), never relax gating.
+    Pass an already-computed `scope`/`risk` (e.g. from a just-built plan) to skip a redundant
+    collect_scope()/classify() recompute; `ai confidence` itself has none to pass, so it
+    lets this derive them fresh.
     """
-    scope=collect_scope(root,base); risk=classify(scope,profile)
+    if scope is None: scope=collect_scope(root,base)
+    if risk is None: risk=classify(scope,profile)
     plan=load_json(task_state(state)/'state/current-plan.json',{})
     task_type=plan.get('task_type') if plan.get('scope',{}).get('base')==base and plan.get('profile')==profile else None
     rows,_=load_metric_rows(state)
     stats=outcome_stats(rows,profile=profile,risk=risk['risk'],task_type=task_type)
-    patterns=rebuild_patterns(state)['patterns']
-    matched_patterns=[p for p in patterns if p.get('scope_hint')
-                       and any(fnmatch.fnmatch(f,p['scope_hint']) for f in scope['files'])]
+    patterns=detect_patterns(rows)
+    matched_patterns=[p for p in patterns if p.get('scope_hint') and scope_matches(p['scope_hint'],scope['files'])]
     required=required_gates(root,{'scope':scope,'profile':profile,'risk':risk,'figma':plan.get('figma')})
     by_gate={s['gate']:s for s in stats}
-    weakest=min((by_gate[g] for g in required if g in by_gate and by_gate[g]['sufficient']),
-                key=lambda s:s['pass_rate'],default=None)
-    projected=sum((by_gate[g].get('median_usage_tokens') or 0) for g in required
-                  if g in by_gate and by_gate[g]['sufficient'])
+    sufficient=[by_gate[g] for g in required if g in by_gate and by_gate[g]['sufficient']]
+    weakest=min(sufficient,key=lambda s:s['pass_rate'],default=None)
+    projected=sum(s.get('median_usage_tokens') or 0 for s in sufficient)
     budget=context_caps(profile)['usage_tokens']
     return {'risk':risk['risk'],'task_type':task_type,'profile':profile,'required_gates':required,
             'stats':stats,'weakest_gate':weakest,'matched_patterns':len(matched_patterns),
@@ -1167,8 +1179,7 @@ def cmd_prompt(args):
             print(f"    by_task_type={s['by_task_type']}  by_risk={s['by_risk']}")
         return
     if args.prompt_cmd=='promote':
-        if os.environ.get('AI_GATE') or os.environ.get('AI_TASK_DIR'):
-            raise SystemExit('Prompt promotion is human-only; run this outside a gate/validator environment.')
+        require_human('Prompt promotion')
         slot=prompt_slot(args.name)
         if args.variant not in available_variants(slot): raise SystemExit(f'Unknown variant: {slot}/{args.variant}')
         experiment=prompt_experiment(state)
@@ -1183,7 +1194,7 @@ def cmd_prompt(args):
                   f"(evidence since this experiment started, min {min_samples} samples/variant)")
             short=[]
             for v in experiment['variants']:
-                current_sha=shasum(variant_text(args.name,slot,v))[:12]
+                current_sha=variant_entry(args.name,slot,v)['sha']
                 s=by_key.get((v,current_sha))
                 n=s['n'] if s else 0
                 stale=[k for k in by_key if k[0]==v and k[1]!=current_sha]
@@ -1198,7 +1209,7 @@ def cmd_prompt(args):
             print(f"Prompt promotion candidate: {slot} -> {args.variant} (no active experiment for this slot; no evidence to show).")
         if not args.confirm: raise SystemExit('Re-run with --confirm to apply.')
         data=prompt_overrides(state)
-        data['slots'][slot]={'variant':args.variant,'sha':shasum(variant_text(args.name,slot,args.variant))[:12],
+        data['slots'][slot]={**variant_entry(args.name,slot,args.variant),
                               'promoted_at':int(time.time()),'promoted_by':'user'}
         save_json(state/'prompt-overrides.json',data)
         if experiment and experiment['slot']==slot: save_json(state/'prompt-experiments.json',{'version':1,'active':None})
@@ -1226,9 +1237,12 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
             with path.open('rb') as f:
                 for block in iter(lambda:f.read(1024*1024),b''): digest.update(block)
         else: digest.update(b'<missing>')
+    task=task_state(state)
+    # Any file that changes what a gate/validator is told (config, curated context, prompt
+    # choice) belongs in this list, alongside the PR/design contracts it already covers.
     for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',state/'prompt-overrides.json',
-                 task_state(state)/'state/lessons.json',task_state(state)/'state/prompt-assignment.json',
-                 *sorted((task_state(state)/'contracts').glob('*'))]:
+                 task/'state/lessons.json',task/'state/prompt-assignment.json',
+                 *sorted((task/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
     return digest.hexdigest()
 
@@ -1284,6 +1298,10 @@ def variant_text(name:str,slot:str,variant:str)->str:
     return path.read_text()
 
 
+def variant_entry(name:str,slot:str,variant:str)->dict:
+    return {'variant':variant,'sha':shasum(variant_text(name,slot,variant))[:12]}
+
+
 def available_variants(slot:str)->list[str]:
     directory=STACK_ROOT/'templates/prompts'/slot
     variants=['a']
@@ -1308,13 +1326,12 @@ def assign_prompt_variants(state:Path,cache_key:str)->dict:
     """
     assignment={}
     for slot,info in prompt_overrides(state).get('slots',{}).items():
-        name=slot.split('.',1)[1]; variant=info['variant']
-        assignment[slot]={'variant':variant,'sha':shasum(variant_text(name,slot,variant))[:12]}
+        assignment[slot]=variant_entry(slot.split('.',1)[1],slot,info['variant'])
     experiment=prompt_experiment(state)
     if experiment and experiment['slot'] not in assignment:
         slot=experiment['slot']; name=slot.split('.',1)[1]; variants=experiment['variants']
         variant=variants[int(shasum(cache_key+slot),16)%len(variants)]
-        assignment[slot]={'variant':variant,'sha':shasum(variant_text(name,slot,variant))[:12]}
+        assignment[slot]=variant_entry(name,slot,variant)
     return assignment
 
 
@@ -1401,7 +1418,7 @@ def cmd_pipeline(args):
         print(json.dumps({'order':required,'validators':{name:config[name] for name in required}},indent=2))
         return
     budget=plan['caps'].get('usage_tokens')
-    card=confidence_card(root,state,plan['scope']['base'],plan['profile'])
+    card=confidence_card(root,state,plan['scope']['base'],plan['profile'],scope=plan['scope'],risk=plan['risk'])
     if budget and card['projected_usage_tokens']>budget:
         print(f"Note: projected usage from prior runs ({card['projected_usage_tokens']} tokens, n-backed) "
               f"exceeds this profile's budget ({budget}); consider a stricter profile. Continuing.")
@@ -1438,17 +1455,17 @@ def cmd_pipeline(args):
 
 
 def cmd_gate(args):
-    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    root=git_root(); state=repo_state(root); plan=current_plan(state); task=task_state(state)
     command=args.command
     if command[:1]==['--']: command=command[1:]
     if not command: raise SystemExit('A gate requires an executable command after --.')
     if args.timeout<=0: raise SystemExit('Timeout must be positive.')
     before=evidence_fingerprint(root,state,plan)
     started=time.monotonic()
-    directory=task_state(state)/'gates'
+    directory=task/'gates'
     log=directory/(args.name+'-'+uuid.uuid4().hex+'.log')
-    env=dict(os.environ,AI_TASK_ID=load_json(task_state(state)/'task.json',{})['id'],
-             AI_TASK_DIR=str(task_state(state)),AI_REPO_STATE=str(state),AI_GATE=args.name,
+    env=dict(os.environ,AI_TASK_ID=load_json(task/'task.json',{})['id'],
+             AI_TASK_DIR=str(task),AI_REPO_STATE=str(state),AI_GATE=args.name,
              AI_BASE=plan['scope']['base'])
     with log.open('w') as out:
         code=execute(command,root,env,out,args.timeout)
@@ -1468,7 +1485,7 @@ def cmd_gate(args):
     passed=code==0 and before==after and (not needs_verdict or valid_verdict)
     duration=round(time.monotonic()-started,3)
     artifacts=[]
-    summary=task_state(state)/'state/pr-summary.md'
+    summary=task/'state/pr-summary.md'
     if args.name in ('summary','provenance') and summary.is_file():
         artifacts.append({'path':str(summary),'sha256':hashlib.sha256(summary.read_bytes()).hexdigest()})
     save_json(directory/(args.name+'.json'),{'gate':args.name,'passed':passed,'exit_code':code,
@@ -1479,10 +1496,11 @@ def cmd_gate(args):
     if isinstance(verdict,dict) and isinstance(verdict.get('findings'),list):
         for text in verdict['findings'][:plan['caps']['findings']]:
             if isinstance(text,str) and text.strip():
-                findings.append({'hash':finding_signature(text),'text':normalize_finding(text)})
-    attempt=gate_attempt_number(state,task_state(state).name,args.name)
+                normalized=normalize_finding(text)
+                findings.append({'hash':finding_signature(normalized),'text':normalized})
+    attempt=gate_attempt_number(state,task.name,args.name)
     slot=prompt_slot(args.name)
-    assignment=load_json(task_state(state)/'state/prompt-assignment.json',{})
+    assignment=load_json(task/'state/prompt-assignment.json',{})
     prompt_variants={slot:assignment[slot]} if slot in assignment else {}
     record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,
                   usage=usage,attempt=attempt,findings=findings,prompt_variants=prompt_variants)
