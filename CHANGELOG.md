@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.4
+
+- Split `ai_stack/cli.py` (2003 lines) into 11 domain modules — `core.py` (git/JSON/state primitives, risk policy), `metrics.py`, `skills.py`, `prompts.py`, `learning.py`, `crg.py`, `tools.py` (Context7/Graphify/Figma), `repo.py`, `benchmark.py`, `lifecycle.py`, `gates.py` — leaving `cli.py` as a ~130-line entry point (`parser()` + `main()`). Pure mechanical refactor: no CLI output, exit code, file format, or evidence-fingerprint computation changed; all 45 tests pass unchanged. Bare same-directory imports throughout (`from core import ...`), matching the existing `workflow`/`validators` convention, since `ai_stack/` is a flat script directory, not a package — `install.py`, `bin/ai` and `tests/validate.py` needed zero changes.
+- Fixed one real bug the split surfaced: `ai benchmark run`'s sandboxed scenarios resolved the CLI to re-exec via `Path(__file__)`, which after the split pointed at `benchmark.py` instead of `cli.py`. Now uses `STACK_ROOT/'ai_stack/cli.py'`, the same idiom `ai validators install` already uses for the bundled validator commands.
+
 ## 0.9.3
 
 - Add `ai ticket check` / `ai plan --ticket-file`: paste a ticket's own text (from Jira, GitHub Issues, Linear, anywhere) and analyze it locally with regex, no network and no model call. Detected acceptance criteria fill an empty contract using the exact same emptiness check the `contract` gate already uses (never overwrites a human-authored list); a detected Figma link is adopted like an inline task URL already is; mentioned blockers/dependencies are reported as advisory only, permanently, since there's no live source to verify one is still actually open. Scoped down from a larger live-fetch/Jira-API design after discussion — see ROADMAP.md.

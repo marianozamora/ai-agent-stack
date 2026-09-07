@@ -22,6 +22,37 @@ flowchart TB
 
 The repository fingerprint is derived from the normalized `origin` URL (or the local root if no remote exists). Moving a checkout therefore does not normally lose its learned profile/rules.
 
+## Module layout
+
+`ai_stack/` is a flat directory of scripts, not a Python package (no
+`__init__.py`) — every invocation path (`bin/ai`, the test suite, the bundled
+validators' recursive `ai validate` call, a benchmark sandbox) execs
+`ai_stack/cli.py` fresh, so every inter-module import is a bare
+same-directory `from <module> import <name>`, matching the existing
+`workflow`/`validators` convention. `cli.py` itself is a thin entry point
+(`parser()` + `main()`, ~130 lines) that imports its command handlers from:
+
+- `core.py` — git/JSON/state primitives (`repo_state`, `task_state`,
+  `load_json`/`save_json`), the risk/routing policy (`classify`,
+  `context_caps`, `required_gates`), and the mutable `TASK_ID` — the module
+  everything else depends on, imported by nothing else in the graph.
+- `metrics.py`, `skills.py`, `crg.py`, `tools.py` — self-contained domains
+  (usage log, skill router, Code Review Graph, Context7/Graphify/Figma
+  wrappers), each depending only on `core`.
+- `prompts.py`, `learning.py` — the v0.8 "Learning" surface (`ai prompt`,
+  `ai lessons`/`ai failures`/`ai confidence`), each depending on `core` and
+  `metrics`.
+- `repo.py`, `benchmark.py` — depend additionally on `skills`/`crg`.
+- `lifecycle.py` (`ai plan`/`ai run`/`ai ticket`/`ai handoff`) and `gates.py`
+  (`ai gate`/`ai pipeline`/`ai ready`/validator config) sit at the top of the
+  graph, each depending on several of the modules above.
+
+The boundary rule: a function lives with the domain that owns the external
+state file it reads or writes (e.g. every read/write of `metrics.jsonl` is in
+`metrics.py`); a primitive used by two or more domains moves down into
+`core.py` rather than one domain importing another's helper. This is a pure
+reorganization — no command, flag, output string, or file format changed.
+
 ## Context hierarchy
 
 ```mermaid
@@ -77,7 +108,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.9.3)
+## Verified task lifecycle (0.9.4)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -130,7 +161,7 @@ counts runs that stopped on a budget, so `ai metrics` shows end-to-end spend
 across a whole run, not just per-gate figures.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (`BENCHMARK_TASKS` in
-`ai_stack/cli.py`) through `classify`, `context_caps` and `select_skills` for
+`ai_stack/benchmark.py`) through `classify`, `context_caps` and `select_skills` for
 every profile, without touching git history, an active task or a model call.
 It is a deterministic regression check on risk classification and skill
 selection across profiles as those functions evolve.
@@ -188,7 +219,7 @@ from event ordering). The displayed `example` is one finding's own normalized
 text — never a model-generated summary of the pattern, so there is nothing
 synthesized to hallucinate.
 
-`ai_stack/cli.py`'s `cmd_failures()` calls `rebuild_patterns()` on every
+`ai_stack/learning.py`'s `cmd_failures()` calls `rebuild_patterns()` on every
 invocation — list, `show`, `export` and `rebuild` alike all recompute from
 `metrics.jsonl` on the spot, the same no-stale-cache convention `cmd_metrics()`
 already follows. The result is also persisted to the repo-scoped
@@ -207,7 +238,7 @@ gate-launched model could write into the checkout.
 `lessons.json` (repo-scoped, replacing the unused `observations.json` from
 earlier releases) holds empirical, derived entries — distinct from `rules.json`,
 which stays the normative, human-authored store. `derive_lessons()` in
-`ai_stack/cli.py` calls `rebuild_patterns()` and creates one `candidate` lesson
+`ai_stack/learning.py` calls `rebuild_patterns()` and creates one `candidate` lesson
 per pattern (`by_pattern` keyed on `pattern_id`), copying the pattern's own
 normalized example text verbatim. Re-running `derive` only refreshes an
 existing `candidate`'s counts; a `confirmed`, `rejected` or `retired` entry is
@@ -257,7 +288,7 @@ what a docs file actually claims, or whether the repo talks to another one.
 prompt, schema, checker, timeout=None)` — the same read-only/ephemeral/
 schema-validated safety contract, decoupled from the gate-specific PASS/FAIL
 `SCHEMA`. `model_verdict()` is now a thin wrapper over it for the gate
-protocol. `cmd_profile()` in `ai_stack/cli.py` is the second caller: it has no
+protocol. `cmd_profile()` in `ai_stack/repo.py` is the second caller: it has no
 enclosing `ai gate` process group, so it is the one caller that must pass an
 explicit `timeout` (default 600s via `--timeout`); `run_codex_json` persists
 diagnostics to `review/<name>-events.jsonl` even on a timeout, not only on a
@@ -289,7 +320,7 @@ a rate computed on too few observations. A sufficient row adds `pass_rate`,
 each task's highest recorded `attempt`) and `median_usage_tokens`. There are
 deliberately no confidence intervals or significance tests.
 
-`confidence_card()` in `ai_stack/cli.py` is the single place that assembles a
+`confidence_card()` in `ai_stack/learning.py` is the single place that assembles a
 card from `outcome_stats()` plus `rebuild_patterns()` (patterns whose
 `scope_hint` glob-matches a file in the current `collect_scope()` result) plus
 `required_gates()` plus the profile's `usage_tokens` budget, and is reused by
@@ -316,7 +347,7 @@ attributable to the prompt wording. Variant `a` is always `INSTRUCTIONS[name]`
 itself, resolved in code with no file dependency; an alternate variant is a
 human-authored `templates/prompts/validator.<name>/<variant>.md` (`templates/`
 is already in `install.py`'s copy list). `variant_text()`/`available_variants()`
-in `ai_stack/cli.py` are the only two places that know this resolution rule.
+in `ai_stack/prompts.py` are the only two places that know this resolution rule.
 
 At most one experiment runs per repo (`prompt-experiments.json`,
 `{"active": {"slot", "variants", "started_at", "min_samples_per_variant"}}`).
@@ -365,7 +396,7 @@ unreported usage stays `None`, counted separately via `reported_attempts`/
 `unreported_attempts`, never zero-filled — a row missing usage data must never look
 cheaper than a row that reported zero.
 
-`cmd_metrics()` in `ai_stack/cli.py` dispatches to `usage_report()` when `--by` is
+`cmd_metrics()` in `ai_stack/metrics.py` dispatches to `usage_report()` when `--by` is
 given, instead of `summarize()`'s flat report; `--json`/`--format json` are kept as
 aliases so existing callers (including the test suite) are unaffected. `--format csv`
 writes via the stdlib `csv` module to STDOUT only — no `--out` flag, the same
@@ -401,7 +432,7 @@ was already complete, but promotion had no history — `promote`/`reset` overwro
 "what was this slot running before?" or undo a bad promotion once `variant_stats()`'s
 live comparison had scrolled off the terminal.
 
-`append_prompt_history()`/`load_prompt_history()` in `ai_stack/cli.py` manage a new
+`append_prompt_history()`/`load_prompt_history()` in `ai_stack/prompts.py` manage a new
 repo-scoped, append-only `prompt-history.jsonl`. Every `promote`, `reset` and
 `rollback` appends one entry: `{ts, stack_version, action, slot, variant, sha,
 previous, actor, experiment_started_at, evidence}`. `promote`'s entry carries the

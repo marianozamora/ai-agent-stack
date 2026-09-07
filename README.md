@@ -342,7 +342,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.9.3)
+## Verified workflow (0.9.4)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
