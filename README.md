@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.7.3)
+## Verified workflow (0.8.1)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -431,6 +431,27 @@ per-gate usage; unreported usage remains `null`, never estimated.
 ai benchmark
 ai benchmark --json
 ```
+
+```bash
+ai failures
+ai failures --gate cleanup --min 3 --json
+ai failures show pat_9f2c1a4b7d30
+ai failures rebuild
+ai failures export
+```
+
+`ai failures` reports failure patterns: a `(gate, finding hash)` pair observed
+across at least 2 distinct tasks. This is a verifiable fact about the recorded
+log (`metrics.jsonl`), not a diagnosis — the displayed `example` text is the
+model's original finding and is never asserted to be true. Every `ai failures`
+command recomputes patterns from `metrics.jsonl` on the spot (like `ai metrics`)
+and writes the result to `patterns.json` as a persisted snapshot; `rebuild` runs
+the same computation and prints a summary. This file is excluded from the
+evidence fingerprint, so recomputing it never invalidates an in-flight task's
+gate evidence. `export` prints anonymized
+`{gate, hash, occurrences}` counts to STDOUT only — no example text, no scope
+hint, no repository identifier, and no `--out` flag, so a model running inside
+a gate cannot write it into the checkout.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
 migration, UI copy change, integration work, a Figma-driven design task and a

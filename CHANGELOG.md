@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- Add `ai failures`: detect failure patterns (a `gate`+finding-hash pair seen across at least 2 distinct tasks) from recorded metrics, with `show`, `rebuild` and an anonymized STDOUT-only `export`. Pure stdlib computation over `metrics.jsonl`; no model call, no gating effect, and the cached `patterns.json` is excluded from the evidence fingerprint so recomputing it never invalidates in-flight task evidence.
+
 ## 0.8.0
 
 - Enrich every recorded gate event with `stack_version`, `risk`, `task_type` and a 1-based `attempt` number, and every metric event with `stack_version`/`risk`/`task_type` from the current plan.

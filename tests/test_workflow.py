@@ -152,6 +152,32 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(first_findings[0]['hash'], first_findings[1]['hash'])
         self.assertEqual(gates[1]['findings'], [])
 
+    def test_failures_detects_patterns_across_tasks(self):
+        self.assertIn('No recurring', self.ai('failures'))
+
+        def fail_with_finding(task_id):
+            self.plan('--task-id', task_id)
+            self.ai('gate', '--task-id', task_id, 'cleanup', '--', sys.executable, '-c',
+                     'import json, sys; print(json.dumps({"status":"FAIL","evidence":["fixture"],'
+                     '"findings":["Leftover debug print in src/workers/app.py:12"]})); sys.exit(1)',
+                     ok=False)
+        fail_with_finding('alpha')
+        fail_with_finding('beta')
+        output = self.ai('failures')
+        self.assertIn('cleanup', output)
+        self.assertIn('x2', output)
+        report = json.loads(self.ai('failures', '--json'))
+        pattern = report['patterns'][0]
+        self.assertEqual(pattern['distinct_tasks'], 2)
+        self.assertEqual(pattern['scope_hint'], 'src/workers/**')
+        self.assertEqual(pattern['resolved_next_attempt'], 0)
+        export = json.loads(self.ai('failures', 'export'))
+        self.assertEqual(export, [{'gate': 'cleanup', 'hash': pattern['hash'], 'occurrences': 2}])
+        detail = json.loads(self.ai('failures', 'show', pattern['id']))
+        self.assertEqual(detail['id'], pattern['id'])
+        self.assertIn('No recurring', self.ai('failures', '--min', '3'))
+        self.ai('failures', 'rebuild')
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))

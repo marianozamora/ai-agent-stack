@@ -80,6 +80,78 @@ def usage_from_verdict(verdict):
     return result
 
 
+_PATH_TOKEN = re.compile(r'\b([\w-]+(?:/[\w.-]+)+)\b')
+
+
+def _shared_scope_hint(texts):
+    """A directory prefix shared by >=2 findings' path-looking tokens, or None."""
+    prefixes = {}
+    for text in texts:
+        match = _PATH_TOKEN.search(text)
+        if not match:
+            continue
+        parts = match.group(1).split('/')
+        if len(parts) < 2:
+            continue
+        prefix = '/'.join(parts[:-1])
+        prefixes[prefix] = prefixes.get(prefix, 0) + 1
+    if not prefixes:
+        return None
+    prefix, count = max(prefixes.items(), key=lambda kv: (kv[1], kv[0]))
+    return f'{prefix}/**' if count >= 2 else None
+
+
+def detect_patterns(rows, min_occurrences=2):
+    """A pattern is a (gate, finding hash) pair observed across >=2 distinct tasks.
+
+    This counts a verifiable fact about the recorded log; the finding text itself
+    remains an unverified model claim and stays labeled as an example, not a diagnosis.
+    """
+    gates = [row for row in rows if row.get('event') == 'gate']
+    attempts_by_task_gate = {}
+    for row in gates:
+        attempts_by_task_gate.setdefault((row.get('task_key'), row.get('gate')), []).append(row)
+    for entries in attempts_by_task_gate.values():
+        entries.sort(key=lambda row: row.get('attempt') or 0)
+
+    occurrences = {}
+    for row in gates:
+        for finding in row.get('findings') or []:
+            if not isinstance(finding, dict):
+                continue
+            fhash, text = finding.get('hash'), finding.get('text')
+            if isinstance(fhash, str) and fhash and isinstance(text, str) and text:
+                occurrences.setdefault((row.get('gate'), fhash), []).append((row, text))
+
+    patterns = []
+    for (gate, fhash), items in occurrences.items():
+        distinct_tasks = {row.get('task_key') for row, _ in items}
+        if len(items) < min_occurrences or len(distinct_tasks) < 2:
+            continue
+        by_profile, by_risk, by_task_type = {}, {}, {}
+        resolved_next_attempt = 0
+        for row, _ in items:
+            for bucket, key in ((by_profile, 'profile'), (by_risk, 'risk'), (by_task_type, 'task_type')):
+                value = row.get(key)
+                if value: bucket[value] = bucket.get(value, 0) + 1
+            entries = attempts_by_task_gate.get((row.get('task_key'), gate), [])
+            index = next((i for i, entry in enumerate(entries) if entry is row), None)
+            if index is not None and index + 1 < len(entries) and entries[index + 1].get('passed') is True:
+                resolved_next_attempt += 1
+        timestamps = [row.get('ts') for row, _ in items if isinstance(row.get('ts'), (int, float))]
+        patterns.append({
+            'id': f'pat_{fhash}', 'gate': gate, 'hash': fhash, 'example': items[0][1],
+            'occurrences': len(items), 'distinct_tasks': len(distinct_tasks),
+            'first_seen': min(timestamps) if timestamps else None,
+            'last_seen': max(timestamps) if timestamps else None,
+            'by_profile': by_profile, 'by_risk': by_risk, 'by_task_type': by_task_type,
+            'scope_hint': _shared_scope_hint(text for _, text in items),
+            'resolved_next_attempt': resolved_next_attempt,
+        })
+    patterns.sort(key=lambda pattern: (-pattern['occurrences'], pattern['gate'], pattern['hash']))
+    return patterns
+
+
 def summarize(rows):
     gates = [row for row in rows if row.get('event') == 'gate']
     counts = {}

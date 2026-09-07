@@ -33,6 +33,29 @@ class HelpersTests(unittest.TestCase):
         self.assertEqual(len(workflow.finding_signature('anything')), 12)
         self.assertEqual(workflow.normalize_finding('x' * 500), ('x' * 500).lower()[:160])
 
+    def test_detect_patterns_requires_distinct_tasks_and_tracks_resolution(self):
+        rows = [
+            {'event': 'gate', 'task_key': 't1', 'gate': 'cleanup', 'attempt': 1, 'passed': False,
+             'profile': 'fast', 'risk': 'LOW', 'task_type': 'feature', 'ts': 1,
+             'findings': [{'hash': 'abc123456789', 'text': 'leftover debug in src/app.py:<n>'}]},
+            {'event': 'gate', 'task_key': 't1', 'gate': 'cleanup', 'attempt': 2, 'passed': True,
+             'profile': 'fast', 'risk': 'LOW', 'task_type': 'feature', 'ts': 2, 'findings': []},
+            {'event': 'gate', 'task_key': 't2', 'gate': 'cleanup', 'attempt': 1, 'passed': False,
+             'profile': 'standard', 'risk': 'MEDIUM', 'task_type': 'bug', 'ts': 3,
+             'findings': [{'hash': 'abc123456789', 'text': 'leftover debug in src/app.py:<n>'}]},
+            {'event': 'gate', 'task_key': 't3', 'gate': 'cleanup', 'attempt': 1, 'passed': False,
+             'profile': 'fast', 'risk': 'LOW', 'task_type': 'feature', 'ts': 4,
+             'findings': [{'hash': 'zzz999', 'text': 'unrelated, only seen once per task'}]},
+        ]
+        patterns = workflow.detect_patterns(rows)
+        self.assertEqual(len(patterns), 1)
+        pattern = patterns[0]
+        self.assertEqual(pattern['occurrences'], 2)
+        self.assertEqual(pattern['distinct_tasks'], 2)
+        self.assertEqual(pattern['resolved_next_attempt'], 1)
+        self.assertEqual(pattern['by_profile'], {'fast': 1, 'standard': 1})
+        self.assertEqual(pattern['scope_hint'], 'src/**')
+
     def test_timeout_kills_child_tool(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -4,10 +4,10 @@ import tempfile, uuid
 import argparse, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
-from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns
 from validators import INSTRUCTIONS, model_verdict, intact_record
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -812,14 +812,19 @@ def cmd_doctor(args):
     except SystemExit: pass
 
 
-def cmd_metrics(args):
-    state=repo_state(git_root()); p=state/'metrics.jsonl'; rows=[]; malformed=0
+def load_metric_rows(state:Path)->tuple[list[dict],int]:
+    p=state/'metrics.jsonl'; rows=[]; malformed=0
     for line in p.read_text().splitlines() if p.exists() else []:
         try:
             row=json.loads(line)
             if not isinstance(row,dict): raise ValueError()
             rows.append(row)
         except ValueError: malformed+=1
+    return rows,malformed
+
+
+def cmd_metrics(args):
+    state=repo_state(git_root()); rows,malformed=load_metric_rows(state)
     if not args.all_tasks:
         key=task_state(state).name
         rows=[row for row in rows if row.get('task_key')==key]
@@ -838,6 +843,38 @@ def cmd_metrics(args):
     for name,value in report['pipeline_usage'].items():
         total=value['reported_total']
         print(f"pipeline {name}: {total if total is not None else 'unreported'} ({value['reported_runs']} reporting runs)")
+
+
+def rebuild_patterns(state:Path)->dict:
+    rows,_=load_metric_rows(state)
+    report={'version':1,'generated_at':int(time.time()),'source_events':len(rows),
+             'patterns':detect_patterns(rows)}
+    save_json(state/'patterns.json',report)
+    return report
+
+
+def cmd_failures(args):
+    state=repo_state(git_root()); report=rebuild_patterns(state)
+    if args.failures_cmd=='rebuild':
+        print(f"Rebuilt {len(report['patterns'])} pattern(s) from {report['source_events']} recorded events.")
+        return
+    patterns=report['patterns']
+    if args.failures_cmd=='show':
+        match=next((p for p in patterns if p['id']==args.pattern_id),None)
+        if not match: raise SystemExit(f'Unknown pattern: {args.pattern_id}')
+        print(json.dumps(match,indent=2)); return
+    if args.failures_cmd=='export':
+        anonymized=[{'gate':p['gate'],'hash':p['hash'],'occurrences':p['occurrences']} for p in patterns]
+        print(json.dumps(anonymized,indent=2)); return
+    # default: list
+    if args.gate: patterns=[p for p in patterns if p['gate']==args.gate]
+    patterns=[p for p in patterns if p['occurrences']>=args.min]
+    if args.json: print(json.dumps({**report,'patterns':patterns},indent=2)); return
+    if not patterns: print('No recurring failure patterns recorded yet.'); return
+    for p in patterns:
+        hint=f" ({p['scope_hint']})" if p.get('scope_hint') else ''
+        print(f"{p['id']}  {p['gate']:10} x{p['occurrences']:<3} across {p['distinct_tasks']} task(s){hint}")
+        print(f"    {p['example']}")
 
 
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
@@ -1160,6 +1197,10 @@ def parser():
     setting.add_argument('command',nargs=argparse.REMAINDER)
     metrics=sp.add_parser('metrics'); metrics.add_argument('--all-tasks',action='store_true'); metrics.add_argument('--json',action='store_true')
     bench=sp.add_parser('benchmark'); bench.add_argument('--json',action='store_true')
+    fail=sp.add_parser('failures'); fail.add_argument('--gate'); fail.add_argument('--min',type=int,default=2); fail.add_argument('--json',action='store_true')
+    fcs=fail.add_subparsers(dest='failures_cmd')
+    fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
+    fcs.add_parser('rebuild'); fcs.add_parser('export')
     sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('path'); sp.add_parser('optimize')
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default='main'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next')
@@ -1189,6 +1230,7 @@ def main():
     elif args.cmd=='validate': cmd_validate(args)
     elif args.cmd=='pipeline': cmd_pipeline(args)
     elif args.cmd=='benchmark': cmd_benchmark(args)
+    elif args.cmd=='failures': cmd_failures(args)
     elif args.cmd=='status': cmd_status(args)
     elif args.cmd=='doctor': cmd_doctor(args)
     elif args.cmd=='metrics': cmd_metrics(args)

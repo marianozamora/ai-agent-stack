@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.7.3)
+## Verified task lifecycle (0.8.1)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -148,3 +148,31 @@ identically. This is a passive recording layer only: it adds no new model
 calls, does not change what makes a gate pass, and is the substrate the
 failure-pattern, lessons and confidence phases will read without needing a
 second pass over raw verdict text.
+
+## v0.8 "Learning" — Phase 1 (failure pattern database)
+
+`detect_patterns()` in `ai_stack/workflow.py` is pure and stdlib-only: it groups
+recorded gate findings by `(gate, hash)`, keeps only pairs seen across at least
+2 distinct `task_key`s (a repeat within a single task is not a pattern), and for
+each surviving pair computes `occurrences`, `distinct_tasks`, `first_seen`/
+`last_seen`, breakdowns by `profile`/`risk`/`task_type`, a `scope_hint` (a
+directory prefix shared by >=2 occurrences' path-looking tokens, via
+`_shared_scope_hint()`), and `resolved_next_attempt` (how often the same
+gate passed on the very next recorded attempt for that task, computed purely
+from event ordering). The displayed `example` is one finding's own normalized
+text — never a model-generated summary of the pattern, so there is nothing
+synthesized to hallucinate.
+
+`ai_stack/cli.py`'s `cmd_failures()` calls `rebuild_patterns()` on every
+invocation — list, `show`, `export` and `rebuild` alike all recompute from
+`metrics.jsonl` on the spot, the same no-stale-cache convention `cmd_metrics()`
+already follows. The result is also persisted to the repo-scoped
+`patterns.json` as a snapshot for external inspection, but no command trusts
+that file over a fresh read. `patterns.json` is intentionally **excluded** from
+`evidence_fingerprint()` — it is a derived, disposable view over `metrics.jsonl`,
+and recomputing it must never invalidate a running task's gate evidence.
+`ai failures show <id>` and `ai failures export` read the same fresh result; export
+emits only anonymized `{gate, hash, occurrences}` records to STDOUT, with no
+example text, scope hint, repo identifier or `--out` flag, keeping cross-run
+sharing a manual, explicit, redaction-safe copy/paste rather than a file a
+gate-launched model could write into the checkout.
