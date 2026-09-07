@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+import json, pathlib, subprocess, sys, time, re
+root=pathlib.Path(subprocess.check_output(['git','rev-parse','--show-toplevel'],text=True).strip())
+state=root/'.ai-review/state/pre-cleanup.json'; state.parent.mkdir(parents=True,exist_ok=True)
+cmd=sys.argv[1] if len(sys.argv)>1 else 'check'
+base=sys.argv[2] if len(sys.argv)>2 else 'main'
+ignore=re.compile(r'^(\.ai-review/|bin/ai-[^/]+$|CLAUDE\.md$|AGENTS\.md$)')
+
+def stats():
+    try: out=subprocess.check_output(['git','diff','--numstat',base],cwd=root,text=True,stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError: out=subprocess.check_output(['git','diff','--numstat','HEAD'],cwd=root,text=True)
+    added=deleted=files=0
+    for line in out.splitlines():
+        p=line.split('\t')
+        if len(p)>=3 and not ignore.search(p[2]):
+            files+=1
+            if p[0].isdigit(): added+=int(p[0])
+            if p[1].isdigit(): deleted+=int(p[1])
+    untracked=[x for x in subprocess.check_output(['git','ls-files','--others','--exclude-standard'],cwd=root,text=True).splitlines() if not ignore.search(x)]
+    for rel in untracked:
+        path=root/rel
+        if path.is_file():
+            data=path.read_bytes()
+            added+=data.count(b'\n') + bool(data and not data.endswith(b'\n'))
+    return {'lines':added+deleted,'files':files+len(untracked),'added':added,'deleted':deleted,'base':base}
+if cmd=='snapshot':
+    s=stats(); s['timestamp']=int(time.time()); state.write_text(json.dumps(s,indent=2)+"\n")
+    print(f"DIFF_BUDGET_SNAPSHOT: {s['lines']} lines / {s['files']} files (base={base})"); sys.exit(0)
+if cmd!='check': print('Usage: ai-diff-budget snapshot|check [base]',file=sys.stderr); sys.exit(2)
+if not state.exists(): print('DIFF_BUDGET: NO_SNAPSHOT\nRun ./bin/ai-diff-budget snapshot [base] before Cleanup.'); sys.exit(2)
+before=json.loads(state.read_text()); base=before.get('base',base); now=stats(); growth=max(0,now['lines']-before['lines']); ratio=growth/max(1,before['lines']); ok=growth<=100 and ratio<=0.15
+print(f"DIFF_BUDGET: {'PASS' if ok else 'EXCEEDED'}")
+print(f"before: {before['lines']} lines / {before['files']} files")
+print(f"after:  {now['lines']} lines / {now['files']} files")
+print(f"growth: {growth} lines ({ratio:.1%})")
+if not ok: print('Cleanup/quality pass grew the behavioral diff beyond the configured budget. Review manually.'); sys.exit(1)

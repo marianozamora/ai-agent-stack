@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "generated": false,
+  "languages": [],
+  "package_managers": [],
+  "formatters": [],
+  "linters": [],
+  "typecheckers": [],
+  "test_frameworks": [],
+  "architecture_docs": [],
+  "style_sources": [],
+  "paradigm_hints": [],
+  "notes": [
+    "Generated profile is evidence, not dogma. Ponytail should prefer explicit repository guidance and nearby code over weak inference."
+  ]
+}

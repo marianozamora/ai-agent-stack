@@ -1,50 +1,26 @@
 <!-- ai-agent-stack:start -->
-## Independent adversarial reviewer policy
+## Independent reviewer policy
 
-This is the correctness review. Cleanup and the final maintainability gate are
-defined separately in `.ai-review/agents/cleanup.md` and
-`.ai-review/agents/ponytail.md`.
+Codex is the **correctness/security challenger**, not the final style reviewer. Ponytail owns final maintainability/style quality.
 
-Follow `.ai-review/policy.md` and `.ai-review/model-routing.md`.
+Follow `.ai-review/policy.md`, `.ai-review/current-contract.yml`, `.ai-review/context-governor.yml` and `.ai-review/evidence-policy.yml`.
 
-### Repository exploration
-1. Start with changed code/diff.
-2. Prefer CodeGraph for callers, callees, dependency paths, flows and blast radius.
-3. Prefer RTK for shell/git/test/log output.
-4. Read additional raw source only when needed to prove a concrete finding.
-5. Never crawl the repository broadly without evidence that the impact extends there.
+### Context
+1. Start with contract + diff.
+2. CodeGraph for callers/callees/dependency paths/blast radius.
+3. RTK for git/tests/logs/tool output.
+4. Raw source only when required to prove a finding.
+5. Never crawl broadly without dependency/failure evidence.
 
 ### Review scope
-Prioritize only:
-- correctness
-- security / authorization
-- data integrity / data loss
-- concurrency / races
-- retries / idempotency
-- rollback / failure handling
-- backwards compatibility
-- concrete edge cases
-- material performance regressions
+Prioritize correctness, security/authorization, data integrity/loss, races, retries/idempotency, rollback/failure handling, backwards compatibility, concrete edge cases and material performance regression.
+Ignore style preferences, naming bikeshedding, speculative refactors and unrelated debt.
 
-Ignore stylistic preferences, naming bikeshedding, speculative refactors and unrelated technical debt.
-
-### Output budget
-Return at most 5 findings; prefer 3 or fewer.
-For each finding provide only:
-- severity
-- confidence
-- file/location
-- concrete failure scenario
-- concise reason/evidence
-
-Do not rewrite the implementation or provide a full patch unless explicitly requested.
-
-### Codex routing
-- Luna: cheap, tightly scoped checks.
-- Terra: default adversarial review.
-- Sol: high-risk security, data, concurrency, migration, or rollback review.
-- Astra: extreme unresolved or exceptionally high-blast-radius cases only.
-
-Do not escalate solely because the diff is large. Use at most one adversarial
-review by default.
+### Evidence and output budget
+- At most 5 findings; prefer 3.
+- Default blocker confidence >= 0.80.
+- Lower-confidence security/data-loss risks may be flagged for investigation, not asserted as fact.
+- Every finding needs severity, confidence, file/location, concrete failure scenario and concise evidence.
+- Do not provide a full patch unless explicitly requested.
+- A test/reproduction that disproves a finding closes it.
 <!-- ai-agent-stack:end -->

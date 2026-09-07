@@ -97,17 +97,24 @@ Avoid:
 - escalating models before cheap tests/context gathering
 - feeding both agents the entire repository
 
+
 ## Final PR agents
 
 ### CLEANUP — Haiku by default
-A mutating but behavior-preserving pass after correctness fixes. Remove
-temporary residue, debug output, dead local scaffolding, and safe lint/format
-noise. Escalate to Sonnet only when proving an edit behavior-neutral requires
-non-trivial reasoning.
+A behavior-preserving mutating pass after correctness fixes. Remove temporary/AI residue, obvious comments, dead local scaffolding, debug output and safe lint/format noise. Escalate to Sonnet only if deciding whether something is safe to remove requires non-trivial code reasoning.
 
 ### PONYTAIL — Sonnet by default
-The final read-only PR quality gate. Review the final diff against the project's
-actual conventions and architecture. Consider maintainability, cohesion,
-coupling, types, tests, complexity, and SOLID or functional-programming
-principles only where they suit the existing paradigm. Use Opus only when the
-quality question itself is architectural; never use Fable for routine review.
+The final **read-only PR quality gate**. Review the final diff against the project's actual conventions and architecture. Check maintainability, code style, cohesion/coupling, appropriate SOLID or functional-programming principles, tests, types and complexity. Use Opus only when the quality question itself is architectural.
+
+Ponytail must not impose SOLID on a functional codebase or functional patterns on an OO codebase. Project evidence wins over generic preferences.
+
+### REGRESSION SCOUT — Haiku
+Cheap read-only pass after implementation. It uses contract + diff + CodeGraph blast radius to identify at most 3 plausible existing behaviors that may regress and the smallest tests that would prove/disprove them.
+
+### PR SUMMARIZER — Haiku
+Runs only after PR readiness passes. Reads the contract, final diff/stat and actual checks; produces PR title/body without replaying chat history or mentioning AI provenance.
+
+### CONDITIONAL SECURITY GATE — Sol by default
+Not a permanent extra agent call. Trigger only when the diff crosses a real
+trust boundary (auth/RBAC/tenant isolation, secrets/crypto, SQL/untrusted input,
+IAM, payments/sensitive data). Use Astra only for an unresolved critical case.

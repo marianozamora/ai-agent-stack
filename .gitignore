@@ -23,6 +23,8 @@ coverage/
 dist/
 build/
 node_modules/
+__pycache__/
+*.pyc
 
 # Tool-local state (initialize these in each target repository)
 .codegraph/

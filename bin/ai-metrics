@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+import json, pathlib, subprocess, collections
+root=pathlib.Path(subprocess.check_output(['git','rev-parse','--show-toplevel'],text=True).strip())
+p=root/'.ai-review/telemetry.jsonl'
+if not p.exists(): print('No telemetry yet. Use ./bin/ai-log ...'); raise SystemExit
+rows=[]
+for line in p.read_text().splitlines():
+    try: rows.append(json.loads(line))
+    except: pass
+by_actor=collections.Counter(r.get('actor','?') for r in rows)
+by_phase=collections.Counter(r.get('phase','?') for r in rows)
+print(f'AI metrics: {len(rows)} recorded events')
+print('actors:')
+for k,v in by_actor.most_common(): print(f'  {k}: {v}')
+print('phases:')
+for k,v in by_phase.most_common(): print(f'  {k}: {v}')
+for key in ['input_tokens','cached_tokens','output_tokens']:
+    vals=[r.get(key,0) for r in rows if isinstance(r.get(key),int)]
+    if vals: print(f'{key}: {sum(vals)}')

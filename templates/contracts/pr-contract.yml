@@ -1,0 +1,26 @@
+version: 1
+id: ""
+objective: ""
+
+acceptance:
+  - ""
+
+must_not_change:
+  - ""
+
+risk: unknown
+
+expected_affected_areas:
+  - ""
+
+test_plan:
+  - ""
+
+rollout_notes: []
+rollback_notes: []
+
+human_required_if:
+  - destructive_or_irreversible_change
+  - ambiguous_product_requirement
+  - unresolved_security_tradeoff
+  - unresolved_architecture_disagreement

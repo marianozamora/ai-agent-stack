@@ -1,42 +1,118 @@
-version: 1
+version: 2
+
+default_profile: standard
 
 agents:
-  classifier: { role: cheap, preferred: haiku }
-  builder: { role: default_builder, preferred: sonnet }
-  planner: { role: deep, preferred: opus }
-  long_horizon: { role: long_horizon, preferred: fable }
-  cleanup: { role: cheap, preferred: haiku, mutates_code: true }
-  ponytail: { role: default_builder, preferred: sonnet, mutates_code: false }
+  classifier:
+    preferred: haiku
+    mutates_code: false
+  planner:
+    preferred: opus
+    mutates_code: false
+  builder:
+    preferred: sonnet
+    mutates_code: true
+  long_horizon:
+    preferred: fable
+    mutates_code: true
+  regression:
+    preferred: haiku
+    mutates_code: false
+  cleanup:
+    preferred: haiku
+    mutates_code: true
+  ponytail:
+    preferred: sonnet
+    mutates_code: false
+  pr_summarizer:
+    preferred: haiku
+    mutates_code: false
+  arbiter:
+    preferred: opus
+    mutates_code: false
 
 reviewers:
   low: none
   medium: terra
   high: sol
   critical: astra
+  security: sol
 
 pipeline:
-  - { phase: implement, agent: builder }
-  - { phase: verify_behavior, tools: [rtk] }
-  - { phase: adversarial_review, when: "risk >= medium", agent: codex_reviewer }
-  - { phase: fix_confirmed_findings, agent: builder }
-  - { phase: cleanup, agent: cleanup }
-  - { phase: verify_after_cleanup, tools: [rtk] }
-  - { phase: ponytail, agent: ponytail }
-  - { phase: quality_fix, when: ponytail_failed, agent: builder }
-  - { phase: cleanup_after_quality_fix, when: quality_fix_ran, agent: cleanup }
-  - { phase: final_verification, when: quality_fix_ran, tools: [rtk] }
-  - { phase: ponytail_final, when: quality_fix_ran, agent: ponytail }
+  - phase: contract
+    tool: pr_contract
+  - phase: context_plan
+    tools: [codegraph, context_governor]
+  - phase: plan
+    when: risk >= high
+    agent: planner
+  - phase: implement
+    agent: builder
+  - phase: verify_behavior
+    tools: [rtk]
+  - phase: regression_scout
+    agent: regression
+  - phase: targeted_test_fix
+    when: regression_risk_confirmed
+    agent: builder
+  - phase: adversarial_review
+    when: risk >= medium
+    agent: codex_reviewer
+  - phase: security_gate
+    when: security_boundary == true
+    agent: security_reviewer
+  - phase: fix_confirmed_findings
+    when: confirmed_findings_exist
+    agent: builder
+  - phase: verify_behavior_after_fixes
+    when: fixes_ran
+    tools: [rtk]
+  - phase: cleanup
+    agent: cleanup
+  - phase: cleanup_diff_budget_check
+    tool: diff_budget
+  - phase: verify_after_cleanup
+    tools: [rtk]
+  - phase: ponytail
+    agent: ponytail
+  - phase: quality_fix
+    when: ponytail_failed
+    agent: builder
+  - phase: cleanup_after_quality_fix
+    when: quality_fix_ran
+    agent: cleanup
+  - phase: final_verification
+    when: quality_fix_ran
+    tools: [rtk]
+  - phase: ponytail_final
+    when: quality_fix_ran
+    agent: ponytail
+  - phase: pr_summary
+    when: pr_ready == true
+    agent: pr_summarizer
 
 limits:
   max_adversarial_reviews: 1
   max_quality_fix_rounds: 1
   max_findings: 5
   max_nonblocking_quality_notes: 3
+  max_cleanup_lines: 100
+  max_cleanup_ratio_of_original_diff: 0.15
   diff_first: true
   broad_repo_crawl: false
 
+human_required:
+  - destructive_or_irreversible_change
+  - unresolved_security_tradeoff
+  - unresolved_architecture_disagreement
+  - requirement_ambiguity_changes_product_behavior
+  - budget_exceeded_with_unresolved_high_or_critical_issue
+
 pr_ready_requires:
+  - pr_contract_satisfied
   - relevant_checks_pass
   - no_unresolved_high_or_critical_correctness_findings
+  - conditional_security_gate_passed_or_not_required
   - cleanup_pass
+  - cleanup_diff_budget_ok
   - ponytail_pass

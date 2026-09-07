@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import json, pathlib, subprocess
+root=pathlib.Path(subprocess.check_output(['git','rev-parse','--show-toplevel'],text=True).strip())
+commands=[]
+pkg=root/'package.json'
+if pkg.exists():
+    try:
+        scripts=json.loads(pkg.read_text()).get('scripts',{})
+    except Exception: scripts={}
+    pm='npm'
+    if (root/'pnpm-lock.yaml').exists(): pm='pnpm'
+    elif (root/'yarn.lock').exists(): pm='yarn'
+    elif (root/'bun.lockb').exists(): pm='bun'
+    for key in ['format:check','lint','typecheck','test:unit','test']:
+        if key in scripts:
+            commands.append(f"{pm} run {key}" if pm in ('npm','pnpm') else f"{pm} {key}")
+if (root/'pyproject.toml').exists() or (root/'pytest.ini').exists():
+    if (root/'uv.lock').exists(): commands += ['uv run pytest']
+    else: commands += ['pytest']
+if (root/'go.mod').exists(): commands += ['go test ./...']
+if (root/'Cargo.toml').exists(): commands += ['cargo test']
+print('AI check plan')
+if commands:
+    for c in dict.fromkeys(commands): print('  -', c)
+else:
+    print('  No standard commands detected. Use repository CI/docs and nearest affected tests.')
+print('\nRouting note: use CodeGraph blast radius to narrow tests for LOW/MEDIUM; HIGH/strict should prefer the full relevant suite.')

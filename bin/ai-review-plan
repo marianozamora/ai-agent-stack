@@ -1,114 +1,85 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/.ai-review/lib/common.sh" 2>/dev/null || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/templates/lib/common.sh"
 
-BASE="${1:-main}"
-
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "Not inside a git repository." >&2
-  exit 1
+AI_SHOW_HELP=0
+ai_parse_profile_args "$@"
+if [[ "$AI_SHOW_HELP" == 1 ]]; then
+  echo "Usage: ai-review-plan [base] [--profile fast|standard|strict]"; exit 0
 fi
-
-if git rev-parse --verify "$BASE" >/dev/null 2>&1; then
-  RANGE="$BASE...HEAD"
-  FILES="$(git diff --name-only "$RANGE" 2>/dev/null || true)"
-  NUMSTAT="$(git diff --numstat "$RANGE" 2>/dev/null || true)"
-else
-  RANGE="working tree"
-  FILES="$(git diff --name-only HEAD 2>/dev/null || true)"
-  NUMSTAT="$(git diff --numstat HEAD 2>/dev/null || true)"
-fi
-
-UNTRACKED="$(git ls-files --others --exclude-standard || true)"
-if [[ -n "$UNTRACKED" ]]; then
-  FILES="${FILES}${FILES:+$'\n'}${UNTRACKED}"
-fi
-
-FILES="$(printf '%s\n' "$FILES" | grep -Ev '^(\.ai-review/|CLAUDE\.md$|AGENTS\.md$|bin/ai-review-plan$)' || true)"
-FILE_COUNT=$(printf '%s\n' "$FILES" | sed '/^$/d' | wc -l | tr -d ' ')
-CHANGED_LINES=$(printf '%s\n' "$NUMSTAT" | awk '{a+=$1; d+=$2} END {print a+d+0}')
-
-RISK="LOW"
-REASONS=()
-HIGH_PATTERN='(^|/)(auth|authentication|authorization|rbac|iam|payment|payments|billing|migration|migrations|schema|database|db|crypto|secrets?|permissions?|infra|terraform|k8s|kubernetes)(/|$)|(^|/)(Dockerfile|.*\.tf|.*\.sql)$'
-MEDIUM_PATTERN='(^|/)(api|services?|integrations?|workers?|queues?|jobs?|repositories?|controllers?|middleware)(/|$)'
-LOW_ONLY_PATTERN='(^|/)(docs?|examples?|fixtures?|snapshots?)(/|$)|\.(md|txt|snap)$'
-
-if printf '%s\n' "$FILES" | grep -Eqi "$HIGH_PATTERN"; then
-  RISK="HIGH"
-  REASONS+=("high-risk path/domain")
-fi
-
-if [[ "$RISK" != "HIGH" ]] && printf '%s\n' "$FILES" | grep -Eqi "$MEDIUM_PATTERN"; then
-  RISK="MEDIUM"
-  REASONS+=("business/API/integration path")
-fi
-
-# Diff size is only a weak signal. It can promote LOW -> MEDIUM, but never MEDIUM -> HIGH.
-if [[ "$RISK" == "LOW" && ( "$CHANGED_LINES" -ge 160 || "$FILE_COUNT" -ge 6 ) ]]; then
-  if [[ -n "$FILES" ]] && ! printf '%s\n' "$FILES" | grep -Evqi "$LOW_ONLY_PATTERN"; then
-    RISK="MEDIUM"
-    REASONS+=("non-trivial diff size")
-  fi
-fi
+ai_require_git; ai_profile_limits; ai_collect_scope; ai_classify_risk; ai_contract_status
 
 printf 'AI review plan\n'
-printf '  scope:         %s\n' "$RANGE"
-printf '  files:         %s\n' "$FILE_COUNT"
-printf '  changed lines: %s\n' "$CHANGED_LINES"
-printf '  risk:          %s\n' "$RISK"
-if ((${#REASONS[@]})); then
-  printf '  reason:        %s\n' "$(IFS=', '; echo "${REASONS[*]}")"
-fi
-
-if command -v codegraph >/dev/null 2>&1; then
-  if codegraph status . >/dev/null 2>&1; then
-    echo "  codegraph:     ready"
-  else
-    echo "  codegraph:     installed, project not initialized"
-  fi
-else
-  echo "  codegraph:     unavailable"
-fi
+printf '  profile:       %s\n' "$AI_PROFILE"
+printf '  scope:         %s\n' "$AI_RANGE"
+printf '  files:         %s\n' "$AI_FILE_COUNT"
+printf '  changed lines: %s\n' "$AI_CHANGED_LINES"
+printf '  risk:          %s\n' "$AI_RISK"
+printf '  security:      %s\n' "$AI_SECURITY_BOUNDARY"
+printf '  contract:      %s\n' "$AI_CONTRACT_STATUS"
+printf '  context cap:   %s raw / %s review files\n' "$AI_MAX_FILES" "$AI_MAX_REVIEW_FILES"
+printf '  agent budget:  %s calls / %s escalations / %s review rounds\n' "$AI_MAX_CALLS" "$AI_MAX_ESCALATIONS" "$AI_MAX_REVIEWS"
+printf '  codegraph:     %s\n' "$(ai_codegraph_status)"
+[[ -z "$AI_RISK_REASON" ]] || printf '  reason:        %s\n' "$AI_RISK_REASON"
 
 echo
-case "$RISK" in
+if [[ "$AI_CONTRACT_STATUS" != "present" && "$AI_RISK" != "LOW" ]]; then
+  echo "Gate: create/complete .ai-review/current-contract.yml before non-trivial implementation."
+  echo "      Run: ./bin/ai-contract init"
+  echo
+fi
+
+case "$AI_RISK" in
   LOW)
     cat <<'MSG'
 Routing:
-  Claude: Haiku for mechanical-only work; otherwise Sonnet.
-  Codex:  skip by default.
+  Builder: Sonnet (Haiku only for truly mechanical work)
+  Regression: Haiku if behavior changed
+  Codex: skip by default
+  Cleanup: Haiku
+  Ponytail: Sonnet
 
 Action:
-  Run relevant tests/lint/typecheck and finish.
+  Run targeted deterministic checks, Cleanup, checks again, then Ponytail.
 MSG
     ;;
   MEDIUM)
     cat <<MSG
 Routing:
-  Claude: Sonnet default builder.
-  Codex:  Terra reviewer.
+  Builder: Sonnet
+  Regression: Haiku, max 3 concrete risks
+  Codex: Terra reviewer
+  Cleanup: Haiku
+  Ponytail: Sonnet
 
-Before review:
-  Use CodeGraph for blast radius if behavior crosses files/services.
+Context:
+  Diff first. Use CodeGraph blast radius before raw file expansion.
 
-Recommended Claude Code command:
-/codex:adversarial-review --base $BASE --background focus on correctness, regressions, backwards compatibility and concrete edge cases; return at most 5 findings with severity, confidence, file/location and failure scenario; no style, broad rewrites or speculative issues
+Recommended review:
+/codex:adversarial-review --base $AI_BASE --background focus on correctness, regressions, backwards compatibility and concrete edge cases; confidence >= 0.80 unless high-impact; return at most 5 findings; no style or broad rewrites
 MSG
     ;;
   HIGH)
     cat <<MSG
 Routing:
-  Claude: Opus for strategy/deep reasoning when needed, Sonnet for implementation.
-  Codex:  Sol reviewer.
+  Planner: Opus when strategy is non-obvious
+  Builder: Sonnet
+  Regression: Haiku
+  Codex: Sol reviewer
+  Security gate: $( [[ "$AI_SECURITY_BOUNDARY" == true ]] && echo required || echo conditional/not detected )
+  Cleanup: Haiku
+  Ponytail: Sonnet
 
-Before review:
-  Use CodeGraph to inspect callers/callees and blast radius. Do not crawl the repo broadly.
+Context:
+  Use CodeGraph callers/callees + blast radius. Full suite is recommended for strict/high-risk work.
 
-Recommended Claude Code command:
-/codex:adversarial-review --base $BASE --background focus on security/auth, data integrity, races, retries/idempotency, rollback, backwards compatibility and concrete failure modes; return at most 5 findings with severity, confidence, file/location and failure scenario; no style, broad rewrites or speculative issues
+Recommended review:
+/codex:adversarial-review --base $AI_BASE --background focus on security/auth, data integrity, races, retries/idempotency, rollback, backwards compatibility and concrete failure modes; return at most 5 findings with evidence; no style or speculative rewrites
 
-Second pass:
-  Only after a confirmed HIGH/CRITICAL issue or when the correction changes a high-risk invariant.
+Stop conditions:
+  Unresolved destructive/security/architecture tradeoff -> NEEDS_HUMAN, not infinite escalation.
 MSG
     ;;
 esac
