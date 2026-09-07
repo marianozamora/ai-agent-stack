@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2
+
+- Add `ai lessons`: derive empirical `candidate` lessons from failure patterns, injected into prompts only after human `confirm` (scope-matched, capped hard per profile: fast=0/standard=3/strict=5, sub-budgeted before the orchestration prompt's own budget check). `confirm`/`reject`/`promote` refuse to run inside a gate/validator environment, so a model can never curate its own future context. `promote` graduates a durable lesson into `rules.json` and retires it. `lessons.json` replaces the unused `observations.json`.
+
 ## 0.8.1
 
 - Add `ai failures`: detect failure patterns (a `gate`+finding-hash pair seen across at least 2 distinct tasks) from recorded metrics, with `show`, `rebuild` and an anonymized STDOUT-only `export`. Pure stdlib computation over `metrics.jsonl`; no model call, no gating effect, and the cached `patterns.json` is excluded from the evidence fingerprint so recomputing it never invalidates in-flight task evidence.

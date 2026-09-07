@@ -35,7 +35,7 @@ reports the aggregated per-pipeline usage and how many runs hit their budget.
 ## v0.8 — Learning
 - [x] Phase 0: metrics enrichment (`risk`, `task_type`, `attempt`, normalized/hashed findings) — the substrate the phases below read
 - [x] Phase 1: failure pattern database (`ai failures`) — `(gate, finding hash)` pairs observed across >=2 tasks, cached and rebuildable, excluded from the evidence fingerprint
-- [ ] Repository lessons
+- [x] Phase 2: repository lessons (`ai lessons`) — candidate lessons derived from patterns, human-only confirm/promote, scope-matched injection capped hard by profile (fast=0/standard=3/strict=5), promotion graduates into `rules.json`
 - [ ] Confidence engine
 - [ ] Prompt optimizer with measured outcomes
 

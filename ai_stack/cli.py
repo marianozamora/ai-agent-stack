@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import tempfile, uuid
-import argparse, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
+import argparse, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
 from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns
 from validators import INSTRUCTIONS, model_verdict, intact_record
 
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -48,7 +48,7 @@ def repo_state(root:Path|None=None, create=True)->Path:
         meta={"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())}
         (d/"repo.json").write_text(json.dumps(meta,indent=2)+"\n")
         if not (d/"rules.json").exists(): (d/"rules.json").write_text("[]\n")
-        if not (d/"observations.json").exists(): (d/"observations.json").write_text("[]\n")
+        if not (d/"lessons.json").exists(): (d/"lessons.json").write_text("[]\n")
         if not (d/"context7-libraries.json").exists(): (d/"context7-libraries.json").write_text("{}\n")
         if not (d/"skill-overrides.json").exists(): (d/"skill-overrides.json").write_text("{}\n")
     return d
@@ -320,10 +320,71 @@ def rules_text(state:Path)->str:
     return '\n'.join(f"- [{r.get('scope','**')}] {r['rule']}" for r in rules)
 
 
+LESSON_TOP_K={'fast':0,'standard':3,'strict':5}
+
+
+def load_lessons(state:Path)->list[dict]:
+    return load_json(state/'lessons.json',[])
+
+
+def save_lessons(state:Path,lessons:list[dict]):
+    save_json(state/'lessons.json',lessons)
+
+
+def derive_lessons(state:Path)->tuple[int,int]:
+    """Create candidate lessons from failure patterns. Never mutates a confirmed/rejected/retired one."""
+    report=rebuild_patterns(state)
+    lessons=load_lessons(state)
+    by_pattern={l.get('pattern_id'):l for l in lessons if l.get('pattern_id')}
+    created=updated=0
+    for pattern in report['patterns']:
+        existing=by_pattern.get(pattern['id'])
+        if existing is None:
+            lessons.append({
+                'id':f"les_{pattern['hash']}",'text':pattern['example'],
+                'scope':pattern.get('scope_hint') or '**','gate':pattern['gate'],
+                'origin':'pattern','pattern_id':pattern['id'],'status':'candidate',
+                'observations':pattern['occurrences'],'distinct_tasks':pattern['distinct_tasks'],
+                'first_seen':pattern['first_seen'],'last_seen':pattern['last_seen'],
+                'evidence_refs':[],'created_at':time.time(),
+                'confirmed_at':None,'confirmed_by':None,'injections':0,
+            })
+            created+=1
+        elif existing.get('status')=='candidate':
+            existing.update(text=pattern['example'],observations=pattern['occurrences'],
+                             distinct_tasks=pattern['distinct_tasks'],last_seen=pattern['last_seen'],
+                             scope=pattern.get('scope_hint') or existing.get('scope','**'))
+            updated+=1
+    save_lessons(state,lessons)
+    return created,updated
+
+
+def select_lessons(state:Path,scope:dict,profile:str)->list[dict]:
+    top_k=LESSON_TOP_K[profile]
+    if top_k==0: return []
+    files=scope.get('files',[])
+    def matches(lesson):
+        pattern=lesson.get('scope') or '**'
+        return pattern=='**' or any(fnmatch.fnmatch(f,pattern) for f in files)
+    candidates=[l for l in load_lessons(state) if l.get('status')=='confirmed' and matches(l)]
+    candidates.sort(key=lambda l:(-l.get('observations',0),-(l.get('last_seen') or 0),l['id']))
+    return candidates[:top_k]
+
+
+def render_lessons(lessons:list[dict],max_chars:int)->str:
+    if not lessons: return '(none)'
+    text='\n'.join(f"- [{l.get('scope','**')}] {l['text']} "
+                   f"(observed {l.get('observations',1)}x across {l.get('distinct_tasks',1)} task(s))" for l in lessons)
+    if len(text)>max_chars: text=text[:max_chars].rstrip()+"\n[lesson context truncated by budget]"
+    return text
+
+
 def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None)->str:
     scope=collect_scope(root,base); risk=classify(scope,profile); caps=context_caps(profile)
     selected_skills=select_skills(state,task,profile,figma,explicit_skills)
     skill_context=load_skill_context(selected_skills, max(2000,caps['context_chars']//3))
+    selected_lessons=select_lessons(state,scope,profile)
+    lessons_block=render_lessons(selected_lessons,max(1,caps['context_chars']//10))
     crg_text=''
     if profile!='fast' and crg_cmd():
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
@@ -346,6 +407,9 @@ Code Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd()
 
 Repository rules:
 {rules_text(state)}
+
+Observed failure history (advisory prior observations, never evidence for a PASS):
+{lessons_block}
 
 Active skills (lazy-loaded; max {caps['skills']}): {', '.join(selected_skills) if selected_skills else 'none'}
 
@@ -404,6 +468,9 @@ If reusable validators are configured (`ai validators show`), use `ai pipeline -
     enforce_budget(prompt,caps['context_chars'],'orchestration context')
     ensure_contract(state,task,figma)
     (task_state(state)/'state'/'current-run.md').write_text(prompt)
+    snapshot=[{'id':l['id'],'text':l['text'],'scope':l.get('scope','**')} for l in selected_lessons]
+    save_json(task_state(state)/'state'/'lessons.json',
+              {'digest':shasum(json.dumps(snapshot,sort_keys=True))[:16],'lessons':snapshot})
     cache_key=task_cache_key(root,task,profile,base,selected_skills)
     save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
     record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
@@ -877,6 +944,55 @@ def cmd_failures(args):
         print(f"    {p['example']}")
 
 
+def cmd_lessons(args):
+    state=repo_state(git_root())
+    guarded=('confirm','reject','promote')
+    if args.lessons_cmd in guarded and (os.environ.get('AI_GATE') or os.environ.get('AI_TASK_DIR')):
+        raise SystemExit('Lesson curation is human-only; run this outside a gate/validator environment.')
+    lessons=load_lessons(state)
+    if args.lessons_cmd=='derive':
+        created,updated=derive_lessons(state)
+        print(f'Derived {created} new candidate lesson(s), refreshed {updated} existing candidate(s).')
+        return
+    if args.lessons_cmd=='add':
+        now=time.time()
+        entry={'id':f"les_user_{shasum(args.text+str(now))[:12]}",'text':args.text,
+               'scope':args.scope or '**','gate':args.gate,'origin':'user','pattern_id':None,
+               'status':'confirmed','observations':1,'distinct_tasks':1,
+               'first_seen':now,'last_seen':now,'evidence_refs':[],
+               'created_at':now,'confirmed_at':now,'confirmed_by':'user','injections':0}
+        lessons.append(entry); save_lessons(state,lessons); print('Lesson added:',entry['id']); return
+    if args.lessons_cmd in ('confirm','reject','retire'):
+        match=next((l for l in lessons if l['id']==args.lesson_id),None)
+        if not match: raise SystemExit(f'Unknown lesson: {args.lesson_id}')
+        if args.lessons_cmd=='confirm': match['status']='confirmed'; match['confirmed_at']=time.time(); match['confirmed_by']='user'
+        elif args.lessons_cmd=='reject': match['status']='rejected'
+        else: match['status']='retired'
+        save_lessons(state,lessons); print(f"{args.lesson_id}: {match['status']}"); return
+    if args.lessons_cmd=='promote':
+        match=next((l for l in lessons if l['id']==args.lesson_id),None)
+        if not match: raise SystemExit(f'Unknown lesson: {args.lesson_id}')
+        if match.get('status')!='confirmed': raise SystemExit('Only a confirmed lesson can be promoted.')
+        rules=load_json(state/'rules.json',[])
+        rules.append({'rule':match['text'],'scope':match.get('scope','**'),'source':'lesson',
+                      'confidence':1.0,'created_at':int(time.time())})
+        save_json(state/'rules.json',rules)
+        match['status']='retired'; save_lessons(state,lessons)
+        print('Promoted to rules.json; lesson retired:',args.lesson_id); return
+    if args.lessons_cmd=='prune':
+        threshold=time.time()-args.unseen_days*86400
+        before=len(lessons)
+        lessons=[l for l in lessons if not (l.get('status')=='candidate' and (l.get('last_seen') or 0)<threshold)]
+        save_lessons(state,lessons); print(f'Pruned {before-len(lessons)} stale candidate lesson(s).'); return
+    # default: list
+    statuses=(args.status,) if args.status else ('candidate','confirmed')
+    shown=[l for l in lessons if l.get('status') in statuses]
+    if args.json: print(json.dumps(shown,indent=2)); return
+    if not shown: print('No lessons recorded yet.'); return
+    for l in shown:
+        print(f"{l['id']}  [{l['status']}] {l.get('scope','**')}  {l['text']}")
+
+
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
 
 
@@ -895,7 +1011,8 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
             with path.open('rb') as f:
                 for block in iter(lambda:f.read(1024*1024),b''): digest.update(block)
         else: digest.update(b'<missing>')
-    for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',*sorted((task_state(state)/'contracts').glob('*'))]:
+    for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',
+                 task_state(state)/'state/lessons.json',*sorted((task_state(state)/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
     return digest.hexdigest()
 
@@ -986,6 +1103,7 @@ Task: {plan['task']}
 PR contract (read it): {contract}
 Design contract: {design if plan.get('figma') else 'not applicable'}
 Repository rules (read): {state/'rules.json'}
+Observed failure history (advisory prior observations, never evidence for a PASS): {task/'state/lessons.json'}
 Project profile: {state/'project-profile.json'}
 Summary artifact: {task/'state/pr-summary.md'}
 Fresh gate evidence (read referenced logs as needed):
@@ -1201,6 +1319,13 @@ def parser():
     fcs=fail.add_subparsers(dest='failures_cmd')
     fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
     fcs.add_parser('rebuild'); fcs.add_parser('export')
+    les=sp.add_parser('lessons'); les.add_argument('--status',choices=['candidate','confirmed','retired','rejected']); les.add_argument('--json',action='store_true')
+    lcs=les.add_subparsers(dest='lessons_cmd')
+    lcs.add_parser('derive')
+    ladd=lcs.add_parser('add'); ladd.add_argument('text'); ladd.add_argument('--scope'); ladd.add_argument('--gate')
+    for name in ('confirm','reject','retire','promote'):
+        sub=lcs.add_parser(name); sub.add_argument('lesson_id')
+    lprune=lcs.add_parser('prune'); lprune.add_argument('--unseen-days',type=int,default=90)
     sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('path'); sp.add_parser('optimize')
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default='main'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next')
@@ -1231,6 +1356,7 @@ def main():
     elif args.cmd=='pipeline': cmd_pipeline(args)
     elif args.cmd=='benchmark': cmd_benchmark(args)
     elif args.cmd=='failures': cmd_failures(args)
+    elif args.cmd=='lessons': cmd_lessons(args)
     elif args.cmd=='status': cmd_status(args)
     elif args.cmd=='doctor': cmd_doctor(args)
     elif args.cmd=='metrics': cmd_metrics(args)

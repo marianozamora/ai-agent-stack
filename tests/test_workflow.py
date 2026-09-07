@@ -178,6 +178,53 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('No recurring', self.ai('failures', '--min', '3'))
         self.ai('failures', 'rebuild')
 
+    def test_lessons_derive_confirm_inject_and_promote(self):
+        def fail_with_finding(task_id):
+            self.plan('--task-id', task_id)
+            self.ai('gate', '--task-id', task_id, 'cleanup', '--', sys.executable, '-c',
+                     'import json, sys; print(json.dumps({"status":"FAIL","evidence":["fixture"],'
+                     '"findings":["Leftover debug print in src/workers/app.py:12"]})); sys.exit(1)',
+                     ok=False)
+        fail_with_finding('alpha')
+        fail_with_finding('beta')
+
+        self.assertIn('No lessons', self.ai('lessons'))
+        self.ai('lessons', 'derive')
+        candidates = json.loads(self.ai('lessons', '--json'))
+        self.assertEqual(len(candidates), 1)
+        lesson_id = candidates[0]['id']
+        self.assertEqual(candidates[0]['status'], 'candidate')
+        self.assertEqual(candidates[0]['scope'], 'src/workers/**')
+
+        # A model running inside a gate cannot confirm its own lesson.
+        self.env['AI_GATE'] = 'cleanup'
+        self.ai('lessons', 'confirm', lesson_id, ok=False)
+        del self.env['AI_GATE']
+        self.ai('lessons', 'confirm', lesson_id)
+        self.assertEqual(json.loads(self.ai('lessons', '--status', 'confirmed', '--json'))[0]['status'], 'confirmed')
+
+        # fast injects nothing; standard/strict inject scope-matched confirmed lessons.
+        self.plan('--task-id', 'gamma')
+        gamma_task = Path(self.ai('path', '--task-id', 'gamma').strip())
+        self.assertNotIn('leftover debug print', (gamma_task / 'state/current-run.md').read_text())
+
+        (self.repo / 'src' / 'workers').mkdir(parents=True, exist_ok=True)
+        (self.repo / 'src' / 'workers' / 'app.py').write_text('# app\n')
+        self.ai('plan', 'small change', '--profile', 'standard', '--base', 'HEAD', '--task-id', 'delta')
+        delta_task = Path(self.ai('path', '--task-id', 'delta').strip())
+        self.assertIn('leftover debug print', (delta_task / 'state/current-run.md').read_text())
+        snapshot = json.loads((delta_task / 'state/lessons.json').read_text())
+        self.assertEqual(snapshot['lessons'][0]['id'], lesson_id)
+
+        # Deriving again does not duplicate or mutate a confirmed lesson.
+        self.ai('lessons', 'derive')
+        self.assertEqual(len(json.loads(self.ai('lessons', '--json', '--status', 'confirmed'))), 1)
+
+        self.ai('lessons', 'promote', lesson_id)
+        rules = json.loads((delta_task.parents[1] / 'rules.json').read_text())
+        self.assertEqual(rules[-1]['source'], 'lesson')
+        self.assertEqual(json.loads(self.ai('lessons', '--status', 'retired', '--json'))[0]['id'], lesson_id)
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))

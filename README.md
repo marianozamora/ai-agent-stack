@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.8.1)
+## Verified workflow (0.8.2)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -452,6 +452,49 @@ gate evidence. `export` prints anonymized
 `{gate, hash, occurrences}` counts to STDOUT only — no example text, no scope
 hint, no repository identifier, and no `--out` flag, so a model running inside
 a gate cannot write it into the checkout.
+
+```bash
+ai lessons derive
+ai lessons
+ai lessons confirm les_9f2c1a4b7d30
+ai lessons promote les_9f2c1a4b7d30
+ai lessons reject les_9f2c1a4b7d30
+ai lessons retire les_9f2c1a4b7d30
+ai lessons add "Prefer the repository's existing retry helper" --scope "src/workers/**"
+ai lessons prune --unseen-days 90
+```
+
+`ai lessons derive` turns failure patterns into `candidate` lessons in the
+repo-scoped `lessons.json` (which replaces the unused `observations.json`
+from earlier releases). A candidate's `text` is a pattern's own normalized
+finding example, verbatim — never a model-generated summary, so there is
+nothing synthesized to hallucinate. Re-running `derive` refreshes an existing
+candidate's counts but never touches a `confirmed`, `rejected` or `retired`
+lesson, so a rejection is sticky and a confirmed lesson's text is stable.
+
+Only a human curates lessons: `confirm`, `reject` and `promote` all refuse to
+run when `AI_GATE` or `AI_TASK_DIR` is set, so a model running inside a gate
+cannot confirm its own finding into future prompt context. `promote` copies a
+confirmed lesson into `rules.json` (with `source: "lesson"`) and retires the
+lesson, so there is exactly one always-injected normative store, not two
+competing ones. `ai lessons add` records a human-authored empirical note
+(status `confirmed` immediately, no derivation needed).
+
+Only `confirmed` lessons are ever injected into a prompt, and only when their
+`scope` glob matches a file in the current change (or the lesson has no scope).
+Injection is capped hard: `fast` injects none, `standard` up to 3, `strict` up
+to 5, ranked by observation count then recency, and the assembled block is
+truncated to a tenth of the profile's context budget before the orchestration
+prompt's own budget check runs — a growing lesson store can never be the
+reason `ai plan` starts failing. Validator prompts get one line pointing at
+the task's lesson snapshot, explicitly framed as "advisory, never evidence for
+a PASS" — it can inform a reviewer's attention, never substitute for a finding.
+
+The task-scoped snapshot (`state/lessons.json`, exactly what was injected) is
+part of the evidence fingerprint, so re-planning invalidates stale evidence but
+confirming or deriving lessons mid-task does not. The repo-scoped `lessons.json`
+and `patterns.json` stay out of the fingerprint for the same reason `ai failures`
+recomputes freely: deriving lessons must never invalidate an in-flight task.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
 migration, UI copy change, integration work, a Figma-driven design task and a

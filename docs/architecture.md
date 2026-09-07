@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.8.1)
+## Verified task lifecycle (0.8.2)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -176,3 +176,40 @@ emits only anonymized `{gate, hash, occurrences}` records to STDOUT, with no
 example text, scope hint, repo identifier or `--out` flag, keeping cross-run
 sharing a manual, explicit, redaction-safe copy/paste rather than a file a
 gate-launched model could write into the checkout.
+
+## v0.8 "Learning" — Phase 2 (repository lessons)
+
+`lessons.json` (repo-scoped, replacing the unused `observations.json` from
+earlier releases) holds empirical, derived entries — distinct from `rules.json`,
+which stays the normative, human-authored store. `derive_lessons()` in
+`ai_stack/cli.py` calls `rebuild_patterns()` and creates one `candidate` lesson
+per pattern (`by_pattern` keyed on `pattern_id`), copying the pattern's own
+normalized example text verbatim. Re-running `derive` only refreshes an
+existing `candidate`'s counts; a `confirmed`, `rejected` or `retired` entry is
+never mutated, so rejection is sticky and a confirmed lesson's text is stable
+even as its pattern keeps accumulating new occurrences.
+
+`select_lessons()` filters to `status == "confirmed"`, keeps only lessons whose
+`scope` glob (`fnmatch`) matches a file in the current `collect_scope()` result
+(or has no scope), ranks by `(observations desc, last_seen desc, id)` for a
+total deterministic order, and takes the profile's `LESSON_TOP_K`
+(`fast`: 0, `standard`: 3, `strict`: 5). `render_lessons()` then hard-truncates
+the assembled block to `caps['context_chars'] // 10` before `build_prompt()`'s
+own `enforce_budget()` check runs, so an accumulating lesson store can never be
+the reason `ai plan` starts failing. `build_prompt()` writes exactly what it
+injected to `task_state(state)/'state/lessons.json'` (with a digest), which is
+what `cmd_validate()`'s prompt points a validator at — framed as "advisory
+prior observations, never evidence for a PASS" — and what `evidence_fingerprint()`
+now includes. Because that file is written only at plan time, confirming or
+deriving a lesson mid-task does not invalidate in-flight evidence; re-planning
+does. `lessons.json` and `patterns.json` stay out of the fingerprint for the
+same reason `ai failures` recomputes freely: their own derivation must never
+invalidate a running task.
+
+Curation is human-only by construction, not just convention: `cmd_lessons()`
+refuses `confirm`, `reject` and `promote` whenever `AI_GATE` or `AI_TASK_DIR`
+is set in the environment — the same guard `cmd_validate()` already uses to
+stop a model from certifying its own gate. `promote` appends the lesson's text
+to `rules.json` with `source: "lesson"` and retires the lesson, so a durable
+observation graduates into the one always-injected normative store instead of
+lessons and rules becoming two competing prompt-injection paths.
