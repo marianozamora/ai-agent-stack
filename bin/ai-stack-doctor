@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+check() {
+  local name="$1" cmd="$2"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    local version
+    version="$($cmd --version 2>/dev/null | head -n1 || true)"
+    printf '✓ %-12s %s\n' "$name" "${version:-installed}"
+  else
+    printf '✗ %-12s missing\n' "$name"
+  fi
+}
+
+echo "AI Agent Stack doctor"
+check "git" git
+check "node" node
+check "claude" claude
+check "codex" codex
+check "rtk" rtk
+check "codegraph" codegraph
+
+echo
+if command -v rtk >/dev/null 2>&1; then
+  echo "RTK savings snapshot:"
+  rtk gain 2>/dev/null | head -n 12 || true
+fi
+
+echo
+cat <<'MSG'
+Per-project checks:
+  codegraph status .       # if initialized
+  ./bin/ai-review-plan     # after installing this kit into a repo
+MSG

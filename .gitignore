@@ -1,0 +1,28 @@
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local credentials and overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.ai-review/local.env
+.ai-review/*.local.*
+
+# Logs, caches, and generated output
+*.log
+.cache/
+coverage/
+dist/
+build/
+node_modules/
+
+# Tool-local state (initialize these in each target repository)
+.codegraph/
