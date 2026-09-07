@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.7.2)
+## Verified task lifecycle (0.7.3)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -114,3 +114,17 @@ usage normalization and aggregation. The CLI retains repository/task resolution
 and orchestration. Gate events include task key, task ID, profile, duration,
 outcome and optional reported usage. Metrics do not estimate missing usage or
 observe model-internal calls. Existing repository-level events are retained.
+
+Each profile's `context_caps` also carries a `usage_tokens` runtime budget.
+`ai pipeline` sums reported input/output tokens from executed and resumed gates
+as it runs and stops before the next gate once the budget is met, recording a
+`FAILED` pipeline event with the accumulated usage and the budget it hit.
+`summarize()` aggregates per-pipeline usage separately from per-gate usage and
+counts runs that stopped on a budget, so `ai metrics` shows end-to-end spend
+across a whole run, not just per-gate figures.
+
+`ai benchmark` runs a fixed set of realistic task fixtures (`BENCHMARK_TASKS` in
+`ai_stack/cli.py`) through `classify`, `context_caps` and `select_skills` for
+every profile, without touching git history, an active task or a model call.
+It is a deterministic regression check on risk classification and skill
+selection across profiles as those functions evolve.

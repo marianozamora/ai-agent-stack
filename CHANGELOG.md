@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3
+
+- Add `ai benchmark`, comparing risk classification, task type and skill selection across profiles for a fixed set of realistic task fixtures, with no active task or model call required.
+- Add a per-profile runtime token budget (`usage_tokens`); `ai pipeline` accumulates reported gate usage and stops before exceeding it instead of continuing to spend on further reviewer calls.
+- Report end-to-end pipeline usage totals and budget-exceeded counts in `ai metrics`.
+
 ## 0.7.2
 
 - Bundle read-only semantic validators for contract, cleanup, review, security, quality, design, summary and provenance; install them while preserving custom commands.

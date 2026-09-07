@@ -7,7 +7,7 @@ from typing import Any
 from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute
 from validators import INSTRUCTIONS, model_verdict, intact_record
 
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -161,15 +161,15 @@ def context_caps(profile:str)->dict:
     return {
       'fast': {
         'raw_files':4,'review_files':5,'agent_calls':3,'reviews':0,'docs_queries':1,'graph_queries':2,
-        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1
+        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1,'usage_tokens':40000
       },
       'standard': {
         'raw_files':8,'review_files':10,'agent_calls':5,'reviews':1,'docs_queries':3,'graph_queries':4,
-        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2
+        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2,'usage_tokens':120000
       },
       'strict': {
         'raw_files':12,'review_files':15,'agent_calls':7,'reviews':1,'docs_queries':5,'graph_queries':6,
-        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2
+        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2,'usage_tokens':250000
       }
     }[profile]
 
@@ -816,10 +816,14 @@ def cmd_metrics(args):
     print(f"Metrics ({report['scope']}): {report['gate_attempts']} gate attempts, "
           f"{report['gate_passes']} passed, {report['gate_failures']} failed")
     print(f"Gate time: {report['gate_duration_seconds']}s; repeated attempts: {report['repeated_gate_attempts']}")
-    print(f"Pipelines ready: {report['pipeline_successes']}/{report['pipeline_runs']}")
+    print(f"Pipelines ready: {report['pipeline_successes']}/{report['pipeline_runs']} "
+          f"(budget exceeded: {report['pipeline_budget_exceeded']})")
     for name,value in report['usage'].items():
         total=value['reported_total']
         print(f"{name}: {total if total is not None else 'unreported'} ({value['reported_attempts']} reporting attempts)")
+    for name,value in report['pipeline_usage'].items():
+        total=value['reported_total']
+        print(f"pipeline {name}: {total if total is not None else 'unreported'} ({value['reported_runs']} reporting runs)")
 
 
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
@@ -962,25 +966,37 @@ def cmd_pipeline(args):
     if args.dry_run:
         print(json.dumps({'order':required,'validators':{name:config[name] for name in required}},indent=2))
         return
+    budget=plan['caps'].get('usage_tokens')
     started=time.monotonic(); status='FAILED'; executed=[]; skipped=[]
+    usage_total={'input_tokens':0,'output_tokens':0}
     try:
         for name in required:
             if validator_config(state)['validators']!=config:
                 raise SystemExit('NEEDS_HUMAN: validator configuration changed; rerun pipeline.')
+            spent=usage_total['input_tokens']+usage_total['output_tokens']
+            if budget and spent>=budget:
+                raise SystemExit(f'NEEDS_HUMAN: pipeline usage budget exceeded ({spent} >= {budget} reported tokens) before {name}.')
             fingerprint=evidence_fingerprint(root,state,current_plan(state))
             record=load_json(task_state(state)/'gates'/(name+'.json'),{})
             item=config[name]
             if (args.resume and record.get('passed') and intact_record(record,fingerprint)
                     and record.get('command')==item['command'] and record.get('adapter')==item['adapter']
                     ):
-                print(name+': fresh evidence reused'); skipped.append(name); continue
+                print(name+': fresh evidence reused'); skipped.append(name)
+                for key in usage_total: usage_total[key]+=record.get('usage',{}).get(key,0)
+                continue
             executed.append(name)
             cmd_gate(argparse.Namespace(name=name,**item))
+            fresh=load_json(task_state(state)/'gates'/(name+'.json'),{})
+            for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
         cmd_ready(args)
         status='PR_READY'
     finally:
         record_metric(state,'pipeline',status=status,executed=executed,skipped=skipped,
-                      duration_seconds=round(time.monotonic()-started,3))
+                      duration_seconds=round(time.monotonic()-started,3),usage=usage_total,usage_budget=budget)
+        spent=usage_total['input_tokens']+usage_total['output_tokens']
+        if spent: print(f"Usage: {usage_total['input_tokens']} input / {usage_total['output_tokens']} output tokens"
+                         +(f' (budget {budget})' if budget else ''))
 
 
 def cmd_gate(args):
@@ -1037,6 +1053,50 @@ def required_gates(root,plan):
     return [name for name in ORDER if name in required]
 
 
+BENCHMARK_TASKS = [
+    {'id': 'auth-bugfix', 'task': 'Fix incorrect 401 responses in the login rate limiter',
+     'files': ['src/auth/rate_limiter.py', 'src/auth/middleware.py'], 'changed_lines': 40},
+    {'id': 'payments-migration', 'task': 'Migrate the payments schema to add a refunds table',
+     'files': ['migrations/0032_add_refunds.sql', 'src/payments/repository.py'], 'changed_lines': 120},
+    {'id': 'ui-copy', 'task': 'Update the empty-state copy on the dashboard',
+     'files': ['src/components/Dashboard/EmptyState.tsx'], 'changed_lines': 6},
+    {'id': 'billing-integration', 'task': 'Add retry handling to the billing webhook worker',
+     'files': ['src/workers/billing_webhook.py', 'src/services/queue.py'], 'changed_lines': 85},
+    {'id': 'onboarding-design', 'task': 'Implement the new onboarding flow from Figma',
+     'files': ['src/onboarding/Wizard.tsx', 'src/onboarding/steps/Welcome.tsx'], 'changed_lines': 210,
+     'figma': 'https://figma.com/file/example/onboarding'},
+    {'id': 'search-tickets', 'task': 'Break down the search revamp epic into tickets',
+     'files': [], 'changed_lines': 0},
+]
+
+
+def run_benchmark(state:Path)->dict:
+    results=[]
+    for fixture in BENCHMARK_TASKS:
+        scope={'files':fixture['files'],'file_count':len(fixture['files']),'changed_lines':fixture['changed_lines']}
+        row={'id':fixture['id'],'task':fixture['task'],'profiles':{}}
+        for profile in ('fast','standard','strict'):
+            risk=classify(scope,profile); caps=context_caps(profile)
+            skills=select_skills(state,fixture['task'],profile,fixture.get('figma'))
+            row['profiles'][profile]={'risk':risk['risk'],'security':risk['security'],
+                'task_type':classify_task(fixture['task'],fixture.get('figma')),'skills':skills,
+                'context_chars':caps['context_chars'],'usage_tokens':caps['usage_tokens']}
+        results.append(row)
+    return {'fixtures':len(results),'results':results}
+
+
+def cmd_benchmark(args):
+    state=repo_state(git_root())
+    report=run_benchmark(state)
+    if args.json: print(json.dumps(report,indent=2)); return
+    for row in report['results']:
+        print(f"\n{row['id']}: {row['task']}")
+        for profile,data in row['profiles'].items():
+            print(f"  {profile:8} risk={data['risk']:6} security={str(data['security']):5} "
+                  f"skills={','.join(data['skills']) or '(none)'} "
+                  f"context_chars={data['context_chars']} usage_tokens={data['usage_tokens']}")
+
+
 def cmd_ready(args):
     root=git_root(); state=repo_state(root); plan=current_plan(state)
     if contamination(root): raise SystemExit('FAILED: zero-footprint check failed.')
@@ -1078,6 +1138,7 @@ def parser():
     setting.add_argument('--evidence'); setting.add_argument('--timeout',type=int,default=600)
     setting.add_argument('command',nargs=argparse.REMAINDER)
     metrics=sp.add_parser('metrics'); metrics.add_argument('--all-tasks',action='store_true'); metrics.add_argument('--json',action='store_true')
+    bench=sp.add_parser('benchmark'); bench.add_argument('--json',action='store_true')
     sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('path'); sp.add_parser('optimize')
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default='main'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next')
@@ -1106,6 +1167,7 @@ def main():
     elif args.cmd=='validators': cmd_validators(args)
     elif args.cmd=='validate': cmd_validate(args)
     elif args.cmd=='pipeline': cmd_pipeline(args)
+    elif args.cmd=='benchmark': cmd_benchmark(args)
     elif args.cmd=='status': cmd_status(args)
     elif args.cmd=='doctor': cmd_doctor(args)
     elif args.cmd=='metrics': cmd_metrics(args)

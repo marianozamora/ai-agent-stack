@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.7.2)
+## Verified workflow (0.7.3)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -410,6 +410,28 @@ JSON line, for example:
 ```json
 {"status":"PASS","evidence":["Acceptance criteria verified"],"usage":{"input_tokens":1200,"output_tokens":180,"cost_usd":0.004}}
 ```
+
+Each profile also carries a runtime token budget (`fast` 40000, `standard` 120000,
+`strict` 250000 reported input+output tokens per pipeline run). `ai pipeline`
+accumulates reported usage across executed and reused gates and stops before
+starting the next gate once that budget is met, returning `NEEDS_HUMAN` instead
+of continuing to spend on further reviewer calls. Gates without reported usage
+(most exit-code adapters) do not count against the budget. `ai metrics` reports
+`pipeline_budget_exceeded` and the aggregated `pipeline_usage` totals alongside
+per-gate usage; unreported usage remains `null`, never estimated.
+
+```bash
+ai benchmark
+ai benchmark --json
+```
+
+`ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
+migration, UI copy change, integration work, a Figma-driven design task and a
+ticket breakdown) through `fast`/`standard`/`strict` and prints the resulting
+risk classification, task type, selected skills, context budget and usage
+budget per profile. It needs no active task or model call, so it stays useful
+as a fast regression check on classification and skill-selection behavior
+across profiles as the stack evolves.
 
 Usage totals include only reported nonnegative values and show how many attempts
 reported each field. Missing usage is shown as unreported, never estimated or

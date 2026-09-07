@@ -131,6 +131,18 @@ class WorkflowTests(unittest.TestCase):
         record = json.loads((Path(self.ai('path').strip()) / 'gates/checks.json').read_text())
         self.assertEqual(record['exit_code'], 124)
 
+    def test_benchmark_compares_profiles_without_a_plan(self):
+        report = json.loads(self.ai('benchmark', '--json'))
+        self.assertEqual(report['fixtures'], len(report['results']))
+        by_id = {row['id']: row['profiles'] for row in report['results']}
+        self.assertEqual(by_id['payments-migration']['fast']['risk'], 'HIGH')
+        self.assertEqual(by_id['payments-migration']['strict']['risk'], 'HIGH')
+        self.assertEqual(by_id['ui-copy']['fast']['risk'], 'LOW')
+        self.assertEqual(by_id['ui-copy']['strict']['risk'], 'MEDIUM')
+        for profile, tokens in (('fast', 40000), ('standard', 120000), ('strict', 250000)):
+            self.assertEqual(by_id['ui-copy'][profile]['usage_tokens'], tokens)
+        self.assertEqual(by_id['onboarding-design']['standard']['task_type'], 'design')
+
     def configure_pipeline(self, failing=None):
         for name in ('cleanup','checks','regression','contract','provenance','ponytail','summary'):
             script = 'import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],"usage":{"input_tokens":12,"output_tokens":3,"cost_usd":0.01}}))'
@@ -155,6 +167,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(json.loads(self.ai('metrics','--task-id','two','--json'))['gate_attempts'],0)
         self.assertEqual(json.loads(self.ai('metrics','--all-tasks','--json'))['gate_attempts'],7)
         self.assertEqual(self.git('status','--porcelain'),'')
+
+    def test_pipeline_usage_budget_stops_pipeline(self):
+        self.plan()
+        self.configure_pipeline()
+        big_script = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
+                      '"usage":{"input_tokens":30000,"output_tokens":20000}}))')
+        self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', big_script)
+        output = self.ai('pipeline', ok=False)
+        self.assertIn('usage budget exceeded', output)
+        report = json.loads(self.ai('metrics', '--json'))
+        self.assertEqual(report['gate_attempts'], 1)
+        self.assertEqual(report['pipeline_budget_exceeded'], 1)
+        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 30000)
 
     def test_pipeline_stops_on_failure_and_config_changes_invalidate(self):
         self.plan()

@@ -6,10 +6,17 @@
 - [x] Reusable JSON and exit-code validator adapters
 - [x] Sequential pipeline with preflight and evidence-aware resume
 - [x] Task-scoped gate outcomes, durations and reported usage
-- [ ] Real-task benchmark fixtures and profile comparisons
-- [ ] End-to-end model usage capture and runtime budgets
+- [x] Real-task benchmark fixtures and profile comparisons
+- [x] End-to-end model usage capture and runtime budgets
 
 `ai validators install` completes semantic validator configuration while preserving project-specific `checks` and `regression`. Configuration stays outside the repository. Live semantic review requires authenticated Codex and populated task contracts; tests use a fixture reviewer to verify orchestration without model calls.
+
+`ai benchmark` compares risk classification, task type and skill selection across
+`fast`/`standard`/`strict` for a fixed set of realistic task fixtures, with no
+active task or model call required. `ai pipeline` enforces a per-profile runtime
+token budget (`usage_tokens` in `context_caps`) against usage reported by
+executed and resumed gates, stopping the run before exceeding it; `ai metrics`
+reports the aggregated per-pipeline usage and how many runs hit their budget.
 
 ## v0.7 — Skills + Token Efficiency
 - [x] Lazy Skills Engine

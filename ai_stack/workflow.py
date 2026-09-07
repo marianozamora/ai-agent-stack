@@ -75,6 +75,15 @@ def summarize(rows):
         values = [row['usage'][key] for row in gates if key in row.get('usage', {})]
         usage[key] = {'reported_total': sum(values) if values else None, 'reported_attempts': len(values)}
     pipelines = [row for row in rows if row.get('event') == 'pipeline']
+    pipeline_usage = {}
+    for key in ('input_tokens', 'output_tokens'):
+        values = [row['usage'][key] for row in pipelines if isinstance(row.get('usage'), dict) and key in row['usage']]
+        pipeline_usage[key] = {'reported_total': sum(values) if values else None, 'reported_runs': len(values)}
+    budget_exceeded = sum(
+        row.get('status') != 'PR_READY' and isinstance(row.get('usage'), dict) and row.get('usage_budget')
+        and (row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)) >= row['usage_budget']
+        for row in pipelines
+    )
     return {
         'events': len(rows), 'gate_attempts': len(gates),
         'gate_passes': sum(row.get('passed') is True for row in gates),
@@ -83,5 +92,7 @@ def summarize(rows):
         'gate_duration_seconds': round(sum(row.get('duration_seconds', 0) for row in gates), 3),
         'pipeline_runs': len(pipelines),
         'pipeline_successes': sum(row.get('status') == 'PR_READY' for row in pipelines),
+        'pipeline_budget_exceeded': budget_exceeded,
         'usage': usage,
+        'pipeline_usage': pipeline_usage,
     }
