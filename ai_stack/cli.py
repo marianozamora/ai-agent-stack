@@ -4,10 +4,10 @@ import tempfile, uuid
 import argparse, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
-from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature
 from validators import INSTRUCTIONS, model_verdict, intact_record
 
-VERSION = "0.7.3"
+VERSION = "0.8.0"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -267,9 +267,23 @@ def record_metric(state:Path,event:str,**data):
     task=task_state(state)
     identity=load_json(task/'task.json',{})
     plan=load_json(task/'state/current-plan.json',{})
-    p=state/'metrics.jsonl'; row={"ts":time.time(),"event":event,
-        "task_key":task.name,"task_id":identity.get('id'),"profile":plan.get('profile'),**data}
+    p=state/'metrics.jsonl'; row={"ts":time.time(),"event":event,"stack_version":VERSION,
+        "task_key":task.name,"task_id":identity.get('id'),"profile":plan.get('profile'),
+        "risk":(plan.get('risk') or {}).get('risk'),"task_type":plan.get('task_type'),**data}
     with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
+
+
+def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
+    """Count prior recorded attempts of this gate for this task, for a fresh 1-based number."""
+    p=state/'metrics.jsonl'
+    if not p.exists(): return 1
+    count=0
+    for line in p.read_text().splitlines():
+        try: row=json.loads(line)
+        except ValueError: continue
+        if isinstance(row,dict) and row.get('event')=='gate' and row.get('task_key')==task_key and row.get('gate')==gate:
+            count+=1
+    return count+1
 
 def ensure_contract(state:Path,task:str,figma:str|None=None):
     p=task_state(state)/'contracts'/'current-pr.yml'
@@ -1037,7 +1051,14 @@ def cmd_gate(args):
         'verdict':verdict,'fingerprint':after,'command':command,'adapter':adapter,
         'duration_seconds':duration,'usage':usage,'artifacts':artifacts,
         'log':str(log),'log_hash':hashlib.sha256(log.read_bytes()).hexdigest(),'created_at':time.time()})
-    record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,usage=usage)
+    findings=[]
+    if isinstance(verdict,dict) and isinstance(verdict.get('findings'),list):
+        for text in verdict['findings'][:plan['caps']['findings']]:
+            if isinstance(text,str) and text.strip():
+                findings.append({'hash':finding_signature(text),'text':normalize_finding(text)})
+    attempt=gate_attempt_number(state,task_state(state).name,args.name)
+    record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,
+                  usage=usage,attempt=attempt,findings=findings)
     print(f"{args.name}: {'PASS' if passed else 'FAIL'} | {log}")
     if before!=after: print('Repository or task changed during gate; rerun against the final state.')
     if needs_verdict and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')

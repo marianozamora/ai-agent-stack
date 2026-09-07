@@ -128,3 +128,23 @@ across a whole run, not just per-gate figures.
 every profile, without touching git history, an active task or a model call.
 It is a deterministic regression check on risk classification and skill
 selection across profiles as those functions evolve.
+
+## v0.8 "Learning" — Phase 0 (metrics enrichment)
+
+Every `record_metric()` row now also carries `stack_version`, `risk` and
+`task_type` read from the current plan, so later analysis can stratify outcomes
+by those dimensions without re-deriving them. `cmd_gate()` additionally records
+a 1-based `attempt` number (`gate_attempt_number()` counts prior `gate` events
+for the same `task_key`+gate name) and a bounded `findings` list.
+
+Findings are never stored as raw model text. `ai_stack/workflow.py` adds two
+pure, stdlib-only helpers: `normalize_finding()` folds a finding string to a
+comparable form (hex blobs, `path:line` locations and bare digit runs replaced
+with placeholders, whitespace collapsed, truncated to 160 chars), and
+`finding_signature()` is its sha256 prefix. `cmd_gate()` stores at most
+`plan['caps']['findings']` `{"hash":..., "text":...}` records per gate, so the
+same underlying issue reported with different line numbers or hex ids hashes
+identically. This is a passive recording layer only: it adds no new model
+calls, does not change what makes a gate pass, and is the substrate the
+failure-pattern, lessons and confidence phases will read without needing a
+second pass over raw verdict text.

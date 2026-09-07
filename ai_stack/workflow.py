@@ -1,6 +1,8 @@
 """Reusable validator configuration and task metric aggregation (stdlib only)."""
+import hashlib
 import math
 import os
+import re
 import signal
 import subprocess
 
@@ -49,6 +51,20 @@ def validate_config(config):
         if item['adapter'] == 'exit-code' and not (isinstance(item.get('evidence'), str) and item['evidence'].strip()):
             raise ValueError(f'{name}: exit-code adapter requires an evidence description.')
     return config
+
+
+def normalize_finding(text):
+    """Fold a free-text finding into a stable form so repeats hash identically."""
+    folded = text.strip().lower()
+    folded = re.sub(r'\b[0-9a-f]{8,}\b', '<hex>', folded)
+    folded = re.sub(r'([\w./-]+):(\d+)', r'\1:<n>', folded)
+    folded = re.sub(r'(?<!\w)\d+(?!\w)', '<n>', folded)
+    folded = re.sub(r'\s+', ' ', folded).strip()
+    return folded[:160]
+
+
+def finding_signature(text):
+    return hashlib.sha256(normalize_finding(text).encode()).hexdigest()[:12]
 
 
 def usage_from_verdict(verdict):

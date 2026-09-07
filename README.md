@@ -411,6 +411,13 @@ JSON line, for example:
 {"status":"PASS","evidence":["Acceptance criteria verified"],"usage":{"input_tokens":1200,"output_tokens":180,"cost_usd":0.004}}
 ```
 
+Every recorded gate event also carries `risk`, `task_type`, `stack_version`, a
+1-based `attempt` number and a bounded list of normalized, hashed `findings`
+(never raw model text — see `normalize_finding`/`finding_signature` in
+`ai_stack/workflow.py`). Nothing consumes these yet; they are the recorded
+substrate for the upcoming v0.8 failure-pattern, lessons and confidence
+features, added with no new model calls and no change to gate outcomes.
+
 Each profile also carries a runtime token budget (`fast` 40000, `standard` 120000,
 `strict` 250000 reported input+output tokens per pipeline run). `ai pipeline`
 accumulates reported usage across executed and reused gates and stops before

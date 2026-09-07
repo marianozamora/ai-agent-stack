@@ -1,6 +1,6 @@
 # Roadmap
 
-## Next release — Workflow automation and measurement
+## v0.7 — Workflow automation and measurement (shipped)
 
 - [x] Bundled validators: contract, cleanup, provenance, quality (ponytail), summary and review; security and design when applicable.
 - [x] Reusable JSON and exit-code validator adapters
@@ -33,10 +33,19 @@ reports the aggregated per-pipeline usage and how many runs hit their budget.
 - [x] External task/cache/fingerprint state
 
 ## v0.8 — Learning
-- [ ] Repository lessons
+- [x] Phase 0: metrics enrichment (`risk`, `task_type`, `attempt`, normalized/hashed findings) — the substrate the phases below read
 - [ ] Failure pattern database
+- [ ] Repository lessons
 - [ ] Confidence engine
 - [ ] Prompt optimizer with measured outcomes
+
+All four learning features are pure stdlib computation over existing `metrics.jsonl`/gate
+records — no new model calls anywhere in this release, and no gate (`required_gates`,
+`cmd_ready`, `classify`) is ever influenced by learned data; confidence/lessons may only
+push toward more rigor, never less. See the recorded v0.8 design for storage formats,
+CLI surface, sequencing (patterns → lessons → confidence → prompt optimizer) and ten
+open questions (cross-repo sharing, auto-promotion, retention, naming, min sample size)
+still needing a decision before each phase ships.
 
 ## v0.9 — Measurement
 - [ ] Benchmark suite

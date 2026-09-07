@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+- Enrich every recorded gate event with `stack_version`, `risk`, `task_type` and a 1-based `attempt` number, and every metric event with `stack_version`/`risk`/`task_type` from the current plan.
+- Capture semantic gate findings as normalized, hashed records (`finding_signature`/`normalize_finding` in `ai_stack/workflow.py`), bounded by the profile's findings cap, so repeated findings can be recognized across attempts and tasks without storing raw model text.
+- This is groundwork for v0.8 "Learning" (failure patterns, repository lessons, confidence reporting, prompt experiments); no new commands or gating behavior yet, and no new model calls.
+
 ## 0.7.3
 
 - Add `ai benchmark`, comparing risk classification, task type and skill selection across profiles for a fixed set of realistic task fixtures, with no active task or model call required.

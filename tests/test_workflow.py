@@ -131,6 +131,27 @@ class WorkflowTests(unittest.TestCase):
         record = json.loads((Path(self.ai('path').strip()) / 'gates/checks.json').read_text())
         self.assertEqual(record['exit_code'], 124)
 
+    def test_gate_metrics_capture_attempt_findings_and_context(self):
+        self.plan()
+        self.ai('gate', 'checks', '--', sys.executable, '-c',
+                'import json, sys; print(json.dumps({"status":"FAIL","evidence":["fixture"],'
+                '"findings":["Debug print left in app.txt:12","Debug print left in app.txt:99"]})); sys.exit(1)',
+                ok=False)
+        self.ai('gate', 'checks', '--', sys.executable, '-c',
+                'import json; print(json.dumps({"status":"PASS","evidence":["fixture verified"]}))')
+        state_root = Path(self.ai('path').strip()).parents[1]
+        rows = [json.loads(line) for line in (state_root / 'metrics.jsonl').read_text().splitlines()]
+        gates = [row for row in rows if row['event'] == 'gate']
+        self.assertEqual([g['attempt'] for g in gates], [1, 2])
+        self.assertEqual(gates[0]['profile'], 'fast')
+        self.assertEqual(gates[0]['task_type'], 'feature')
+        self.assertIn('stack_version', gates[0])
+        first_findings = gates[0]['findings']
+        self.assertEqual(len(first_findings), 2)
+        self.assertEqual(first_findings[0]['text'], 'debug print left in app.txt:<n>')
+        self.assertEqual(first_findings[0]['hash'], first_findings[1]['hash'])
+        self.assertEqual(gates[1]['findings'], [])
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))
