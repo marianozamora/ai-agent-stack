@@ -1,6 +1,5 @@
 from __future__ import annotations
 import json, shutil, time
-from pathlib import Path
 from core import STACK_ROOT, VERSION, contamination, git_root, load_json, profile_repo, repo_state, safe_head, save_json, task_state
 from crg import crg_cmd, crg_exec
 from skills import enabled_skills, skill_registry
