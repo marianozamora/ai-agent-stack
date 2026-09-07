@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2
+
+- Add `ai benchmark run/list/report/compare`: a 5-scenario corpus (`templates/benchmarks/pipeline/*.json`) run end-to-end through the real `ai plan` -> `ai pipeline` -> `ai ready` flow, each in a fully isolated sandbox (fresh temp git repo, `HOME`/`XDG_CONFIG_HOME` redirected, `AI_GATE`/`AI_TASK_DIR` stripped) so a benchmark run can never touch the real `metrics.jsonl` or contaminate `ai confidence`/`ai prompt`'s sample counts. Every gate's verdict is scripted synthetically — no model calls, zero cost. `compare` refuses across differing `corpus_digest`s. The pre-existing `ai benchmark` (routing/skill-selection comparison) is unchanged as the bare command.
+- This closes v0.9 "Measurement"'s scope for now; a `--live` mode against real bundled validators is deferred to when it's actually wanted.
+
 ## 0.9.1
 
 - Add prompt promotion history and rollback: `ai prompt history [--slot NAME]` and `ai prompt rollback NAME --confirm`. Every `promote`/`reset`/`rollback` appends to a repo-scoped, append-only `prompt-history.jsonl`, binding a promotion to the exact evidence (`variant_stats()` output) that justified it, so the decision survives even after `ai metrics prune`. `reset` and `rollback` are now `require_human`-guarded, same as `promote`.

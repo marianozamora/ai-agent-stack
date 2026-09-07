@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "mutating-validator",
+  "task": "Add retry handling to the billing webhook worker",
+  "profiles": ["standard"],
+  "base_files": {"README.md": "# Demo app\n"},
+  "change_files": {"src/workers/billing_webhook.py": "def handle(event):\n    return event\n"},
+  "acceptance": ["The webhook retries on a transient failure"],
+  "synthetic": {
+    "cleanup": {"status": "PASS", "evidence": ["No debug residue"], "mutate": true}
+  },
+  "expect": {"risk": "MEDIUM", "readiness": "FAILED", "failed_gates": ["cleanup"],
+             "pipeline_message_contains": "changed during gate"}
+}

@@ -10,6 +10,8 @@ for directory in ('ai_stack', 'tests'):
         ast.parse(path.read_text(), filename=str(path))
 for path in (root / 'skills').rglob('*.json'):
     json.loads(path.read_text())
+for path in (root / 'templates/benchmarks').rglob('*.json'):
+    json.loads(path.read_text())
 for path in [root / 'install.sh', *(root / 'bin').iterdir(), *(root / 'tests').glob('*.sh'), root / 'templates/lib/common.sh']:
     if path.is_file() and path.read_text().startswith('#!/usr/bin/env bash'):
         subprocess.run(['bash', '-n', str(path)], check=True)

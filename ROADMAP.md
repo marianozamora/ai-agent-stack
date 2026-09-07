@@ -50,7 +50,7 @@ still needing a decision before each phase ships.
 
 ## v0.9 — Measurement
 - [ ] Cost/token dashboard: richer `ai metrics` (time-series, top-N, CSV export, advisory budget) plus `ai metrics prune` retention
-- [ ] Benchmark suite: end-to-end sandboxed pipeline scenarios (synthetic by default, opt-in `--live`), fully isolated from the real `metrics.jsonl`
+- [x] Benchmark suite: end-to-end sandboxed pipeline scenarios (`ai benchmark run/list/report/compare`), synthetic only for now, fully isolated from the real `metrics.jsonl` (deferred: opt-in `--live` mode against real bundled validators)
 - [x] Prompt A/B evaluation (shipped as `ai prompt` in v0.8 Phase 4)
 - [x] Prompt versioning: promotion history and rollback (`ai prompt history`/`rollback`)
 

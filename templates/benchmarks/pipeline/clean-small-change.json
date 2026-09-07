@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "clean-small-change",
+  "task": "Update the empty-state copy on the dashboard",
+  "profiles": ["fast", "standard"],
+  "base_files": {"README.md": "# Demo app\n"},
+  "change_files": {"src/ui/empty_state.py": "MESSAGE = 'Nothing here yet.'\n"},
+  "acceptance": ["The empty-state message is friendlier"],
+  "synthetic": {
+    "cleanup": {"status": "PASS", "evidence": ["No debug residue in src/ui/empty_state.py"]},
+    "checks": {"status": "PASS", "evidence": ["Unit tests pass"]},
+    "regression": {"status": "PASS", "evidence": ["Regression suite passes"]},
+    "provenance": {"status": "PASS", "evidence": ["No accidental attribution found"]},
+    "ponytail": {"status": "PASS", "evidence": ["Follows local conventions"]},
+    "contract": {"status": "PASS", "evidence": ["Acceptance criterion verified against src/ui/empty_state.py"]},
+    "summary": {"status": "PASS", "evidence": ["Draft written"], "summary_markdown": "# Empty-state copy\nUpdated the message."}
+  },
+  "expect": {"risk": "LOW", "required_gates_include": ["cleanup", "checks"], "readiness": "PR_READY"}
+}

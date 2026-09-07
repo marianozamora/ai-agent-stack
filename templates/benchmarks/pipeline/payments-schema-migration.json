@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "payments-schema-migration",
+  "task": "Migrate the payments schema to add a refunds table",
+  "profiles": ["standard"],
+  "base_files": {"README.md": "# Demo app\n"},
+  "change_files": {"migrations/0032_add_refunds.sql": "CREATE TABLE refunds (id INT);\n"},
+  "acceptance": ["A refunds table exists with an id column"],
+  "synthetic": {
+    "cleanup": {"status": "PASS", "evidence": ["No debug residue"]},
+    "checks": {"status": "PASS", "evidence": ["Unit tests pass"]},
+    "regression": {"status": "PASS", "evidence": ["Regression suite passes"]},
+    "review": {"status": "PASS", "evidence": ["Migration is additive and reversible"]},
+    "provenance": {"status": "PASS", "evidence": ["No accidental attribution found"]},
+    "ponytail": {"status": "PASS", "evidence": ["Follows local migration conventions"]},
+    "contract": {"status": "PASS", "evidence": ["Acceptance criterion verified against migrations/0032_add_refunds.sql"]},
+    "summary": {"status": "PASS", "evidence": ["Draft written"], "summary_markdown": "# Add refunds table\nAdditive migration."}
+  },
+  "expect": {"risk": "HIGH", "required_gates_include": ["review"], "readiness": "PR_READY"}
+}

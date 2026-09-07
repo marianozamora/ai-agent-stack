@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.9.1)
+## Verified workflow (0.9.2)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -648,6 +648,44 @@ risk classification, task type, selected skills, context budget and usage
 budget per profile. It needs no active task or model call, so it stays useful
 as a fast regression check on classification and skill-selection behavior
 across profiles as the stack evolves.
+
+```bash
+ai benchmark list
+ai benchmark run
+ai benchmark run --scenario clean-small-change --profile fast
+ai benchmark report [RUN_ID]
+ai benchmark compare RUN_A RUN_B
+```
+
+`ai benchmark run` is a different, larger thing: it runs a small corpus of
+scenarios (`templates/benchmarks/pipeline/*.json`) end-to-end through the real
+`ai plan` -> `ai pipeline` -> `ai ready` flow and asserts each scenario's
+`expect` block (risk, required gates, readiness, failed gates, or a substring
+of the pipeline's own output) — a regression check on the orchestration
+itself (gate routing, fail-fast, mutation detection, budget enforcement),
+not just classification. Each scenario scripts every gate's verdict with a
+tiny synthetic validator (no model calls, no cost) so results are exact and
+reproducible; there is no `--live` mode that spends real tokens against the
+bundled semantic validators in this release.
+
+Every scenario runs inside a fully isolated sandbox: a fresh temp git repo
+with `HOME`/`XDG_CONFIG_HOME` redirected into the sandbox and `AI_GATE`/
+`AI_TASK_DIR` stripped from the child environment (the same class of bug
+already fixed once in this test suite's own harness). The child process
+cannot see or write your real `metrics.jsonl` or repo state — a benchmark run
+can never inflate `ai confidence`'s sample sizes, satisfy an `ai prompt`
+experiment's `--min-samples`, or otherwise contaminate what those commands
+report as real history. Results are recorded separately, under this repo's
+`benchmarks/` state: `index.jsonl` (one summary line per run) and
+`<run_id>.json` (full per-scenario detail). `ai benchmark run` exits nonzero
+if any scenario's expectations fail, so it's usable as a CI check.
+
+`ai benchmark compare RUN_A RUN_B` refuses when the two runs used a different
+`corpus_digest` (a hash over the scenario corpus) — the same discipline
+`variant_stats()` applies via `(variant, sha)` grouping: comparing results
+from two different corpora would be comparing different questions. `--corpus
+PATH` points either command at a different scenario directory, e.g. a
+team's private corpus of anonymized historical diffs, kept outside this repo.
 
 Usage totals include only reported nonnegative values and show how many attempts
 reported each field. Missing usage is shown as unreported, never estimated or

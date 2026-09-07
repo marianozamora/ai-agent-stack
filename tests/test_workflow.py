@@ -415,6 +415,31 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
 
         self.ai('prompt', 'reset', 'cleanup')
 
+    def test_benchmark_run_report_compare_and_isolation(self):
+        self.plan()
+        self.pass_gates()
+        state_root = Path(self.ai('path').strip()).parents[1]
+        metrics_before = (state_root / 'metrics.jsonl').read_text()
+
+        listing = self.ai('benchmark', 'list')
+        self.assertIn('clean-small-change', listing)
+
+        output = self.ai('benchmark', 'run', '--scenario', 'clean-small-change', '--profile', 'fast')
+        self.assertIn('case(s) passed', output)
+        self.assertNotIn('FAIL', output)
+
+        # The benchmark's own sandboxed pipeline runs must never touch the real metrics.jsonl.
+        self.assertEqual((state_root / 'metrics.jsonl').read_text(), metrics_before)
+
+        report = json.loads(self.ai('benchmark', 'report', '--json'))
+        self.assertEqual(report['cases_failed'], 0)
+        self.assertEqual(len(report['case_results']), 1)
+
+        self.ai('benchmark', 'run', '--scenario', 'mutating-validator')
+        run_ids = [json.loads(line)['run_id'] for line in (state_root / 'benchmarks/index.jsonl').read_text().splitlines()]
+        self.assertEqual(len(run_ids), 2)
+        self.ai('benchmark', 'compare', run_ids[0], run_ids[1], ok=False)
+
     def test_benchmark_compares_profiles_without_a_plan(self):
         report = json.loads(self.ai('benchmark', '--json'))
         self.assertEqual(report['fixtures'], len(report['results']))

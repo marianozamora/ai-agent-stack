@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.9.1)
+## Verified task lifecycle (0.9.2)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -413,3 +413,51 @@ already exists to catch for the variant text itself: a stack upgrade mid-experim
 now shows up next to `by_task_type`/`by_risk` in `ai prompt report` and in every
 promotion's recorded evidence, instead of silently mixing runs from two different
 tool versions into one number.
+
+## v0.9 "Measurement" — Benchmark suite
+
+The pre-existing `ai benchmark` (`BENCHMARK_TASKS`/`run_benchmark()`) is a routing
+regression check — `classify()`/`select_skills()` over fixed fixtures, no execution.
+`ai benchmark run` is a different, larger thing: `templates/benchmarks/pipeline/*.json`
+scenarios run end-to-end through the real `ai plan` -> `ai pipeline` -> `ai ready` flow,
+each in its own sandbox, and are checked against an `expect` block (`risk`,
+`required_gates_include`, `readiness`, `failed_gates`, `pipeline_message_contains`).
+This is a regression check on the orchestration itself — gate routing, fail-fast,
+mutation detection, budget enforcement — that the existing test suite already exercises
+ad hoc (`configure_pipeline()`/`bundled_pipeline()` in `tests/test_workflow.py`);
+`ai benchmark run` promotes that pattern into a reportable, comparable, CLI-invokable
+artifact with a stable corpus.
+
+Each scenario scripts every required gate's verdict with a tiny synthetic validator
+(`_bench_gate_script()`) — no model calls, so results are exact and reproducible.
+`run_benchmark_scenario()` builds a fresh temp git repo per scenario × profile, with
+`HOME`/`XDG_CONFIG_HOME` redirected into the sandbox and `AI_GATE`/`AI_TASK_DIR`
+stripped from the child environment — the exact class of bug commit `23fc896` already
+fixed once in this test suite's own harness. This is structural isolation, not a
+tag-and-filter convention: the sandboxed child process cannot resolve the real
+`CONFIG_ROOT` at all, so a benchmark run can never write into the user's real
+`metrics.jsonl`/`repos/<id>/` state, and therefore can never inflate `outcome_stats()`,
+`detect_patterns()`, `variant_stats()`, or satisfy an `ai prompt` experiment's
+`min_samples_per_variant`. `required_gates(repo, plan_data)` is called in-process
+(reading the sandboxed `state/current-plan.json` written by a real `ai plan`
+subprocess) rather than via another subprocess round-trip, because it only shells out
+to `git` scoped to the sandbox repo path — it never touches `CONFIG_ROOT` — unlike
+`repo_state()`/`task_state()`, which must never be called in-process against a
+sandbox path since they'd resolve against *this* process's real config directory.
+
+Results are recorded under the real repo's own state, not the sandbox's: repo-scoped
+`benchmarks/index.jsonl` (one summary row per run: `run_id`, `corpus_digest`, pass/fail
+counts) and `benchmarks/<run_id>.json` (full per-scenario detail, `case_results`).
+`corpus_digest` (a hash over the loaded scenario JSON) gates `ai benchmark compare`:
+comparing two runs over different scenario sets would be comparing different
+questions, the same discipline `variant_stats()` already applies via `(variant, sha)`
+grouping. `--corpus PATH` lets `run`/`list` point at a different scenario directory
+entirely, so a team's private corpus (e.g. anonymized historical diffs) never needs to
+live in this repository.
+
+Deliberately out of scope for this pass: a `--live` mode that spends real tokens
+against the bundled semantic validators to measure actual detection rate against
+seeded defects. Recommendation was synthetic-by-default; shipping synthetic mode
+first keeps the feature's cost at exactly zero and defers the real design work
+(cost preflight, ground-truth authoring, nondeterminism handling) to when it's
+actually wanted rather than speculatively building it now.

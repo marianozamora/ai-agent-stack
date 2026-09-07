@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "cleanup-catches-debug-residue",
+  "task": "Fix incorrect 401 responses in the login rate limiter",
+  "profiles": ["standard"],
+  "base_files": {"README.md": "# Demo app\n"},
+  "change_files": {"src/auth/rate_limiter.py": "print('DEBUG', request)\nraise NotImplementedError\n"},
+  "acceptance": ["Rate limiter returns 429, not 401, when the window is exceeded"],
+  "synthetic": {
+    "cleanup": {"status": "FAIL", "evidence": [], "findings": ["Leftover debug print in src/auth/rate_limiter.py:1"]}
+  },
+  "expect": {"risk": "HIGH", "required_gates_include": ["cleanup", "review", "security"],
+             "readiness": "FAILED", "failed_gates": ["cleanup"]}
+}
