@@ -4,6 +4,7 @@ import tempfile, uuid
 import argparse, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute
 
 VERSION = "0.7.1"
 TASK_ID = None
@@ -262,7 +263,11 @@ def task_cache_key(root:Path,task:str,profile:str,base:str,skills:list[str])->st
 
 
 def record_metric(state:Path,event:str,**data):
-    p=state/'metrics.jsonl'; row={"ts":int(time.time()),"event":event,**data}
+    task=task_state(state)
+    identity=load_json(task/'task.json',{})
+    plan=load_json(task/'state/current-plan.json',{})
+    p=state/'metrics.jsonl'; row={"ts":time.time(),"event":event,
+        "task_key":task.name,"task_id":identity.get('id'),"profile":plan.get('profile'),**data}
     with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
 
 def ensure_contract(state:Path,task:str,figma:str|None=None):
@@ -379,6 +384,7 @@ Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then dis
 Zero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.
 
 Record final gates with `ai gate NAME -- COMMAND ...`: checks, regression, contract, cleanup, provenance, ponytail, summary; review for standard/strict or elevated risk; security for security boundaries; design for Figma. Except checks/regression, validators must finish with single-line JSON containing status PASS and a nonempty evidence list. Run cleanup before recording final checks. Only `ai ready` may certify PR_READY from fresh recorded evidence. Return NEEDS_HUMAN or FAILED when evidence is missing.
+If reusable validators are configured (`ai validators show`), use `ai pipeline --dry-run` to inspect the required sequence and `ai pipeline --resume` to execute it using fresh evidence where available. Inspect task outcomes with `ai metrics`.
 '''
     enforce_budget(prompt,caps['context_chars'],'orchestration context')
     ensure_contract(state,task,figma)
@@ -792,9 +798,27 @@ def cmd_doctor(args):
 
 
 def cmd_metrics(args):
-    state=repo_state(git_root()); p=state/'metrics.jsonl'
-    if not p.exists(): print('No metrics recorded yet.'); return
-    lines=p.read_text().splitlines(); print('Events:',len(lines)); print('\n'.join(lines[-10:]))
+    state=repo_state(git_root()); p=state/'metrics.jsonl'; rows=[]; malformed=0
+    for line in p.read_text().splitlines() if p.exists() else []:
+        try:
+            row=json.loads(line)
+            if not isinstance(row,dict): raise ValueError()
+            rows.append(row)
+        except ValueError: malformed+=1
+    if not args.all_tasks:
+        key=task_state(state).name
+        rows=[row for row in rows if row.get('task_key')==key]
+    report=summarize(rows)
+    report['scope']='repository' if args.all_tasks else 'task'
+    report['malformed_events_skipped']=malformed
+    if args.json: print(json.dumps(report,indent=2)); return
+    print(f"Metrics ({report['scope']}): {report['gate_attempts']} gate attempts, "
+          f"{report['gate_passes']} passed, {report['gate_failures']} failed")
+    print(f"Gate time: {report['gate_duration_seconds']}s; repeated attempts: {report['repeated_gate_attempts']}")
+    print(f"Pipelines ready: {report['pipeline_successes']}/{report['pipeline_runs']}")
+    for name,value in report['usage'].items():
+        total=value['reported_total']
+        print(f"{name}: {total if total is not None else 'unreported'} ({value['reported_attempts']} reporting attempts)")
 
 
 GATES = ('checks','regression','cleanup','provenance','ponytail','summary','contract','review','security','design')
@@ -815,7 +839,7 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
             with path.open('rb') as f:
                 for block in iter(lambda:f.read(1024*1024),b''): digest.update(block)
         else: digest.update(b'<missing>')
-    for path in [state/'rules.json',state/'skill-overrides.json',*sorted((task_state(state)/'contracts').glob('*'))]:
+    for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',*sorted((task_state(state)/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
     return digest.hexdigest()
 
@@ -826,47 +850,117 @@ def current_plan(state:Path)->dict:
     return plan
 
 
+def validator_config(state):
+    path=state/'validators.json'
+    try:
+        config=json.loads(path.read_text()) if path.exists() else {'version':1,'validators':{}}
+        return validate_config(config)
+    except (OSError,ValueError) as exc:
+        raise SystemExit(f'Invalid validator configuration: {exc}')
+
+
+def cmd_validators(args):
+    state=repo_state(git_root()); config=validator_config(state)
+    if args.action=='set':
+        command=args.command[1:] if args.command[:1]==['--'] else args.command
+        config['validators'][args.name]={'command':command,'adapter':args.adapter,
+            'timeout':args.timeout,'evidence':args.evidence}
+        try: validate_config(config)
+        except ValueError as exc: raise SystemExit(str(exc))
+        save_json(state/'validators.json',config)
+    elif args.action=='remove':
+        config['validators'].pop(args.name,None)
+        save_json(state/'validators.json',config)
+    print(json.dumps(config,indent=2))
+    if args.action!='show': print('Saved:',state/'validators.json')
+
+
+def cmd_pipeline(args):
+    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    config=validator_config(state)['validators']
+    required=required_gates(root,plan)
+    missing=[name for name in required if name not in config]
+    if missing:
+        raise SystemExit('NEEDS_HUMAN: configure validators for '+', '.join(missing))
+    if args.dry_run:
+        print(json.dumps({'order':required,'validators':{name:config[name] for name in required}},indent=2))
+        return
+    started=time.monotonic(); status='FAILED'; executed=[]; skipped=[]
+    try:
+        for name in required:
+            if validator_config(state)['validators']!=config:
+                raise SystemExit('NEEDS_HUMAN: validator configuration changed; rerun pipeline.')
+            fingerprint=evidence_fingerprint(root,state,current_plan(state))
+            record=load_json(task_state(state)/'gates'/(name+'.json'),{})
+            log=Path(record.get('log',''))
+            item=config[name]
+            if (args.resume and record.get('passed') and record.get('fingerprint')==fingerprint
+                    and record.get('command')==item['command'] and record.get('adapter')==item['adapter']
+                    and log.is_file() and hashlib.sha256(log.read_bytes()).hexdigest()==record.get('log_hash')):
+                print(name+': fresh evidence reused'); skipped.append(name); continue
+            executed.append(name)
+            cmd_gate(argparse.Namespace(name=name,**item))
+        cmd_ready(args)
+        status='PR_READY'
+    finally:
+        record_metric(state,'pipeline',status=status,executed=executed,skipped=skipped,
+                      duration_seconds=round(time.monotonic()-started,3))
+
+
 def cmd_gate(args):
     root=git_root(); state=repo_state(root); plan=current_plan(state)
     command=args.command
     if command[:1]==['--']: command=command[1:]
     if not command: raise SystemExit('A gate requires an executable command after --.')
+    if args.timeout<=0: raise SystemExit('Timeout must be positive.')
     before=evidence_fingerprint(root,state,plan)
+    started=time.monotonic()
     directory=task_state(state)/'gates'
     log=directory/(args.name+'-'+uuid.uuid4().hex+'.log')
-    env=dict(os.environ,AI_TASK_ID=TASK_ID or os.environ.get('AI_TASK_ID','') or run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root))
+    env=dict(os.environ,AI_TASK_ID=load_json(task_state(state)/'task.json',{})['id'],
+             AI_TASK_DIR=str(task_state(state)),AI_REPO_STATE=str(state),AI_GATE=args.name,
+             AI_BASE=plan['scope']['base'])
     with log.open('w') as out:
-        try:
-            result=subprocess.run(command,cwd=root,env=env,stdout=out,stderr=subprocess.STDOUT,timeout=args.timeout)
-            code=result.returncode
-        except (OSError,subprocess.TimeoutExpired) as exc:
-            out.write(str(exc)); code=124
+        code=execute(command,root,env,out,args.timeout)
     after=evidence_fingerprint(root,state,current_plan(state))
     verdict=None
-    if args.name not in ('checks','regression'):
-        try:
-            verdict=json.loads(log.read_text(errors='replace').strip().splitlines()[-1])
-        except (ValueError,IndexError): pass
+    try:
+        verdict=json.loads(log.read_text(errors='replace').strip().splitlines()[-1])
+    except (ValueError,IndexError): pass
+    usage=usage_from_verdict(verdict)
+    adapter=getattr(args,'adapter',None)
+    if adapter=='exit-code':
+        verdict={'status':'PASS' if code==0 else 'FAIL','evidence':[args.evidence]}
     valid_verdict=(isinstance(verdict,dict) and verdict.get('status')=='PASS'
         and isinstance(verdict.get('evidence'),list) and bool(verdict['evidence'])
         and all(isinstance(item,str) and item.strip() for item in verdict['evidence']))
-    passed=code==0 and before==after and (args.name in ('checks','regression') or valid_verdict)
+    needs_verdict=adapter=='json' or args.name not in ('checks','regression')
+    passed=code==0 and before==after and (not needs_verdict or valid_verdict)
+    duration=round(time.monotonic()-started,3)
     save_json(directory/(args.name+'.json'),{'gate':args.name,'passed':passed,'exit_code':code,
-        'verdict':verdict,'fingerprint':after,'command':command,'log':str(log),'log_hash':hashlib.sha256(log.read_bytes()).hexdigest(),'created_at':time.time()})
+        'verdict':verdict,'fingerprint':after,'command':command,'adapter':adapter,
+        'duration_seconds':duration,'usage':usage,
+        'log':str(log),'log_hash':hashlib.sha256(log.read_bytes()).hexdigest(),'created_at':time.time()})
+    record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,usage=usage)
     print(f"{args.name}: {'PASS' if passed else 'FAIL'} | {log}")
     if before!=after: print('Repository or task changed during gate; rerun against the final state.')
-    if args.name not in ('checks','regression') and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')
+    if needs_verdict and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')
     if not passed: raise SystemExit(1)
 
 
-def cmd_ready(args):
-    root=git_root(); state=repo_state(root); plan=current_plan(state)
-    if contamination(root): raise SystemExit('FAILED: zero-footprint check failed.')
+def required_gates(root,plan):
     risk=classify(collect_scope(root,plan['scope']['base']),plan['profile'])
     required=list(GATES[:7])
     if plan['profile']!='fast' or risk['risk']!='LOW' or plan['risk']['risk']!='LOW': required.append('review')
     if risk['security'] or plan['risk']['security']: required.append('security')
     if plan.get('figma'): required.append('design')
+    return [name for name in ORDER if name in required]
+
+
+def cmd_ready(args):
+    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    if contamination(root): raise SystemExit('FAILED: zero-footprint check failed.')
+    required=required_gates(root,plan)
     fingerprint=evidence_fingerprint(root,state,plan)
     missing=[]; failed=[]
     for name in required:
@@ -877,6 +971,7 @@ def cmd_ready(args):
         elif not record.get('passed'): failed.append(name)
     status='FAILED' if failed else ('NEEDS_HUMAN' if missing else 'PR_READY')
     save_json(task_state(state)/'state/readiness.json',{'status':status,'required':required,'missing_or_stale':missing,'failed':failed,'fingerprint':fingerprint})
+    record_metric(state,'readiness',status=status)
     print(status)
     if missing: print('Missing or stale: '+', '.join(missing))
     if failed: print('Failed: '+', '.join(failed))
@@ -894,7 +989,16 @@ def parser():
     imp=sp.add_parser('impact'); imp.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); imp.add_argument('--base',default='main'); imp.add_argument('--refresh',action='store_true'); imp.add_argument('--build',action='store_true')
     q=sp.add_parser('ready'); q.add_argument('--no-launch',action='store_true',help=argparse.SUPPRESS)
     gate=sp.add_parser('gate'); gate.add_argument('name',choices=GATES); gate.add_argument('--timeout',type=int,default=600); gate.add_argument('command',nargs=argparse.REMAINDER)
-    sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('metrics'); sp.add_parser('path'); sp.add_parser('optimize')
+    pipeline=sp.add_parser('pipeline'); pipeline.add_argument('--dry-run',action='store_true'); pipeline.add_argument('--resume',action='store_true')
+    validators=sp.add_parser('validators'); vs=validators.add_subparsers(dest='action',required=True)
+    vs.add_parser('show')
+    remove=vs.add_parser('remove'); remove.add_argument('name',choices=GATES)
+    setting=vs.add_parser('set'); setting.add_argument('name',choices=GATES)
+    setting.add_argument('--adapter',choices=['json','exit-code'],default='json')
+    setting.add_argument('--evidence'); setting.add_argument('--timeout',type=int,default=600)
+    setting.add_argument('command',nargs=argparse.REMAINDER)
+    metrics=sp.add_parser('metrics'); metrics.add_argument('--all-tasks',action='store_true'); metrics.add_argument('--json',action='store_true')
+    sp.add_parser('status'); sp.add_parser('doctor'); sp.add_parser('path'); sp.add_parser('optimize')
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default='main'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next')
     r=sp.add_parser('rules'); rs=r.add_subparsers(dest='rules_cmd'); rs.add_parser('list'); a=rs.add_parser('add'); a.add_argument('rule'); a.add_argument('--scope',default='**'); rm=rs.add_parser('remove'); rm.add_argument('index',type=int)
@@ -919,6 +1023,8 @@ def main():
     elif args.cmd=='impact': cmd_impact(args)
     elif args.cmd=='ready': cmd_ready(args)
     elif args.cmd=='gate': cmd_gate(args)
+    elif args.cmd=='validators': cmd_validators(args)
+    elif args.cmd=='pipeline': cmd_pipeline(args)
     elif args.cmd=='status': cmd_status(args)
     elif args.cmd=='doctor': cmd_doctor(args)
     elif args.cmd=='metrics': cmd_metrics(args)

@@ -1,4 +1,4 @@
-# Architecture — v0.6
+# Architecture
 
 AI Agent Stack is a zero-footprint overlay for existing repositories.
 
@@ -88,3 +88,19 @@ Character budgets are enforced before writing generated prompts or handoffs.
 Model-internal tool/retry counts remain orchestration instructions. Installation
 uses validated release directories and an active symlink, with rollback when
 activation fails. CI covers Python 3.10/3.13 on Linux and macOS.
+
+## Configured pipelines and metrics
+
+`validators.json` is shared per repository and included in evidence fingerprints.
+`ai pipeline` preflights required validators using the same risk selection as
+`ai ready`, then invokes the existing gate recorder sequentially. Cleanup is
+validated first; semantic gates use JSON verdicts or an explicitly configured
+exit-code adapter. Failure stops execution. Resume requires matching fingerprints
+and intact log hashes. Final readiness is recomputed rather than inferred from
+process completion.
+
+`ai_stack/workflow.py` holds reusable configuration validation, process execution,
+usage normalization and aggregation. The CLI retains repository/task resolution
+and orchestration. Gate events include task key, task ID, profile, duration,
+outcome and optional reported usage. Metrics do not estimate missing usage or
+observe model-internal calls. Existing repository-level events are retained.

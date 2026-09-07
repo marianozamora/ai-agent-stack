@@ -319,3 +319,71 @@ python3 tests/validate.py
 python3 -m unittest discover -s tests -v
 bash tests/smoke.sh
 ```
+
+## Reusable validators and sequential pipeline
+
+Configure each validator once per repository. Commands are argument arrays,
+executed from the checkout without an implicit shell. Configuration is stored
+externally in `repos/<repo-id>/validators.json`, shared across tasks.
+
+```bash
+# Options precede the gate name. Use the real commands from your project.
+ai validators set --adapter exit-code --evidence "Unit tests passed" checks -- npm test
+ai validators set --adapter exit-code --evidence "Regression suite passed" regression -- npm run test:regression
+ai validators set contract -- ./scripts/validate-contract
+ai validators set cleanup -- ./scripts/check-cleanup
+ai validators set provenance -- ./scripts/check-provenance
+ai validators set ponytail -- ./scripts/check-quality
+ai validators set summary -- ./scripts/validate-pr-summary
+ai validators set --timeout 300 review -- ./scripts/review-adapter
+ai validators show
+
+ai pipeline --dry-run
+ai pipeline
+ai pipeline --resume
+ai metrics
+ai metrics --json
+ai metrics --all-tasks --json
+```
+
+The script names above are project-specific examples, not bundled executables.
+The reusable adapters are `json` (default) and `exit-code`. The JSON adapter
+requires a final stdout line containing `status: "PASS"` and a nonempty `evidence`
+array, even for checks/regression. The exit-code adapter translates a successful
+command into that verdict using the explicitly configured evidence description.
+Use it for tools whose exit status certifies the described check; it does not
+perform a semantic review on its own. A nonzero exit always fails either adapter.
+Remove a configuration with `ai validators remove NAME`.
+
+Validators receive `AI_TASK_ID`, `AI_TASK_DIR`, `AI_REPO_STATE`, `AI_GATE` and
+`AI_BASE`. They can read task contracts, plans and prior gate logs from those
+external directories. No model is launched unless a configured command does so.
+
+Pipeline preflight requires every applicable validator before running anything.
+Order is cleanup → checks → regression → contract → review → security →
+provenance → ponytail → design → summary, omitting conditional gates when not
+required. Cleanup here is a read-only check: apply cleanup fixes before running
+the pipeline. Any validator that changes repository/task inputs fails and stops
+the sequence. Timeouts terminate the process group on Linux/macOS. There are no
+automatic retries. Final certification still goes through `ai ready`.
+
+`--resume` reuses successful evidence only when its fingerprint and log hash are
+current. Changes to validator configuration invalidate prior evidence, as do code,
+contracts and rules changes. Run one pipeline per task at a time.
+
+Metrics are scoped to the current checkout and task by default. They report gate
+attempts, passes, failures, elapsed gate time, repeated attempts and pipeline
+successes. Repeated attempts include intentional reruns, not just failed retries.
+`--all-tasks` aggregates repository events; older events without task IDs remain
+visible only in that aggregate. Optional usage comes from the validator's final
+JSON line, for example:
+
+```json
+{"status":"PASS","evidence":["Acceptance criteria verified"],"usage":{"input_tokens":1200,"output_tokens":180,"cost_usd":0.004}}
+```
+
+Usage totals include only reported nonnegative values and show how many attempts
+reported each field. Missing usage is shown as unreported, never estimated or
+treated as free. These metrics cover gate commands, not the independently
+launched implementation model. Internal model tool/retry budgets remain prompt
+instructions.

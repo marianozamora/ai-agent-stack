@@ -1,5 +1,12 @@
 # Roadmap
 
+## Next release — Workflow automation and measurement
+- [x] Reusable JSON and exit-code validator adapters
+- [x] Sequential pipeline with preflight and evidence-aware resume
+- [x] Task-scoped gate outcomes, durations and reported usage
+- [ ] Real-task benchmark fixtures and profile comparisons
+- [ ] End-to-end model usage capture and runtime budgets
+
 ## v0.7 — Skills + Token Efficiency
 - [x] Lazy Skills Engine
 - [x] Diagnosing Bugs

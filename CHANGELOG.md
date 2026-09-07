@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add reusable JSON/exit-code validators stored outside work repositories.
+- Add sequential `ai pipeline` with preflight, fail-fast execution and fresh-evidence resume.
+- Record task-scoped gate duration, outcomes, repeated attempts and reported token/cost usage.
+- Invalidate evidence when validator configuration changes; terminate validator process groups on timeout.
+
 ## 0.7.1
 
 - Require fresh recorded gate evidence before certifying PR_READY.

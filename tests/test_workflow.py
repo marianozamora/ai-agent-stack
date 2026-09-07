@@ -131,6 +131,68 @@ class WorkflowTests(unittest.TestCase):
         record = json.loads((Path(self.ai('path').strip()) / 'gates/checks.json').read_text())
         self.assertEqual(record['exit_code'], 124)
 
+    def configure_pipeline(self, failing=None):
+        for name in ('cleanup','checks','regression','contract','provenance','ponytail','summary'):
+            script = 'import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],"usage":{"input_tokens":12,"output_tokens":3,"cost_usd":0.01}}))'
+            if name == failing:
+                script = 'raise SystemExit(2)'
+            self.ai('validators','set',name,'--',sys.executable,'-c',script)
+
+    def test_pipeline_preflight_success_resume_and_metrics(self):
+        self.plan()
+        self.assertIn('configure validators',self.ai('pipeline',ok=False))
+        self.configure_pipeline()
+        preview=json.loads(self.ai('pipeline','--dry-run'))
+        self.assertEqual(preview['order'][0],'cleanup')
+        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],0)
+        self.assertIn('PR_READY',self.ai('pipeline'))
+        report=json.loads(self.ai('metrics','--json'))
+        self.assertEqual(report['gate_passes'],7)
+        self.assertEqual(report['usage']['input_tokens']['reported_total'],84)
+        self.assertEqual(report['pipeline_successes'],1)
+        self.assertIn('fresh evidence reused',self.ai('pipeline','--resume'))
+        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],7)
+        self.assertEqual(json.loads(self.ai('metrics','--task-id','two','--json'))['gate_attempts'],0)
+        self.assertEqual(json.loads(self.ai('metrics','--all-tasks','--json'))['gate_attempts'],7)
+        self.assertEqual(self.git('status','--porcelain'),'')
+
+    def test_pipeline_stops_on_failure_and_config_changes_invalidate(self):
+        self.plan()
+        self.configure_pipeline(failing='checks')
+        self.ai('pipeline',ok=False)
+        report=json.loads(self.ai('metrics','--json'))
+        self.assertEqual(report['gate_attempts'],2)
+        self.assertEqual(report['gate_failures'],1)
+        self.assertEqual(report['pipeline_successes'],0)
+        self.configure_pipeline()
+        self.assertIn('PR_READY',self.ai('pipeline','--resume'))
+        self.ai('validators','remove','checks')
+        self.assertIn('NEEDS_HUMAN',self.ai('ready',ok=False))
+
+    def test_exit_code_adapter_and_json_checks_are_explicit(self):
+        self.plan()
+        self.configure_pipeline()
+        self.ai('validators','set','checks','--',sys.executable,'-c','print("not a verdict")')
+        self.ai('pipeline',ok=False)
+        self.ai('validators','set','--adapter','exit-code','checks','--',sys.executable,'-c','pass',ok=False)
+        self.ai('validators','set','--adapter','exit-code','--evidence','Project tests succeeded',
+                'checks','--',sys.executable,'-c','pass')
+        self.assertIn('PR_READY',self.ai('pipeline'))
+        self.ai('validators','set','--timeout','0','checks','--','true',ok=False)
+
+    def test_pipeline_requires_security_and_rejects_mutation(self):
+        self.plan()
+        self.configure_pipeline()
+        self.ai('validators','set','cleanup','--',sys.executable,'-c',
+                'open("app.txt","w").write("changed"); print(\'{"status":"PASS","evidence":["fixture"]}\')')
+        self.assertIn('changed during gate',self.ai('pipeline',ok=False))
+        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],1)
+        (self.repo/'auth').mkdir()
+        (self.repo/'auth/token.py').write_text('token = 1')
+        output=self.ai('pipeline',ok=False)
+        self.assertIn('security',output)
+        self.assertIn('review',output)
+
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
