@@ -49,9 +49,16 @@ open questions (cross-repo sharing, auto-promotion, retention, naming, min sampl
 still needing a decision before each phase ships.
 
 ## v0.9 — Measurement
-- [ ] Benchmark suite
-- [ ] Cost/token dashboard
-- [ ] Prompt versioning and A/B evaluation
+- [ ] Cost/token dashboard: richer `ai metrics` (time-series, top-N, CSV export, advisory budget) plus `ai metrics prune` retention
+- [ ] Benchmark suite: end-to-end sandboxed pipeline scenarios (synthetic by default, opt-in `--live`), fully isolated from the real `metrics.jsonl`
+- [x] Prompt A/B evaluation (shipped as `ai prompt` in v0.8 Phase 4)
+- [ ] Prompt versioning: promotion history and rollback (`ai prompt history`/`rollback`)
+
+See the recorded v0.9 design for the full data model, CLI surface, sandboxing
+approach for the benchmark suite, and 12 open questions (live-mode cost,
+dollar estimates, retention policy, benchmark/metrics isolation, corpus
+ownership, naming, bucketing timezone, budget persistence) — this summary
+follows the design's own recommendations for all of them.
 
 ## v1.0+ — Architecture refactor
 - [ ] Driver interfaces

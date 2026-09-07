@@ -71,7 +71,7 @@ Task
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
 
-## Verified task lifecycle (0.8.5)
+## Verified task lifecycle (0.9.0)
 
 Repository preferences and intelligence caches are shared. Mutable contracts,
 plans, reviews, handoffs and gate records live in `tasks/<task-key>/`, where the
@@ -327,3 +327,43 @@ successful promotion writes `prompt-overrides.json` (repo-scoped, added to
 `evidence_fingerprint()` alongside `validators.json` for the same reason:
 changing what a validator is told changes what its evidence means) and stops
 the experiment if it was promoting that experiment's own slot.
+
+## v0.9 "Measurement" — Phase 1 (cost/token dashboard)
+
+`ai_stack/workflow.py` gains three pure, stdlib-only functions: `parse_window(spec)`
+turns `'30d'`/`'12w'`/`'YYYY-MM-DD'` into an epoch cutoff; `bucket_ts(ts, granularity)`
+turns a timestamp into a UTC `'YYYY-MM-DD'` or ISO `'YYYY-Www'` label (UTC chosen for
+reproducibility over local-time convenience); `usage_report(rows, *, group_by, since,
+until, top)` aggregates gate/pipeline rows by a time bucket or a row dimension
+(`gate`/`profile`/`task_type`/`task`). It follows `summarize()`'s honesty rule exactly:
+unreported usage stays `None`, counted separately via `reported_attempts`/
+`unreported_attempts`, never zero-filled — a row missing usage data must never look
+cheaper than a row that reported zero.
+
+`cmd_metrics()` in `ai_stack/cli.py` dispatches to `usage_report()` when `--by` is
+given, instead of `summarize()`'s flat report; `--json`/`--format json` are kept as
+aliases so existing callers (including the test suite) are unaffected. `--format csv`
+writes via the stdlib `csv` module to STDOUT only — no `--out` flag, the same
+constraint `ai failures export` already established, so a model running inside a gate
+cannot write a file into the checkout; malformed-event counts move to STDERR in CSV
+mode so STDOUT stays a clean pipeable table. The one rendering flourish — an ASCII `#`
+bar scaled to the bucket with the most tokens, for `--by day`/`week` only — is two
+lines of `int()` math with no dependency and no attempt to replace the printed number,
+which is always present regardless of the bar.
+
+`--budget N` prints a single advisory line (spend in the window vs. `N`) and never
+raises `SystemExit` — the same non-blocking shape as `cmd_pipeline()`'s existing
+projected-spend note. This is deliberate: nothing in this codebase gates on historical
+or learned data, and a repo-level spend figure is exactly the kind of number that would
+be tempting to enforce. The budget is not persisted; it is a flag on the report, not a
+stored threshold that could later gate `ai plan`/`ai pipeline` unprompted.
+
+`ai metrics prune --older-than SPEC --confirm` is the first destructive command over
+`metrics.jsonl` and is `require_human()`-guarded — a deliberate asymmetry with
+`ai lessons prune`, which is unguarded because it only ever deletes `candidate`
+lessons a model could not have made authoritative on its own. Pruning `metrics.jsonl`
+deletes the substrate `detect_patterns()`/`outcome_stats()`/`variant_stats()` read, so
+a model running inside a gate must not be able to erase the record of its own
+recurring failures. It prints what it would remove before requiring `--confirm`, and
+rewrites the file with only the kept rows — there is no separate archive; a human who
+wants one should copy `metrics.jsonl` first.

@@ -258,7 +258,7 @@ The goal is to feed models the **smallest authoritative context** that can answe
 This project is licensed under the [MIT License](LICENSE).
 Third-party tools mentioned in this repository are distributed separately under their respective licenses.
 
-## Verified workflow (0.8.5)
+## Verified workflow (0.9.0)
 
 Select a task identity when working on multiple tickets in the same checkout:
 
@@ -410,6 +410,36 @@ JSON line, for example:
 ```json
 {"status":"PASS","evidence":["Acceptance criteria verified"],"usage":{"input_tokens":1200,"output_tokens":180,"cost_usd":0.004}}
 ```
+
+```bash
+ai metrics --all-tasks --by day --since 30d
+ai metrics --all-tasks --by gate --top 5
+ai metrics --all-tasks --by week --format csv
+ai metrics --all-tasks --by day --budget 2000000
+ai metrics prune --older-than 365d --confirm
+```
+
+`--by` switches to a dimensional usage report instead of the flat summary:
+`day`/`week` bucket by UTC calendar (a `--since`/`--until` window accepts
+`30d`, `12w`, or an absolute `YYYY-MM-DD`), or group by `gate`/`profile`/
+`task_type`/`task`. `--top N` keeps only the N highest-`total_tokens` rows.
+Every row keeps the same honesty rule as the flat summary: unreported usage is
+`null` and counted separately (`reported_attempts`/`unreported_attempts`),
+never zero-filled, so a row missing usage data never looks cheaper than it is.
+`--format csv` writes to STDOUT only — no `--out` flag, the same reasoning as
+`ai failures export`, so a model running inside a gate cannot write it into
+the checkout; malformed-event warnings move to STDERR in that mode so STDOUT
+stays pipeable into a spreadsheet import. `--budget N` prints one advisory
+line comparing spend in the window to `N` tokens — like the `ai pipeline`
+preflight note, this can never block anything; nothing in this stack gates on
+historical usage.
+
+`ai metrics prune` is `require_human`-guarded (refuses inside `AI_GATE`/
+`AI_TASK_DIR`, unlike `ai lessons derive`'s unrelated candidate pruning) since
+it deletes the substrate `ai failures`/`ai confidence`/`ai prompt report` read
+— a model running inside a gate must not be able to erase the record of its
+own recurring failures. It requires `--confirm`, prints what it would remove
+first, and never touches events inside the requested window.
 
 Every recorded gate event also carries `risk`, `task_type`, `stack_version`, a
 1-based `attempt` number and a bounded list of normalized, hashed `findings`

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0
+
+- Add a dimensional usage report to `ai metrics`: `--by day|week|gate|profile|task_type|task` with `--since`/`--top`, `--format csv` (STDOUT-only, matching `ai failures export`), and an advisory (never blocking) `--budget` line. New pure `parse_window()`/`bucket_ts()`/`usage_report()` in `ai_stack/workflow.py` follow `summarize()`'s existing honesty rule: unreported usage stays `null`, never zero-filled.
+- Add `ai metrics prune --older-than SPEC --confirm`, the first destructive operation on `metrics.jsonl`; `require_human`-guarded since it deletes the substrate `ai failures`/`ai confidence`/`ai prompt report` read.
+- Roadmap: close "Prompt A/B evaluation" as satisfied by v0.8's `ai prompt`; re-scope the remaining "versioning" gap (promotion history, rollback) as its own v0.9 item.
+
 ## 0.8.5
 
 - Add `ai prompt`: measured experiments on bundled validator instructions only (never the orchestration prompt). Deterministic, non-random variant assignment (`hash(task_cache_key + slot)`) snapshotted once at plan time and bound to the evidence fingerprint; at most one experiment per repo. `ai prompt report` groups outcomes by `(variant, sha)` so a mid-experiment text edit is flagged, not silently pooled. `ai prompt promote` refuses below the minimum sample size, refuses without `--confirm`, always shows the full comparison first, and — like `ai lessons confirm/promote` — refuses to run inside a gate/validator environment so a model can never promote its own prompt.

@@ -75,6 +75,51 @@ class HelpersTests(unittest.TestCase):
         self.assertAlmostEqual(row['pass_rate'], 5 / 6, places=3)
         self.assertEqual(row['median_usage_tokens'], 110)
 
+    def test_bucket_ts_uses_utc_day_and_iso_week(self):
+        import datetime
+        ts = datetime.datetime(2026, 1, 1, 23, 30, tzinfo=datetime.timezone.utc).timestamp()
+        self.assertEqual(workflow.bucket_ts(ts, 'day'), '2026-01-01')
+        self.assertEqual(workflow.bucket_ts(ts, 'week'), '2026-W01')
+        with self.assertRaises(ValueError):
+            workflow.bucket_ts(ts, 'month')
+
+    def test_parse_window_relative_and_absolute(self):
+        now = time.time()
+        self.assertAlmostEqual(workflow.parse_window('1d'), now - 86400, delta=2)
+        self.assertAlmostEqual(workflow.parse_window('2w'), now - 2 * 604800, delta=2)
+        import datetime
+        expected = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc).timestamp()
+        self.assertEqual(workflow.parse_window('2026-01-01'), expected)
+        with self.assertRaises(ValueError):
+            workflow.parse_window('nonsense')
+
+    def test_usage_report_groups_windows_and_never_zero_fills(self):
+        rows = [
+            {'event': 'gate', 'ts': 100, 'gate': 'checks', 'passed': True, 'task_id': 't1', 'task_key': 'k1',
+             'usage': {'input_tokens': 100, 'output_tokens': 10}},
+            {'event': 'gate', 'ts': 100, 'gate': 'checks', 'passed': False, 'task_id': 't1', 'task_key': 'k1',
+             'usage': {}},
+            {'event': 'gate', 'ts': 200000, 'gate': 'cleanup', 'passed': True, 'task_id': 't2', 'task_key': 'k2',
+             'usage': {'input_tokens': 5, 'output_tokens': 1}},
+            {'event': 'pipeline', 'ts': 200000, 'status': 'PR_READY', 'task_id': 't2', 'task_key': 'k2'},
+        ]
+        by_gate = workflow.usage_report(rows, group_by='gate')
+        checks = next(r for r in by_gate if r['key'] == 'checks')
+        self.assertEqual(checks['gate_attempts'], 2)
+        self.assertEqual(checks['reported_attempts'], 1)
+        self.assertEqual(checks['unreported_attempts'], 1)
+        self.assertEqual(checks['input_tokens'], 100)
+
+        by_task = workflow.usage_report(rows, group_by='task', since=1000)
+        self.assertEqual(len(by_task), 1)
+        self.assertEqual(by_task[0]['key'], 'k2')
+        self.assertEqual(by_task[0]['task_id'], 't2')
+        self.assertEqual(by_task[0]['pipeline_runs'], 1)
+
+        top = workflow.usage_report(rows, group_by='gate', top=1)
+        self.assertEqual(len(top), 1)
+        self.assertEqual(top[0]['key'], 'checks')
+
     def test_timeout_kills_child_tool(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

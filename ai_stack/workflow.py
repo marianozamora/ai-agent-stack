@@ -1,4 +1,5 @@
 """Reusable validator configuration and task metric aggregation (stdlib only)."""
+import datetime
 import hashlib
 import math
 import os
@@ -6,6 +7,7 @@ import re
 import signal
 import statistics
 import subprocess
+import time
 
 
 def execute(command, cwd, env, output, timeout):
@@ -244,6 +246,88 @@ def variant_stats(rows, slot, since=None):
             'by_task_type': buckets['task_type'], 'by_risk': buckets['risk'],
         })
     return stats
+
+
+_WINDOW = re.compile(r'^(\d+)([dw])$')
+
+
+def parse_window(spec):
+    """'30d'/'12w' -> epoch cutoff N days/weeks ago; 'YYYY-MM-DD' -> that UTC midnight."""
+    match = _WINDOW.match(spec)
+    if match:
+        n, unit = int(match.group(1)), match.group(2)
+        return time.time() - n * (86400 if unit == 'd' else 604800)
+    try:
+        dt = datetime.datetime.strptime(spec, '%Y-%m-%d').replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        raise ValueError(f"Invalid window: {spec!r} (expected '30d', '12w', or 'YYYY-MM-DD')")
+    return dt.timestamp()
+
+
+def bucket_ts(ts, granularity):
+    """A UTC bucket label for a timestamp: 'YYYY-MM-DD' (day) or ISO 'YYYY-Www' (week)."""
+    dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+    if granularity == 'day':
+        return dt.strftime('%Y-%m-%d')
+    if granularity == 'week':
+        iso_year, iso_week, _ = dt.isocalendar()
+        return f'{iso_year}-W{iso_week:02d}'
+    raise ValueError(f'Unknown granularity: {granularity}')
+
+
+def usage_report(rows, *, group_by, since=None, until=None, top=None):
+    """Aggregated gate/pipeline usage grouped by a time bucket or a row dimension.
+
+    Unreported usage stays None and is counted separately via reported/unreported
+    attempts, never zero-filled — same honesty rule summarize() already applies.
+    `group_by` is 'day', 'week', or a row field ('gate', 'profile', 'task_type', 'task').
+    """
+    def in_window(row):
+        ts = row.get('ts', 0)
+        return (since is None or ts >= since) and (until is None or ts < until)
+
+    def key_of(row):
+        if group_by in ('day', 'week'): return bucket_ts(row.get('ts', 0), group_by)
+        if group_by == 'task': return row.get('task_key')
+        return row.get(group_by)
+
+    buckets = {}
+    for row in rows:
+        if row.get('event') not in ('gate', 'pipeline') or not in_window(row): continue
+        bucket = buckets.setdefault(key_of(row), {'gates': [], 'pipelines': [], 'task_id': row.get('task_id')})
+        bucket['gates' if row['event'] == 'gate' else 'pipelines'].append(row)
+
+    report = []
+    for key, bucket in buckets.items():
+        entries = bucket['gates']
+        usage_values = {field: [] for field in ('input_tokens', 'output_tokens', 'cost_usd')}
+        reported = 0
+        for e in entries:
+            usage = e.get('usage')
+            if isinstance(usage, dict) and usage:
+                reported += 1
+                for field, values in usage_values.items():
+                    if field in usage: values.append(usage[field])
+        row = {
+            'key': key,
+            'gate_attempts': len(entries),
+            'gate_passes': sum(1 for e in entries if e.get('passed') is True),
+            'gate_failures': sum(1 for e in entries if e.get('passed') is False),
+            'pipeline_runs': len(bucket['pipelines']),
+            'pipeline_successes': sum(1 for p in bucket['pipelines'] if p.get('status') == 'PR_READY'),
+            'reported_attempts': reported, 'unreported_attempts': len(entries) - reported,
+            'input_tokens': sum(usage_values['input_tokens']) if usage_values['input_tokens'] else None,
+            'output_tokens': sum(usage_values['output_tokens']) if usage_values['output_tokens'] else None,
+            'cost_usd': sum(usage_values['cost_usd']) if usage_values['cost_usd'] else None,
+            'cost_reported_attempts': len(usage_values['cost_usd']),
+        }
+        row['total_tokens'] = (None if row['input_tokens'] is None and row['output_tokens'] is None
+                                else (row['input_tokens'] or 0) + (row['output_tokens'] or 0))
+        if group_by == 'task': row['task_id'] = bucket['task_id']
+        report.append(row)
+
+    report.sort(key=lambda r: -(r['total_tokens'] or 0) if top else str(r['key']))
+    return report[:top] if top else report
 
 
 def summarize(rows):

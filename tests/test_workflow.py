@@ -406,6 +406,31 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertEqual(json.loads(self.ai('metrics','--all-tasks','--json'))['gate_attempts'],7)
         self.assertEqual(self.git('status','--porcelain'),'')
 
+    def test_metrics_by_dimension_csv_budget_and_prune(self):
+        self.plan()
+        self.configure_pipeline()
+        self.ai('pipeline')
+        by_gate = json.loads(self.ai('metrics', '--all-tasks', '--by', 'gate', '--json'))
+        checks = next(row for row in by_gate if row['key'] == 'checks')
+        self.assertEqual(checks['input_tokens'], 12)
+        self.assertEqual(checks['reported_attempts'], 1)
+
+        csv_output = self.ai('metrics', '--all-tasks', '--by', 'gate', '--format', 'csv')
+        self.assertIn('key,gate_attempts', csv_output.splitlines()[0])
+        self.assertIn('checks', csv_output)
+
+        text_output = self.ai('metrics', '--all-tasks', '--by', 'gate', '--budget', '10')
+        self.assertIn('exceeds budget', text_output)
+
+        self.env['AI_GATE'] = 'checks'
+        self.ai('metrics', 'prune', '--older-than', '0d', '--confirm', ok=False)
+        del self.env['AI_GATE']
+        self.assertIn('Re-run with --confirm', self.ai('metrics', 'prune', '--older-than', '0d', ok=False))
+
+        state_root = Path(self.ai('path').strip()).parents[1]
+        self.ai('metrics', 'prune', '--older-than', '0d', '--confirm')
+        self.assertEqual((state_root / 'metrics.jsonl').read_text().strip(), '')
+
     def test_pipeline_usage_budget_stops_pipeline(self):
         self.plan()
         self.configure_pipeline()

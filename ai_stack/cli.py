@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import tempfile, uuid
-import argparse, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
+import argparse, csv, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, textwrap, time
 from pathlib import Path
 from typing import Any
-from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats, variant_stats
+from workflow import ORDER, validate_config, usage_from_verdict, summarize, execute, normalize_finding, finding_signature, detect_patterns, outcome_stats, variant_stats, parse_window, bucket_ts, usage_report
 from validators import INSTRUCTIONS, model_verdict, intact_record, run_codex_json
 
-VERSION = "0.8.5"
+VERSION = "0.9.0"
 TASK_ID = None
 STACK_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "ai-agent-stack"
@@ -976,10 +976,48 @@ def load_metric_rows(state:Path)->tuple[list[dict],int]:
 
 
 def cmd_metrics(args):
-    state=repo_state(git_root()); rows,malformed=load_metric_rows(state)
+    state=repo_state(git_root())
+    if getattr(args,'metrics_cmd',None)=='prune':
+        require_human('Metrics retention pruning')
+        cutoff=parse_window(args.older_than)
+        rows,malformed=load_metric_rows(state)
+        kept=[row for row in rows if row.get('ts',0)>=cutoff]
+        removed=len(rows)-len(kept)
+        print(f"Would remove {removed} of {len(rows)} recorded event(s) older than {args.older_than} "
+              f"({malformed} already-malformed line(s) are dropped either way).")
+        if not args.confirm: raise SystemExit('Re-run with --confirm to apply.')
+        with (state/'metrics.jsonl').open('w') as f:
+            for row in kept: f.write(json.dumps(row,sort_keys=True)+"\n")
+        print(f'Pruned {removed} event(s); {len(kept)} remain.')
+        return
+    rows,malformed=load_metric_rows(state)
     if not args.all_tasks:
         key=task_state(state).name
         rows=[row for row in rows if row.get('task_key')==key]
+    if args.by:
+        since=parse_window(args.since) if args.since else None
+        report=usage_report(rows,group_by=args.by,since=since,top=args.top)
+        if args.format=='csv':
+            writer=csv.DictWriter(sys.stdout,fieldnames=['key','gate_attempts','gate_passes','gate_failures',
+                'pipeline_runs','pipeline_successes','input_tokens','output_tokens','total_tokens',
+                'reported_attempts','unreported_attempts','cost_usd','cost_reported_attempts'])
+            writer.writeheader()
+            for row in report: writer.writerow({k:row.get(k) for k in writer.fieldnames})
+            if malformed: print(f'# {malformed} malformed event(s) skipped',file=sys.stderr)
+            return
+        if args.format=='json' or args.json: print(json.dumps(report,indent=2)); return
+        maximum=max((row['total_tokens'] or 0 for row in report),default=0)
+        for row in report:
+            reported=f"({row['reported_attempts']}/{row['gate_attempts']} reported)"
+            total=row['total_tokens']
+            bar='  '+'#'*int(20*(total or 0)/maximum) if maximum else ''
+            print(f"{str(row['key']):12} {total if total is not None else 'unreported':>8} tokens  {reported}{bar}")
+        if args.budget:
+            spent=sum(row['total_tokens'] or 0 for row in report)
+            note=' (exceeds budget)' if spent>args.budget else ''
+            since_label=f' since {args.since}' if args.since else ''
+            print(f"Spent {spent} / {args.budget} tokens{since_label}{note}")
+        return
     report=summarize(rows)
     report['scope']='repository' if args.all_tasks else 'task'
     report['malformed_events_skipped']=malformed
@@ -1604,6 +1642,11 @@ def parser():
     setting.add_argument('--evidence'); setting.add_argument('--timeout',type=int,default=600)
     setting.add_argument('command',nargs=argparse.REMAINDER)
     metrics=sp.add_parser('metrics'); metrics.add_argument('--all-tasks',action='store_true'); metrics.add_argument('--json',action='store_true')
+    metrics.add_argument('--by',choices=['day','week','gate','profile','task_type','task']); metrics.add_argument('--since')
+    metrics.add_argument('--top',type=int); metrics.add_argument('--format',choices=['text','json','csv'],default='text')
+    metrics.add_argument('--budget',type=int)
+    mcs=metrics.add_subparsers(dest='metrics_cmd')
+    mprune=mcs.add_parser('prune'); mprune.add_argument('--older-than',required=True); mprune.add_argument('--confirm',action='store_true')
     bench=sp.add_parser('benchmark'); bench.add_argument('--json',action='store_true')
     pr=sp.add_parser('profile'); pr.add_argument('--deep',action='store_true'); pr.add_argument('--refresh',action='store_true'); pr.add_argument('--timeout',type=int,default=600)
     conf=sp.add_parser('confidence'); conf.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); conf.add_argument('--base',default='main'); conf.add_argument('--json',action='store_true')
