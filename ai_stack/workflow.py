@@ -298,7 +298,7 @@ def parse_window(spec):
     try:
         dt = datetime.datetime.strptime(spec, '%Y-%m-%d').replace(tzinfo=datetime.timezone.utc)
     except ValueError:
-        raise ValueError(f"Invalid window: {spec!r} (expected '30d', '12w', or 'YYYY-MM-DD')")
+        raise ValueError(f"Invalid window: {spec!r} (expected '30d', '12w', or 'YYYY-MM-DD')") from None
     return dt.timestamp()
 
 

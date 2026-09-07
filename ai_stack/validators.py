@@ -86,8 +86,8 @@ def run_codex_json(executable, root, review_dir, name, prompt, schema, checker, 
                         '-c', 'approval_policy="never"', '--ephemeral', '--json',
                         '--output-schema', str(schema_path), '--output-last-message', str(final), '-'],
                         input=prompt, text=True, cwd=root, stdout=output, stderr=subprocess.STDOUT, timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    raise ValueError(f'Reviewer timed out after {timeout}s; diagnostics: {diagnostics}')
+                except subprocess.TimeoutExpired as err:
+                    raise ValueError(f'Reviewer timed out after {timeout}s; diagnostics: {diagnostics}') from err
         finally:
             # Keep process diagnostics externally for failures, including a timeout or missing output.
             diagnostics.write_bytes(events.read_bytes())

@@ -1,0 +1,72 @@
+# Packaging + tooling config.
+#
+# Packaging is deliberately "incremental": `pip install` builds a standard
+# distribution and exposes the `ai` console entry point, but ai_stack/ keeps its
+# flat, same-directory imports (`import core`) rather than switching to a package
+# namespace with relative imports. cli.py prepends its own directory to sys.path
+# so the entry point and the four existing script-style invocation paths
+# (bin/ai, the test harness, and the two subprocess re-execs in gates.py and
+# benchmark.py) all resolve the sibling modules the same way. A full package
+# migration (relative imports + `python -m ai_stack.cli` everywhere + migrating
+# already-installed validators.json commands) was scoped out as not worth the
+# blast radius at v0.9.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-agent-stack"
+version = "0.9.4"  # keep in sync with the VERSION file
+description = "Zero-footprint, token-aware orchestration layer for Claude Code + Codex over existing repositories"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.scripts]
+ai = "ai_stack.cli:main"
+
+[tool.setuptools]
+packages = ["ai_stack"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["tests/__pycache__"]
+
+[tool.ruff.lint]
+# Start conservative: real correctness/bug lints only. Style normalisation
+# (E7xx multi-statement lines, formatting) is deferred until after the refactor
+# so it doesn't churn every line of files another agent is editing.
+select = ["F", "E9", "B", "UP"]
+ignore = [
+    "E402",   # module-level import not at top (cli.py sets sys.path first today)
+    "E501",   # line length handled by formatter, not enforced yet
+    "B904",   # raise ... from - pre-existing in the split modules; dedicated cleanup pass pending
+    "F841",   # unused locals - same; a few pre-date the cli.py split
+]
+# Import sorting ("I") and multi-statement-line style are intentionally left out
+# until the cli.py module split settles - enabling them now would rewrite every
+# file another agent is editing.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]
+
+[tool.ruff.format]
+# Not yet applied to the tree - see ci.yml's `format-check` job. Running this
+# now would rewrite every line of files another agent is mid-edit on (the
+# cli.py split's follow-ups); it becomes a real, enforced pass once those
+# land. Defaults otherwise (double quotes, black-compatible).
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Not strict yet: the codebase has partial hints. Tighten incrementally.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

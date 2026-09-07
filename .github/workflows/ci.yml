@@ -5,6 +5,21 @@ on:
 permissions:
   contents: read
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install ruff==0.15.21 mypy
+      - run: ruff check .
+      - run: mypy ai_stack
+        continue-on-error: true  # partial type hints; advisory until tightened
+      - run: ruff format --check --diff .
+        continue-on-error: true  # advisory: codebase isn't reformatted yet (see pyproject.toml);
+                                  # flips to blocking once the in-flight cli.py split's follow-ups land
+
   test:
     strategy:
       fail-fast: false

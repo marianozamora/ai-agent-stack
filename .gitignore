@@ -25,6 +25,8 @@ build/
 node_modules/
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
 
 # Tool-local state (initialize these in each target repository)
 .codegraph/
