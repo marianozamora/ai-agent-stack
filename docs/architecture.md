@@ -53,6 +53,22 @@ state file it reads or writes (e.g. every read/write of `metrics.jsonl` is in
 `core.py` rather than one domain importing another's helper. This is a pure
 reorganization — no command, flag, output string, or file format changed.
 
+## Lint and format policy
+
+`ruff check` (`F`/`E9`/`B`/`UP`) is blocking in CI: real correctness and bug
+lints only — unused imports/names, syntax errors, common bug patterns,
+outdated syntax. `mypy` and `ruff format --check` both run but are advisory
+(`continue-on-error`), for different reasons: `mypy` because the codebase has
+partial type hints and is being tightened incrementally; `ruff format`
+**permanently**, by deliberate decision, not as a pending step. This
+codebase's terse style — semicolon-joined statements, one-line function
+bodies, minimal vertical whitespace — is intentional throughout, not
+unformatted code; `ruff format`'s PEP8-expanded output would rewrite the
+entire ~2500-line codebase in one diff to enforce a style preference, not fix
+a defect, breaking `git blame` continuity for no correctness benefit. The
+format-check step stays wired up only as an informational signal for anyone
+curious how far the tree has drifted from PEP8 defaults, never as a gate.
+
 ## Context hierarchy
 
 ```mermaid

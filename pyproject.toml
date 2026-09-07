@@ -36,28 +36,29 @@ line-length = 120
 extend-exclude = ["tests/__pycache__"]
 
 [tool.ruff.lint]
-# Start conservative: real correctness/bug lints only. Style normalisation
-# (E7xx multi-statement lines, formatting) is deferred until after the refactor
-# so it doesn't churn every line of files another agent is editing.
+# Real correctness/bug lints only, permanently. This project deliberately keeps
+# a terse, compact style throughout (semicolon-joined statements, one-line
+# function bodies) rather than the PEP8-expanded default `ruff format`/black
+# would produce - see the decision recorded in ci.yml's `format-check` step
+# and docs/architecture.md. Style/formatting rules are intentionally never
+# enabled here.
 select = ["F", "E9", "B", "UP"]
 ignore = [
     "E402",   # module-level import not at top (cli.py sets sys.path first today)
-    "E501",   # line length handled by formatter, not enforced yet
+    "E501",   # long lines are this project's actual style, not unformatted code
     "B904",   # raise ... from - pre-existing in the split modules; dedicated cleanup pass pending
     "F841",   # unused locals - same; a few pre-date the cli.py split
 ]
-# Import sorting ("I") and multi-statement-line style are intentionally left out
-# until the cli.py module split settles - enabling them now would rewrite every
-# file another agent is editing.
+# Style codes (E1/E2/E7, multi-statement lines, import sorting) are never
+# selected at all - this project's terse style is intentional, not unformatted.
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["F401", "F811"]
 
 [tool.ruff.format]
-# Not yet applied to the tree - see ci.yml's `format-check` job. Running this
-# now would rewrite every line of files another agent is mid-edit on (the
-# cli.py split's follow-ups); it becomes a real, enforced pass once those
-# land. Defaults otherwise (double quotes, black-compatible).
+# Deliberately never run against this tree - see the decision recorded in
+# ci.yml's `format-check` step. Kept configured only so `ruff format --check`
+# has settings to compare against if anyone runs it manually.
 
 [tool.mypy]
 python_version = "3.10"

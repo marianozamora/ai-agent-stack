@@ -17,8 +17,11 @@ jobs:
       - run: mypy ai_stack
         continue-on-error: true  # partial type hints; advisory until tightened
       - run: ruff format --check --diff .
-        continue-on-error: true  # advisory: codebase isn't reformatted yet (see pyproject.toml);
-                                  # flips to blocking once the in-flight cli.py split's follow-ups land
+        continue-on-error: true  # permanently advisory, by decision, not a pending TODO: this project
+                                  # keeps its terse, compact style (semicolons, one-line bodies) on
+                                  # purpose, and ruff format's PEP8-expanded output would rewrite the
+                                  # entire ~2500-line codebase in one diff for a style preference, not
+                                  # a bug. Left running (never blocking) only as an informational signal.
 
   test:
     strategy:
