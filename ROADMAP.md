@@ -10,7 +10,8 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 - [x] Fail-closed base resolution.
 - [ ] Richer risk signals for new, renamed and binary files.
 - [x] Per-task pipeline locking and explicit post-gate budget-overrun status.
-- [ ] Driver interfaces for model providers and external tools.
+- [x] Driver interfaces for model providers (builder/reviewer, `ai providers`).
+- [ ] Driver interfaces for external tools (Context7, Graphify, CodeGraph, RTK).
 - [ ] Capability/plugin interfaces.
 - [ ] Multi-repository workspace orchestration.
 

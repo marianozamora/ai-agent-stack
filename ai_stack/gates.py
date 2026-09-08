@@ -8,7 +8,8 @@ from metrics import gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
 from workflow import execute, finding_signature, normalize_finding, usage_from_verdict, validate_config
 from tasks import require_open_task, task_lock
-from validators import INSTRUCTIONS, intact_record, model_verdict
+from providers import reviewer as get_reviewer
+from validators import INSTRUCTIONS, SCHEMA, check_verdict, intact_record
 
 
 def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
@@ -111,8 +112,13 @@ def cmd_validate(args):
                 raise ValueError(f'Missing or stale prerequisite: {name}')
             records[name]={'command':record['command'],'verdict':record.get('verdict'),
                            'log':record['log'],'exit_code':record['exit_code']}
-        executable=shutil.which('codex')
-        if not executable: raise ValueError('Codex CLI missing. Install/authenticate Codex or configure a custom validator.')
+        active_reviewer=get_reviewer(state)
+        # This check stays here (not inside the reviewer) so a caller can name the
+        # exact binary it is missing before ever constructing a prompt for it, and
+        # so the check is independent of which reviewer is configured.
+        if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
+            label=active_reviewer.name.capitalize()
+            raise ValueError(f'{label} CLI missing. Install/authenticate {label} or configure a custom validator.')
         contract=task/'contracts/current-pr.yml'
         design=task/'contracts/current-design.yml'
         if not contract.is_file(): raise ValueError('PR contract is missing.')
@@ -149,7 +155,11 @@ Fresh gate evidence (read referenced logs as needed):
 {json.dumps(records)}
 '''
         enforce_budget(prompt,plan['caps']['context_chars'],'validator context')
-        verdict=model_verdict(executable,root,task,args.name,prompt)
+        # Inherit the gate process group: its timeout kills the reviewer and child
+        # tools. The public entry point requires ai gate, which owns execution and
+        # freshness, so no timeout is passed here.
+        verdict=active_reviewer.verdict(root,task/'review',args.name,prompt,SCHEMA,
+                                        lambda value: check_verdict(value,args.name),None)
         if verdict['status']=='PASS' and args.name=='summary':
             summary=verdict['summary_markdown']
             enforce_budget(summary,plan['caps']['handoff_chars'],'PR summary')

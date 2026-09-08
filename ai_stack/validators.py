@@ -1,11 +1,9 @@
 """Bundled read-only semantic validators and their strict response protocol."""
 import hashlib
-import json
-from collections.abc import Callable
 from pathlib import Path
-import subprocess
-import tempfile
 from typing import Any
+
+from providers import run_codex_json  # noqa: F401  (re-exported: tests/callers import it from here)
 
 
 INSTRUCTIONS = {
@@ -66,60 +64,3 @@ def intact_record(record, fingerprint):
     return True
 
 
-def run_codex_json(executable: str, root: Path, review_dir: Path, name: str, prompt: str,
-                   schema: dict[str, Any], checker: Callable[[Any], dict[str, Any]],
-                   timeout: int | None = None) -> dict[str, Any]:
-    """Invoke Codex read-only/ephemeral with a required output schema; never mutates the checkout.
-
-    Shared by the gate validator protocol and any other repository-analysis prompt that
-    needs the same safety guarantees (no writes, no approvals, bounded/validated output).
-    A gate caller relies on the enclosing `ai gate` process-group timeout instead of passing
-    one here; a caller with no enclosing gate (e.g. `ai profile --deep`) must pass one.
-    """
-    with tempfile.TemporaryDirectory(prefix='codex-', dir=review_dir) as temporary_directory:
-        directory = Path(temporary_directory)
-        schema_path = directory/'schema.json'
-        final = directory/'final.json'
-        schema_path.write_text(json.dumps(schema))
-        events = directory/'events.jsonl'
-        diagnostics = review_dir/f'{name}-events.jsonl'
-        try:
-            with events.open('w') as output:
-                try:
-                    result = subprocess.run([executable, 'exec', '-s', 'read-only',
-                        '-c', 'approval_policy="never"', '--ephemeral', '--json',
-                        '--output-schema', str(schema_path), '--output-last-message', str(final), '-'],
-                        input=prompt, text=True, cwd=root, stdout=output, stderr=subprocess.STDOUT, timeout=timeout)
-                except subprocess.TimeoutExpired as err:
-                    raise ValueError(f'Reviewer timed out after {timeout}s; diagnostics: {diagnostics}') from err
-        finally:
-            # Keep process diagnostics externally for failures, including a timeout or missing output.
-            diagnostics.write_bytes(events.read_bytes())
-        if result.returncode:
-            raise ValueError(f'Reviewer exited {result.returncode}; diagnostics: {diagnostics}')
-        if not final.is_file() or final.stat().st_size > 64000:
-            raise ValueError(f'Missing or oversized reviewer output; diagnostics: {diagnostics}')
-        value = checker(json.loads(final.read_text()))
-        usage: dict[str, int] = {}
-        for line in events.read_text(errors='replace').splitlines():
-            try:
-                event = json.loads(line)
-                if isinstance(event, dict) and event.get('type') == 'turn.completed':
-                    reported = event.get('usage', {})
-                    if isinstance(reported, dict):
-                        for key in ('input_tokens', 'output_tokens'):
-                            reported_value = reported.get(key)
-                            if type(reported_value) is int and reported_value >= 0:
-                                usage[key] = usage.get(key, 0) + reported_value
-            except ValueError:
-                continue
-        if usage:
-            value['usage'] = usage
-        return value
-
-
-def model_verdict(executable, root, task, name, prompt):
-    # Inherit the gate process group: its timeout kills the reviewer and child tools.
-    # The public entry point requires ai gate, which owns execution and freshness.
-    return run_codex_json(executable, root, task/'review', name, prompt, SCHEMA,
-                           lambda value: check_verdict(value, name))

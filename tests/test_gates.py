@@ -33,6 +33,7 @@ import core  # noqa: E402
 import crg  # noqa: E402
 import gates  # noqa: E402
 import lifecycle  # noqa: E402
+import providers  # noqa: E402
 
 
 def _git(repo, *args):
@@ -260,7 +261,9 @@ class CmdValidateGuardTests(unittest.TestCase):
     def setUp(self):
         self.root, self.state = _sandbox(self)
         # build_prompt / crg would try to shell out to optional tools; stub them.
-        for module in (lifecycle, crg):
+        # The reviewer-availability check now lives in providers.py (phase 5:
+        # provider abstraction), not in lifecycle.py directly.
+        for module in (crg, providers):
             p = mock.patch.object(module.shutil, 'which', return_value=None)
             p.start()
             self.addCleanup(p.stop)
@@ -336,6 +339,30 @@ class CmdValidateGuardTests(unittest.TestCase):
             with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
                 gates.cmd_validate(argparse.Namespace(name='cleanup'))
         self.assertIn('Codex CLI missing', buf.getvalue())
+
+    def test_configured_reviewer_names_itself_when_missing(self):
+        # phase 5: the reviewer is asked from providers.py, so a repository
+        # configured for a different reviewer must name THAT one, not "Codex".
+        core.save_json(self.state / 'repo.json',
+                       {'providers': {'reviewer': 'command', 'reviewer_command': ['/no/such/reviewer-xyz']}})
+        self._plan()
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), \
+                mock.patch.object(gates.shutil, 'which', return_value=None):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+                gates.cmd_validate(argparse.Namespace(name='cleanup'))
+        self.assertIn('Command CLI missing', buf.getvalue())
+
+    def test_unknown_configured_reviewer_is_needs_human_not_a_crash(self):
+        core.save_json(self.state / 'repo.json', {'providers': {'reviewer': 'nonexistent'}})
+        self._plan()
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+                gates.cmd_validate(argparse.Namespace(name='cleanup'))
+        verdict = json.loads(buf.getvalue())
+        self.assertEqual(verdict['status'], 'NEEDS_HUMAN')
+        self.assertIn('Unknown reviewer', verdict['findings'][0])
 
 
 if __name__ == '__main__':

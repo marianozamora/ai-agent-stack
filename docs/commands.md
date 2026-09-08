@@ -827,3 +827,36 @@ usage: ai graph path [-h] start end
 ```text
 usage: ai graph explain [-h] node
 ```
+
+## `ai providers`
+
+Inspect or configure the builder/reviewer providers.
+
+```text
+usage: ai providers [-h] [--task-id TASK_ID] {show,doctor,set} ...
+```
+
+### `ai providers show`
+
+
+
+```text
+usage: ai providers show [-h] [--json]
+```
+
+### `ai providers doctor`
+
+
+
+```text
+usage: ai providers doctor [-h]
+```
+
+### `ai providers set`
+
+
+
+```text
+usage: ai providers set [-h] [--builder {claude}] [--reviewer {codex,command}]
+                        ...
+```

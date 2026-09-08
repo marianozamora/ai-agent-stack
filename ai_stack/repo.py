@@ -4,9 +4,9 @@ from typing import Any
 from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
+from providers import reviewer as get_reviewer
 from skills import enabled_skills, skill_registry
 from tasks import running_tasks
-from validators import run_codex_json
 
 
 METRICS_ADVISORY_ROWS=5000  # row count above which ai doctor suggests retention for audit size
@@ -53,8 +53,10 @@ def cmd_profile(args):
     if existing and not args.refresh and existing.get('analyzed_commit')==current_commit:
         print(f"Deep profile up to date (commit {current_commit[:12]}); use --refresh to force.")
         print(json.dumps(existing,indent=2)); return
-    executable=shutil.which('codex')
-    if not executable: raise SystemExit('Codex CLI missing. Install/authenticate Codex to run a deep profile.')
+    active_reviewer=get_reviewer(state)
+    if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
+        label=active_reviewer.name.capitalize()
+        raise SystemExit(f'{label} CLI missing. Install/authenticate {label} to run a deep profile.')
     prompt=f'''Read this repository read-only and describe it factually, citing file paths for every claim.
 Do not modify files, run any command that writes, or fabricate anything you cannot verify by reading.
 Identify: 1) architecture pattern (backend/frontend separation, monolith vs services, layering);
@@ -74,8 +76,8 @@ Repository: {root}
 Already-detected static facts (languages, package managers, tooling): {json.dumps(profile)}
 '''
     try:
-        deep=run_codex_json(executable,root,state/'review','deep-profile',prompt,DEEP_PROFILE_SCHEMA,
-                             check_deep_profile,timeout=args.timeout)
+        deep=active_reviewer.verdict(root,state/'review','deep-profile',prompt,DEEP_PROFILE_SCHEMA,
+                                     check_deep_profile,timeout=args.timeout)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     deep={k:deep[k] for k in DEEP_PROFILE_SCHEMA['required']}|{'usage':deep.get('usage',{})}
