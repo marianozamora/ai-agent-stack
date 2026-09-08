@@ -102,6 +102,17 @@ class WorkflowTests(unittest.TestCase):
         # and load_json() keeps degrading it to [] rather than raising.
         self.assertIn('Zero-footprint: PASS', corrupt)
 
+    def test_doctor_warns_on_an_oversized_metrics_log(self):
+        self.plan()
+        self.assertNotIn('Metrics log:', self.ai('doctor'))
+        state_root = Path(self.ai('path').strip()).parents[1]
+        with (state_root / 'metrics.jsonl').open('a') as f:
+            for _ in range(5001):
+                f.write('{"event":"plan"}\n')
+        output = self.ai('doctor')
+        self.assertIn('Metrics log:  5002 events', output)
+        self.assertIn('ai metrics prune', output)
+
     def test_task_and_worktree_isolation(self):
         self.plan('--task-id', 'one')
         one = Path(self.ai('path', '--task-id', 'one').strip())

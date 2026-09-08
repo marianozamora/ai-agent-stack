@@ -6,6 +6,9 @@ from skills import enabled_skills, skill_registry
 from validators import run_codex_json
 
 
+METRICS_ADVISORY_ROWS=5000  # row count above which ai doctor suggests `ai metrics prune`
+
+
 DEEP_PROFILE_SCHEMA={
     'type':'object','additionalProperties':False,
     'required':['architecture_summary','stack','database','deployment','related_repos','key_docs','confidence_caveats'],
@@ -117,6 +120,15 @@ def cmd_doctor(args):
         corrupt=[name for name in state_files if json_file_health(state/name)=='corrupt']
         print('State files:', 'PASS' if not corrupt else f'CORRUPT ({len(corrupt)})')
         for name in corrupt: print('  corrupt:',state/name)
+        metrics_file=state/'metrics.jsonl'
+        if metrics_file.exists():
+            # ai plan/ai run/ai gate each re-read and re-parse this whole log on every
+            # call (confidence_card/gate_attempt_number); it only ever grows, so flag it
+            # here well before that cost is large enough to actually notice.
+            row_count=sum(1 for _ in metrics_file.open())
+            if row_count>METRICS_ADVISORY_ROWS:
+                print(f'Metrics log:  {row_count} events - `ai plan`/`ai gate` re-read this file in full on every '
+                      f'call; consider `ai metrics prune --older-than <window> --confirm`.')
     except SystemExit: pass
 
 
