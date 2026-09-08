@@ -466,10 +466,61 @@ usage: ai optimize [-h] [--task-id TASK_ID]
 
 ## `ai deploy`
 
-Detect deployment configuration.
+Detect, document and run declared deployments.
 
 ```text
 usage: ai deploy [-h] [--task-id TASK_ID]
+                 {detect,show,plan,set,remove,run} ...
+```
+
+### `ai deploy detect`
+
+
+
+```text
+usage: ai deploy detect [-h]
+```
+
+### `ai deploy show`
+
+
+
+```text
+usage: ai deploy show [-h]
+```
+
+### `ai deploy plan`
+
+
+
+```text
+usage: ai deploy plan [-h] [--refresh] [--timeout TIMEOUT]
+```
+
+### `ai deploy set`
+
+
+
+```text
+usage: ai deploy set [-h] --evidence EVIDENCE [--timeout TIMEOUT]
+                     [--description DESCRIPTION]
+                     target ...
+```
+
+### `ai deploy remove`
+
+
+
+```text
+usage: ai deploy remove [-h] target
+```
+
+### `ai deploy run`
+
+
+
+```text
+usage: ai deploy run [-h] [--execute] [target]
 ```
 
 ## `ai skill`
