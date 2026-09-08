@@ -8,6 +8,8 @@ import signal
 import statistics
 import subprocess
 import time
+from collections.abc import Iterable
+from typing import Any
 
 
 def execute(command, cwd, env, output, timeout):
@@ -78,7 +80,7 @@ def usage_from_verdict(verdict):
         for key in ('input_tokens', 'output_tokens', 'cost_usd'):
             value = usage.get(key)
             expected = type(value) is int if key.endswith('tokens') else type(value) in (int, float)
-            if expected and math.isfinite(value) and value >= 0:
+            if expected and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0:
                 result[key] = value
     return result
 
@@ -86,9 +88,9 @@ def usage_from_verdict(verdict):
 _PATH_TOKEN = re.compile(r'\b([\w-]+(?:/[\w.-]+)+)\b')
 
 
-def _shared_scope_hint(texts):
+def _shared_scope_hint(texts: Iterable[str]):
     """A directory prefix shared by >=2 findings' path-looking tokens, or None."""
-    prefixes = {}
+    prefixes: dict[str, int] = {}
     for text in texts:
         match = _PATH_TOKEN.search(text)
         if not match:
@@ -124,7 +126,7 @@ def _pass_rate_stats(entries):
 
 def _bucket_counts(entries, keys):
     """Occurrence counts per distinct value, one bucket per requested row key."""
-    buckets = {key: {} for key in keys}
+    buckets: dict[str, dict[Any, int]] = {key: {} for key in keys}
     for e in entries:
         for key, bucket in buckets.items():
             value = e.get(key)
@@ -139,7 +141,7 @@ def detect_patterns(rows, min_occurrences=2):
     remains an unverified model claim and stays labeled as an example, not a diagnosis.
     """
     gates = [row for row in rows if row.get('event') == 'gate']
-    attempts_by_task_gate = {}
+    attempts_by_task_gate: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
     for row in gates:
         attempts_by_task_gate.setdefault((row.get('task_key'), row.get('gate')), []).append(row)
     row_index = {}
@@ -148,7 +150,7 @@ def detect_patterns(rows, min_occurrences=2):
         for i, entry in enumerate(entries):
             row_index[id(entry)] = i
 
-    occurrences = {}
+    occurrences: dict[tuple[Any, str], list[tuple[dict[str, Any], str]]] = {}
     for row in gates:
         for finding in row.get('findings') or []:
             if not isinstance(finding, dict):
@@ -169,7 +171,8 @@ def detect_patterns(rows, min_occurrences=2):
             index = row_index.get(id(row))
             if index is not None and index + 1 < len(entries) and entries[index + 1].get('passed') is True:
                 resolved_next_attempt += 1
-        timestamps = [row.get('ts') for row, _ in items if isinstance(row.get('ts'), (int, float))]
+        timestamps: list[int | float] = [timestamp for row, _ in items
+            if isinstance((timestamp := row.get('ts')), (int, float))]
         patterns.append({
             'id': f'pat_{fhash}', 'gate': gate, 'hash': fhash, 'example': items[0][1],
             'occurrences': len(items), 'distinct_tasks': len(distinct_tasks),
@@ -196,16 +199,16 @@ def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
     if risk is not None: gates = [row for row in gates if row.get('risk') == risk]
     if task_type is not None: gates = [row for row in gates if row.get('task_type') == task_type]
 
-    by_gate = {}
+    by_gate: dict[Any, list[dict[str, Any]]] = {}
     for row in gates:
         by_gate.setdefault(row.get('gate'), []).append(row)
 
     stats = []
     for gate, entries in sorted(by_gate.items()):
         n = len(entries)
-        result = {'gate': gate, 'n': n, 'sufficient': n >= min_n}
+        result: dict[str, Any] = {'gate': gate, 'n': n, 'sufficient': n >= min_n}
         if result['sufficient']:
-            latest_attempt_per_task = {}
+            latest_attempt_per_task: dict[Any, int] = {}
             for e in entries:
                 key = e.get('task_key')
                 latest_attempt_per_task[key] = max(latest_attempt_per_task.get(key, 0), e.get('attempt') or 1)
@@ -232,7 +235,7 @@ def variant_stats(rows, slot, since=None):
     gates = [row for row in rows if row.get('event') == 'gate'
              and isinstance(row.get('prompt_variants'), dict) and slot in row['prompt_variants']
              and (since is None or row.get('ts', 0) >= since)]
-    by_key = {}
+    by_key: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
     for row in gates:
         info = row['prompt_variants'][slot]
         by_key.setdefault((info.get('variant'), info.get('sha')), []).append(row)
@@ -329,16 +332,16 @@ def usage_report(rows, *, group_by, since=None, until=None, top=None):
         if group_by == 'task': return row.get('task_key')
         return row.get(group_by)
 
-    buckets = {}
+    buckets: dict[Any, dict[str, Any]] = {}
     for row in rows:
         if row.get('event') not in ('gate', 'pipeline') or not in_window(row): continue
         bucket = buckets.setdefault(key_of(row), {'gates': [], 'pipelines': [], 'task_id': row.get('task_id')})
         bucket['gates' if row['event'] == 'gate' else 'pipelines'].append(row)
 
-    report = []
+    report: list[dict[str, Any]] = []
     for key, bucket in buckets.items():
         entries = bucket['gates']
-        usage_values = {field: [] for field in ('input_tokens', 'output_tokens', 'cost_usd')}
+        usage_values: dict[str, list[int | float]] = {field: [] for field in ('input_tokens', 'output_tokens', 'cost_usd')}
         reported = 0
         for e in entries:
             usage = e.get('usage')
@@ -346,7 +349,7 @@ def usage_report(rows, *, group_by, since=None, until=None, top=None):
                 reported += 1
                 for field, values in usage_values.items():
                     if field in usage: values.append(usage[field])
-        row = {
+        report_row: dict[str, Any] = {
             'key': key,
             'gate_attempts': len(entries),
             'gate_passes': sum(1 for e in entries if e.get('passed') is True),
@@ -359,10 +362,10 @@ def usage_report(rows, *, group_by, since=None, until=None, top=None):
             'cost_usd': sum(usage_values['cost_usd']) if usage_values['cost_usd'] else None,
             'cost_reported_attempts': len(usage_values['cost_usd']),
         }
-        row['total_tokens'] = (None if row['input_tokens'] is None and row['output_tokens'] is None
-                                else (row['input_tokens'] or 0) + (row['output_tokens'] or 0))
-        if group_by == 'task': row['task_id'] = bucket['task_id']
-        report.append(row)
+        report_row['total_tokens'] = (None if report_row['input_tokens'] is None and report_row['output_tokens'] is None
+                                else (report_row['input_tokens'] or 0) + (report_row['output_tokens'] or 0))
+        if group_by == 'task': report_row['task_id'] = bucket['task_id']
+        report.append(report_row)
 
     report.sort(key=lambda r: -(r['total_tokens'] or 0) if top else str(r['key']))
     return report[:top] if top else report
@@ -370,19 +373,19 @@ def usage_report(rows, *, group_by, since=None, until=None, top=None):
 
 def summarize(rows):
     gates = [row for row in rows if row.get('event') == 'gate']
-    counts = {}
+    counts: dict[tuple[Any, Any], int] = {}
     for row in gates:
         key = (row.get('task_key'), row.get('gate'))
         counts[key] = counts.get(key, 0) + 1
-    usage = {}
-    for key in ('input_tokens', 'output_tokens', 'cost_usd'):
-        values = [row['usage'][key] for row in gates if key in row.get('usage', {})]
-        usage[key] = {'reported_total': sum(values) if values else None, 'reported_attempts': len(values)}
+    usage: dict[str, dict[str, Any]] = {}
+    for usage_key in ('input_tokens', 'output_tokens', 'cost_usd'):
+        values = [row['usage'][usage_key] for row in gates if usage_key in row.get('usage', {})]
+        usage[usage_key] = {'reported_total': sum(values) if values else None, 'reported_attempts': len(values)}
     pipelines = [row for row in rows if row.get('event') == 'pipeline']
-    pipeline_usage = {}
-    for key in ('input_tokens', 'output_tokens'):
-        values = [row['usage'][key] for row in pipelines if isinstance(row.get('usage'), dict) and key in row['usage']]
-        pipeline_usage[key] = {'reported_total': sum(values) if values else None, 'reported_runs': len(values)}
+    pipeline_usage: dict[str, dict[str, Any]] = {}
+    for usage_key in ('input_tokens', 'output_tokens'):
+        values = [row['usage'][usage_key] for row in pipelines if isinstance(row.get('usage'), dict) and usage_key in row['usage']]
+        pipeline_usage[usage_key] = {'reported_total': sum(values) if values else None, 'reported_runs': len(values)}
     budget_exceeded = sum(
         row.get('status') != 'PR_READY' and isinstance(row.get('usage'), dict) and row.get('usage_budget')
         and (row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)) >= row['usage_budget']

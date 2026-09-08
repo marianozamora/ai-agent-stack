@@ -1,15 +1,16 @@
 from __future__ import annotations
 import json, shutil, time
+from typing import Any
 from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, safe_head, save_json, task_state
 from crg import crg_cmd, crg_exec
 from skills import enabled_skills, skill_registry
 from validators import run_codex_json
 
 
-METRICS_ADVISORY_ROWS=5000  # row count above which ai doctor suggests `ai metrics prune`
+METRICS_ADVISORY_ROWS=5000  # row count above which ai doctor suggests retention for audit size
 
 
-DEEP_PROFILE_SCHEMA={
+DEEP_PROFILE_SCHEMA:dict[str,Any]={
     'type':'object','additionalProperties':False,
     'required':['architecture_summary','stack','database','deployment','related_repos','key_docs','confidence_caveats'],
     'properties':{
@@ -122,13 +123,10 @@ def cmd_doctor(args):
         for name in corrupt: print('  corrupt:',state/name)
         metrics_file=state/'metrics.jsonl'
         if metrics_file.exists():
-            # ai plan/ai run/ai gate each re-read and re-parse this whole log on every
-            # call (confidence_card/gate_attempt_number); it only ever grows, so flag it
-            # here well before that cost is large enough to actually notice.
             row_count=sum(1 for _ in metrics_file.open())
             if row_count>METRICS_ADVISORY_ROWS:
-                print(f'Metrics log:  {row_count} events - `ai plan`/`ai gate` re-read this file in full on every '
-                      f'call; consider `ai metrics prune --older-than <window> --confirm`.')
+                print(f'Metrics log:  {row_count} events (audited; queries use metrics.sqlite3); consider '
+                      f'`ai metrics prune --older-than <window> --confirm` only for retention.')
     except SystemExit: pass
 
 
@@ -137,14 +135,14 @@ def cmd_optimize(args):
     # never the work repo, so this needs no git context at all.
     targets=[STACK_ROOT/'templates/policy.md',STACK_ROOT/'templates/orchestration.yml']
     skill_prompts=list((STACK_ROOT/'skills').glob('*/prompt.md'))
-    rows=[]
+    rows:list[tuple[str,int,int,int]]=[]
     for p in targets+skill_prompts:
         if not p.exists(): continue
-        txt=p.read_text(); lines=[x.strip() for x in txt.splitlines() if x.strip()]
-        dup=len(lines)-len(set(lines)); rows.append((str(p.relative_to(STACK_ROOT)),len(txt),len(lines),dup))
+        txt=p.read_text(); prompt_lines=[x.strip() for x in txt.splitlines() if x.strip()]
+        dup=len(prompt_lines)-len(set(prompt_lines)); rows.append((str(p.relative_to(STACK_ROOT)),len(txt),len(prompt_lines),dup))
     print('Prompt/context optimization audit')
-    for name,chars,lines,dup in sorted(rows,key=lambda r:r[1],reverse=True):
-        print(f"  {name:42} chars={chars:5} lines={lines:3} duplicate_lines={dup}")
+    for name,chars,line_count,dup in sorted(rows,key=lambda r:r[1],reverse=True):
+        print(f"  {name:42} chars={chars:5} lines={line_count:3} duplicate_lines={dup}")
     print('\nPolicy: lazy skills; progressive context; evidence-first escalation; compact PASS outputs; hard per-profile budgets.')
     print('Repository modified: NO')
 

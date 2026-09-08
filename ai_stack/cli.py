@@ -25,6 +25,26 @@ from tools import cmd_deploy, cmd_docs, cmd_figma, cmd_graph
 from validators import INSTRUCTIONS
 
 
+COMMAND_DESCRIPTIONS = {
+    'init':'Initialize external state and detect repository tooling.',
+    'run':'Build an orchestration prompt and launch Claude.', 'plan':'Build an orchestration prompt without launching a model.',
+    'ticket':'Analyze pasted ticket content.', 'review':'Prepare or launch a bounded Codex review.',
+    'impact':'Report deterministic diff impact.', 'ready':'Certify readiness from fresh gate evidence.',
+    'gate':'Run and record one evidence gate.', 'pipeline':'Run all required configured gates in order.',
+    'validators':'Inspect or configure reusable validators.', 'validate':'Run a bundled semantic validator.',
+    'metrics':'Report or prune task metrics.', 'benchmark':'Run routing or pipeline benchmarks.',
+    'profile':'Inspect the repository profile.', 'confidence':'Report historical outcome evidence.',
+    'prompt':'Manage measured validator-prompt experiments.', 'failures':'Inspect recurring failure patterns.',
+    'lessons':'Curate repository lessons.', 'status':'Show repository and task state.',
+    'doctor':'Check dependencies and external-state health.', 'path':'Print the active external task directory.',
+    'optimize':'Audit bundled prompt/context size.', 'deploy':'Detect deployment configuration.',
+    'skill':'Inspect, select, or create skills.', 'handoff':'Record a compact continuation point.',
+    'rules':'Manage repository-specific rules.', 'docs':'Use cached, version-specific library documentation.',
+    'figma':'Check or configure Figma connectivity.', 'crg':'Manage Code Review Graph data.',
+    'graph':'Build or query the architecture graph.',
+}
+
+
 def cmd_path(args):
     print(task_state(repo_state(git_root())))
 
@@ -100,6 +120,8 @@ def parser():
     f=sp.add_parser('figma'); fs=f.add_subparsers(dest='figma_cmd',required=True); fs.add_parser('doctor'); fsetup=fs.add_parser('setup'); fsetup.add_argument('--claude-only',action='store_true'); fsetup.add_argument('--codex-only',action='store_true'); f.set_defaults(func=cmd_figma)
     c=sp.add_parser('crg'); cs=c.add_subparsers(dest='crg_cmd',required=True); cs.add_parser('doctor'); cs.add_parser('build'); cs.add_parser('status'); up=cs.add_parser('update'); up.add_argument('--base',default='main'); up.add_argument('--brief',action='store_true',default=True); de=cs.add_parser('detect'); de.add_argument('--base',default='main'); de.add_argument('--brief',action='store_true',default=True); c.set_defaults(func=cmd_crg)
     g=sp.add_parser('graph'); gs=g.add_subparsers(dest='graph_cmd',required=True); gs.add_parser('doctor'); gs.add_parser('build'); gs.add_parser('sync'); q=gs.add_parser('query'); q.add_argument('query'); pa=gs.add_parser('path'); pa.add_argument('start'); pa.add_argument('end'); e=gs.add_parser('explain'); e.add_argument('node'); g.set_defaults(func=cmd_graph)
+    for name,command in sp.choices.items(): command.description=COMMAND_DESCRIPTIONS[name]
+    for choice in sp._choices_actions: choice.help=COMMAND_DESCRIPTIONS[choice.dest]
     for command in sp.choices.values():
         command.add_argument('--task-id',help='Task identity; defaults to AI_TASK_ID or current branch/worktree')
     return p

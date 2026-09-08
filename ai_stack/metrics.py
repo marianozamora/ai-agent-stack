@@ -1,18 +1,91 @@
 from __future__ import annotations
-import csv, json, sys, time
+import csv, hashlib, json, sqlite3, sys, time
 from pathlib import Path
+from typing import Any
 from core import VERSION, git_root, load_json, repo_state, require_human, task_state
 from workflow import parse_window, summarize, usage_report
 
 
-def load_metric_rows(state:Path)->tuple[list[dict],int]:
-    p=state/'metrics.jsonl'; rows=[]; malformed=0
-    for line in p.read_text().splitlines() if p.exists() else []:
-        try:
-            row=json.loads(line)
-            if not isinstance(row,dict): raise ValueError()
-            rows.append(row)
-        except ValueError: malformed+=1
+INDEX_VERSION='1'
+
+
+def _metric_connection(state:Path)->sqlite3.Connection:
+    """Open the disposable SQLite index; metrics.jsonl remains the source of truth."""
+    connection=sqlite3.connect(state/'metrics.sqlite3')
+    connection.execute('PRAGMA journal_mode=WAL')
+    connection.execute('PRAGMA synchronous=NORMAL')
+    connection.execute('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    connection.execute('''CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY, event TEXT, task_key TEXT, gate_name TEXT, profile TEXT,
+        risk TEXT, task_type TEXT, ts REAL, payload TEXT NOT NULL)''')
+    connection.execute('CREATE INDEX IF NOT EXISTS events_task_gate ON events(event, task_key, gate_name)')
+    connection.execute('CREATE INDEX IF NOT EXISTS events_dimensions ON events(event, profile, risk, task_type)')
+    return connection
+
+
+def _meta(connection:sqlite3.Connection)->dict[str,str]:
+    return dict(connection.execute('SELECT key, value FROM meta'))
+
+
+def _digest_slice(path:Path,start:int,length:int)->str:
+    if not path.exists() or length<=0: return hashlib.sha256(b'').hexdigest()
+    with path.open('rb') as source:
+        source.seek(max(0,start)); return hashlib.sha256(source.read(length)).hexdigest()
+
+
+def _store_row(connection:sqlite3.Connection,row:dict[str,Any]):
+    connection.execute('''INSERT INTO events(event,task_key,gate_name,profile,risk,task_type,ts,payload)
+        VALUES(?,?,?,?,?,?,?,?)''',(row.get('event'),row.get('task_key'),row.get('gate'),row.get('profile'),
+        row.get('risk'),row.get('task_type'),row.get('ts'),json.dumps(row,sort_keys=True)))
+
+
+def _sync_metric_index(state:Path,*,force=False)->sqlite3.Connection:
+    """Incrementally index appended JSONL rows; rebuild after rewrites or corruption."""
+    path=state/'metrics.jsonl'; connection=_metric_connection(state); metadata=_meta(connection)
+    stat=path.stat() if path.exists() else None
+    size=stat.st_size if stat else 0
+    indexed=int(metadata.get('source_size','0')) if metadata.get('version')==INDEX_VERSION else -1
+    unchanged=(not force and indexed==size and metadata.get('source_mtime_ns')==str(stat.st_mtime_ns if stat else 0))
+    if unchanged: return connection
+    append_only=(not force and indexed>=0 and size>=indexed
+        and metadata.get('head_hash')==_digest_slice(path,0,min(indexed,4096))
+        and metadata.get('anchor_hash')==_digest_slice(path,max(0,indexed-4096),min(indexed,4096)))
+    if not append_only:
+        connection.execute('DELETE FROM events'); indexed=0; malformed=0
+    else:
+        malformed=int(metadata.get('malformed','0'))
+    if path.exists():
+        with path.open('rb') as source:
+            source.seek(indexed)
+            for raw in source:
+                try:
+                    row=json.loads(raw.decode())
+                    if not isinstance(row,dict): raise ValueError()
+                    _store_row(connection,row)
+                except (UnicodeDecodeError,ValueError): malformed+=1
+    values={'version':INDEX_VERSION,'source_size':str(size),'source_mtime_ns':str(stat.st_mtime_ns if stat else 0),
+        'malformed':str(malformed),'head_hash':_digest_slice(path,0,min(size,4096)),
+        'anchor_hash':_digest_slice(path,max(0,size-4096),min(size,4096))}
+    connection.executemany('INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)',values.items())
+    connection.commit(); return connection
+
+
+def rebuild_metric_index(state:Path):
+    connection=_sync_metric_index(state,force=True); connection.close()
+
+
+def load_metric_rows(state:Path,*,event:str|None=None,task_key:str|None=None)->tuple[list[dict],int]:
+    try:
+        connection=_sync_metric_index(state)
+    except sqlite3.DatabaseError:
+        (state/'metrics.sqlite3').unlink(missing_ok=True)
+        connection=_sync_metric_index(state,force=True)
+    clauses=[]; values=[]
+    if event is not None: clauses.append('event=?'); values.append(event)
+    if task_key is not None: clauses.append('task_key=?'); values.append(task_key)
+    where=' WHERE '+' AND '.join(clauses) if clauses else ''
+    rows=[json.loads(payload) for (payload,) in connection.execute('SELECT payload FROM events'+where+' ORDER BY id',values)]
+    malformed=int(_meta(connection).get('malformed','0')); connection.close()
     return rows,malformed
 
 
@@ -24,12 +97,15 @@ def record_metric(state:Path,event:str,**data):
         "task_key":task.name,"task_id":identity.get('id'),"profile":plan.get('profile'),
         "risk":(plan.get('risk') or {}).get('risk'),"task_type":plan.get('task_type'),**data}
     with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
+    connection=_sync_metric_index(state); connection.close()
 
 
 def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     """Count prior recorded attempts of this gate for this task, for a fresh 1-based number."""
-    rows,_=load_metric_rows(state)
-    return 1+sum(1 for row in rows if row.get('event')=='gate' and row.get('task_key')==task_key and row.get('gate')==gate)
+    connection=_sync_metric_index(state)
+    count=connection.execute('SELECT COUNT(*) FROM events WHERE event=? AND task_key=? AND gate_name=?',
+                             ('gate',task_key,gate)).fetchone()[0]
+    connection.close(); return 1+count
 
 
 def cmd_metrics(args):
@@ -45,6 +121,7 @@ def cmd_metrics(args):
         if not args.confirm: raise SystemExit('Re-run with --confirm to apply.')
         with (state/'metrics.jsonl').open('w') as f:
             for row in kept: f.write(json.dumps(row,sort_keys=True)+"\n")
+        rebuild_metric_index(state)
         print(f'Pruned {removed} event(s); {len(kept)} remain.')
         return
     rows,malformed=load_metric_rows(state)

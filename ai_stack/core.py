@@ -8,7 +8,9 @@ from workflow import ORDER
 TASK_ID = None
 
 
-STACK_ROOT = Path(__file__).resolve().parents[1]
+_SOURCE_ROOT = Path(__file__).resolve().parents[1]
+_BUNDLED_ROOT = Path(__file__).resolve().parent/'_bundle'
+STACK_ROOT = _SOURCE_ROOT if (_SOURCE_ROOT/'VERSION').is_file() else _BUNDLED_ROOT
 
 
 VERSION = (STACK_ROOT/"VERSION").read_text().strip()
@@ -148,7 +150,7 @@ def profile_repo(root:Path,state:Path)->dict:
     ext_map={'.ts':'TypeScript','.tsx':'TypeScript/React','.js':'JavaScript','.jsx':'JavaScript/React','.py':'Python','.java':'Java','.kt':'Kotlin','.go':'Go','.rs':'Rust','.rb':'Ruby','.php':'PHP','.cs':'C#','.swift':'Swift'}
     try: rels=run(["git","ls-files"],cwd=root).splitlines()
     except Exception: rels=[]
-    counts={}
+    counts:dict[str,int]={}
     for rel in rels:
         ext=Path(rel).suffix
         if ext in ext_map: counts[ext_map[ext]]=counts.get(ext_map[ext],0)+1

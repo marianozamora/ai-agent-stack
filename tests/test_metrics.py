@@ -35,6 +35,31 @@ class LoadMetricRowsTests(unittest.TestCase):
             self.assertEqual(rows, [{'event': 'gate', 'n': 1}, {'event': 'plan', 'n': 2}])
             self.assertEqual(malformed, 3)
 
+    def test_index_tracks_appends_and_rebuilds_after_jsonl_rewrite(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            log = state / 'metrics.jsonl'
+            log.write_text(json.dumps({'event': 'gate', 'n': 1}) + '\n')
+            self.assertEqual(metrics.load_metric_rows(state)[0], [{'event': 'gate', 'n': 1}])
+            self.assertTrue((state / 'metrics.sqlite3').is_file())
+
+            with log.open('a') as output:
+                output.write(json.dumps({'event': 'plan', 'n': 2}) + '\n')
+            self.assertEqual([row['n'] for row in metrics.load_metric_rows(state)[0]], [1, 2])
+
+            log.write_text(json.dumps({'event': 'pipeline', 'n': 9}) + '\n')
+            self.assertEqual(metrics.load_metric_rows(state)[0], [{'event': 'pipeline', 'n': 9}])
+
+    def test_filters_are_served_by_the_index(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            (state / 'metrics.jsonl').write_text('\n'.join(json.dumps(row) for row in [
+                {'event': 'gate', 'task_key': 'a'}, {'event': 'gate', 'task_key': 'b'},
+                {'event': 'plan', 'task_key': 'a'}]) + '\n')
+            rows, malformed = metrics.load_metric_rows(state, event='gate', task_key='a')
+            self.assertEqual(rows, [{'event': 'gate', 'task_key': 'a'}])
+            self.assertEqual(malformed, 0)
+
 
 class RecordMetricTests(unittest.TestCase):
     """record_metric only needs task_state() to hand back a dir holding task.json

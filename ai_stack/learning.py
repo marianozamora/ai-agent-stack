@@ -75,7 +75,7 @@ def render_lessons(lessons:list[dict],max_chars:int)->str:
 
 
 def rebuild_patterns(state:Path)->dict:
-    rows,_=load_metric_rows(state)
+    rows,_=load_metric_rows(state,event='gate')
     report={'version':1,'generated_at':int(time.time()),'source_events':len(rows),
              'patterns':detect_patterns(rows)}
     save_json(state/'patterns.json',report)
@@ -95,7 +95,7 @@ def confidence_card(root:Path,state:Path,base:str,profile:str,*,scope:dict|None=
     if risk is None: risk=classify(scope,profile)
     plan=load_json(task_state(state)/'state/current-plan.json',{})
     task_type=plan.get('task_type') if plan.get('scope',{}).get('base')==base and plan.get('profile')==profile else None
-    rows,_=load_metric_rows(state)
+    rows,_=load_metric_rows(state,event='gate')
     stats=outcome_stats(rows,profile=profile,risk=risk['risk'],task_type=task_type)
     patterns=detect_patterns(rows)
     matched_patterns=[p for p in patterns if p.get('scope_hint') and scope_matches(p['scope_hint'],scope['files'])]

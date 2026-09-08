@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse, hashlib, json, os, re, shutil, sys, tempfile, time, uuid
 from pathlib import Path
-from core import STACK_ROOT, contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
+from core import contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
@@ -56,7 +56,7 @@ def cmd_validators(args):
             existing=config['validators'].get(name)
             if existing is None or existing.get('builtin')==name:
                 config['validators'][name]={
-                    'command':[sys.executable,str(STACK_ROOT/'ai_stack/cli.py'),'validate',name],
+                    'command':[sys.executable,str(Path(__file__).with_name('cli.py')),'validate',name],
                     'adapter':'json','timeout':600,'evidence':None,'builtin':name}
         validate_config(config)
         save_json(state/'validators.json',config)

@@ -1,11 +1,12 @@
 from __future__ import annotations
 import json, os, re, subprocess, sys, tempfile, time, uuid
 from pathlib import Path
+from typing import Any
 from core import STACK_ROOT, VERSION, classify, classify_task, context_caps, git_root, load_json, repo_state, required_gates, save_json, shasum
 from skills import select_skills
 
 
-BENCHMARK_TASKS = [
+BENCHMARK_TASKS: list[dict[str, Any]] = [
     {'id': 'auth-bugfix', 'task': 'Fix incorrect 401 responses in the login rate limiter',
      'files': ['src/auth/rate_limiter.py', 'src/auth/middleware.py'], 'changed_lines': 40},
     {'id': 'payments-migration', 'task': 'Migrate the payments schema to add a refunds table',
@@ -26,7 +27,7 @@ BENCHMARK_CORPUS_DIR=STACK_ROOT/'templates/benchmarks/pipeline'
 
 
 def run_benchmark(state:Path)->dict:
-    results=[]
+    results:list[dict[str,Any]]=[]
     for fixture in BENCHMARK_TASKS:
         scope={'files':fixture['files'],'file_count':len(fixture['files']),'changed_lines':fixture['changed_lines']}
         row={'id':fixture['id'],'task':fixture['task'],'profiles':{}}
@@ -68,8 +69,8 @@ def run_benchmark_scenario(scenario:dict,profile:str,stack_cli:str)->dict:
     a benchmark run must never pollute outcome_stats()/detect_patterns()/variant_stats()
     or a live prompt experiment's sample count.
     """
-    with tempfile.TemporaryDirectory(prefix='ai-bench-') as sandbox:
-        sandbox=Path(sandbox); repo=sandbox/'repo'; repo.mkdir()
+    with tempfile.TemporaryDirectory(prefix='ai-bench-') as temporary_directory:
+        sandbox=Path(temporary_directory); repo=sandbox/'repo'; repo.mkdir()
         home=sandbox/'home'; config=sandbox/'config'; home.mkdir(); config.mkdir()
         env={k:v for k,v in os.environ.items() if k not in ('AI_GATE','AI_TASK_DIR')}
         env.update(HOME=str(home),XDG_CONFIG_HOME=str(config))
@@ -140,7 +141,7 @@ def cmd_benchmark(args):
         scenarios=load_pipeline_corpus(corpus_dir)
         if args.scenario: scenarios=[s for s in scenarios if s['id'] in args.scenario]
         digest=corpus_digest(scenarios)
-        stack_cli=str(STACK_ROOT/'ai_stack/cli.py')
+        stack_cli=str(Path(__file__).with_name('cli.py'))
         cases=[]
         for scenario in scenarios:
             for profile in (args.profile or scenario.get('profiles',['standard'])):

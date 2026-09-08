@@ -89,8 +89,8 @@ def cmd_prompt(args):
     if args.prompt_cmd=='show':
         print(variant_text(args.name,prompt_slot(args.name),args.variant)); return
     if args.prompt_cmd=='experiment':
-        slot=prompt_slot(args.name) if args.experiment_cmd=='start' else None
         if args.experiment_cmd=='start':
+            slot=prompt_slot(args.name)
             if prompt_experiment(state): raise SystemExit('An experiment is already active; stop it first.')
             variants=args.variants.split(',')
             if len(variants)<2: raise SystemExit('An experiment needs at least 2 variants.')
@@ -108,7 +108,7 @@ def cmd_prompt(args):
     if args.prompt_cmd=='report':
         experiment=prompt_experiment(state)
         if not experiment: raise SystemExit('No active experiment; nothing to report.')
-        rows,_=load_metric_rows(state)
+        rows,_=load_metric_rows(state,event='gate')
         stats=variant_stats(rows,experiment['slot'],since=experiment['started_at'])
         if args.json: print(json.dumps({'slot':experiment['slot'],
             'min_samples_per_variant':experiment['min_samples_per_variant'],'stats':stats},indent=2)); return
@@ -130,7 +130,7 @@ def cmd_prompt(args):
         # Always show the comparison before applying, --confirm or not: promotion is a
         # decision a human makes from evidence, never a formula, so the evidence must be seen.
         if experiment and experiment['slot']==slot:
-            rows,_=load_metric_rows(state)
+            rows,_=load_metric_rows(state,event='gate')
             stats=variant_stats(rows,slot,since=experiment['started_at'])
             evidence=stats
             by_key={(s['variant'],s['sha']):s for s in stats}

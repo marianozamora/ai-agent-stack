@@ -14,6 +14,11 @@ spec = importlib.util.spec_from_file_location('installer', ROOT / 'ai_stack/inst
 installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
+sys.path.insert(0, str(ROOT / 'ai_stack'))
+import core  # noqa: E402
+import lifecycle  # noqa: E402
+import skills  # noqa: E402
+
 
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
@@ -388,20 +393,47 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertIn('"slot": "validator.cleanup"', self.ai('prompt', 'experiment', 'status'))
         self.ai('prompt', 'experiment', 'start', 'cleanup', '--variants', 'a,b', ok=False)
 
+        # Deterministic replacement for the old probabilistic `for i in range(30)`
+        # sampling loop: compute IN-PROCESS which `small change N` task texts the
+        # experiment hash assigns to variant 'a' vs 'b', then shell out for exactly
+        # two known-'a' and two known-'b' tasks. No retries, no probability -- so
+        # coverage's ~3x subprocess slowdown can no longer make this flake.
+        def predict_cleanup_variant(task):
+            # Mirrors prompts.assign_prompt_variants for the active experiment slot:
+            #   variant = variants[int(shasum(cache_key + slot), 16) % len(variants)]
+            # with cache_key from lifecycle.task_cache_key(root, task, profile, base, skills).
+            sel = skills.select_skills(self.home / 'no-skill-state', task, 'fast')
+            cache_key = lifecycle.task_cache_key(self.repo, task, 'fast', 'HEAD', sel)
+            return ['a', 'b'][int(core.shasum(cache_key + 'validator.cleanup'), 16) % 2]
+
+        want = {'a': [], 'b': []}
+        for i in range(60):
+            if len(want['a']) >= 2 and len(want['b']) >= 2: break
+            v = predict_cleanup_variant(f'small change {i}')
+            if len(want[v]) < 2: want[v].append(i)
+        self.assertEqual((len(want['a']), len(want['b'])), (2, 2))
+
         seen = {'a': 0, 'b': 0}
-        for i in range(30):
-            if seen['a'] >= 2 and seen['b'] >= 2: break
-            task_id = f'variant-probe-{i}'
-            self.ai('plan', f'small change {i}', '--profile', 'fast', '--base', 'HEAD', '--task-id', task_id)
-            task_dir = Path(self.ai('path', '--task-id', task_id).strip())
-            assignment = json.loads((task_dir / 'state/prompt-assignment.json').read_text())
-            variant = assignment.get('validator.cleanup', {}).get('variant')
-            if variant not in seen or seen[variant] >= 2: continue
-            self.ai('gate', '--task-id', task_id, 'cleanup', '--', sys.executable, '-c',
-                     'import json; print(json.dumps({"status":"PASS","evidence":["fixture"]}))')
-            seen[variant] += 1
-        self.assertGreaterEqual(seen['a'], 2)
-        self.assertGreaterEqual(seen['b'], 2)
+        self_checked = False
+        for variant, indices in want.items():
+            for i in indices:
+                task_id = f'variant-probe-{i}'
+                self.ai('plan', f'small change {i}', '--profile', 'fast', '--base', 'HEAD', '--task-id', task_id)
+                task_dir = Path(self.ai('path', '--task-id', task_id).strip())
+                assignment = json.loads((task_dir / 'state/prompt-assignment.json').read_text())
+                actual = assignment.get('validator.cleanup', {}).get('variant')
+                # Self-check: the in-process prediction MUST match what the CLI wrote.
+                # A mismatch means the skills/fingerprint assumption behind the
+                # prediction is wrong -- fail loudly rather than silently reintroduce
+                # flakiness.
+                self.assertEqual(actual, variant,
+                    f'predicted {variant!r} for "small change {i}" but CLI assigned {actual!r}')
+                self_checked = True
+                self.ai('gate', '--task-id', task_id, 'cleanup', '--', sys.executable, '-c',
+                         'import json; print(json.dumps({"status":"PASS","evidence":["fixture"]}))')
+                seen[variant] += 1
+        self.assertTrue(self_checked)
+        self.assertEqual(seen, {'a': 2, 'b': 2})
 
         report = json.loads(self.ai('prompt', 'report', '--json'))
         by_variant = {s['variant']: s for s in report['stats']}

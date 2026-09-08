@@ -20,6 +20,10 @@ Thumbs.db
 *.log
 .cache/
 coverage/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 dist/
 build/
 node_modules/
