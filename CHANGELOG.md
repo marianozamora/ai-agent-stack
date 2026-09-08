@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `ai deploy plan/show/set/remove/run`: a Codex-generated, read-only dev runbook that only ever *suggests* a command, plus a declared, dry-run-by-default execution path reusing the `validators.json` command+evidence+timeout pattern.
+- A deploy is deliberately not a gate: it stays out of `core.GATES`, `workflow.ORDER` and `ai pipeline`, only `--execute` runs anything, `require_human()` blocks it from inside a gate/validator, and all its state lives outside the target repository. `ai deploy` with no subcommand keeps its existing detection-only output.
 - Make mypy blocking, split the fast PR suite from the full subprocess matrix, and test installation and execution from a built wheel.
 - Add a rebuildable SQLite index for metrics while retaining `metrics.jsonl` as the append-only audit source.
 - Generate the command reference from argparse and reduce version/history duplication across README and roadmap.

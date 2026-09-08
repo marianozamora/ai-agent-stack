@@ -14,6 +14,7 @@ import core
 from benchmark import cmd_benchmark
 from core import GATES, VERSION, git_root, repo_state, task_state
 from crg import cmd_crg, cmd_impact, cmd_review
+from deploy import cmd_deploy
 from gates import cmd_gate, cmd_pipeline, cmd_ready, cmd_validate, cmd_validators
 from learning import cmd_confidence, cmd_failures, cmd_lessons
 from lifecycle import cmd_handoff, cmd_planrun, cmd_ticket
@@ -21,7 +22,7 @@ from metrics import cmd_metrics
 from prompts import cmd_prompt
 from repo import cmd_doctor, cmd_init, cmd_optimize, cmd_profile, cmd_rules, cmd_status
 from skills import cmd_skill
-from tools import cmd_deploy, cmd_docs, cmd_figma, cmd_graph
+from tools import cmd_docs, cmd_figma, cmd_graph
 from validators import INSTRUCTIONS
 
 
@@ -37,7 +38,7 @@ COMMAND_DESCRIPTIONS = {
     'prompt':'Manage measured validator-prompt experiments.', 'failures':'Inspect recurring failure patterns.',
     'lessons':'Curate repository lessons.', 'status':'Show repository and task state.',
     'doctor':'Check dependencies and external-state health.', 'path':'Print the active external task directory.',
-    'optimize':'Audit bundled prompt/context size.', 'deploy':'Detect deployment configuration.',
+    'optimize':'Audit bundled prompt/context size.', 'deploy':'Detect, document and run declared deployments.',
     'skill':'Inspect, select, or create skills.', 'handoff':'Record a compact continuation point.',
     'rules':'Manage repository-specific rules.', 'docs':'Use cached, version-specific library documentation.',
     'figma':'Check or configure Figma connectivity.', 'crg':'Manage Code Review Graph data.',
@@ -110,7 +111,13 @@ def parser():
     for name in ('confirm','reject','retire','promote'):
         sub=lcs.add_parser(name); sub.add_argument('lesson_id')
     lprune=lcs.add_parser('prune'); lprune.add_argument('--unseen-days',type=int,default=90)
-    sp.add_parser('status').set_defaults(func=cmd_status); sp.add_parser('doctor').set_defaults(func=cmd_doctor); sp.add_parser('path').set_defaults(func=cmd_path); sp.add_parser('optimize').set_defaults(func=cmd_optimize); sp.add_parser('deploy').set_defaults(func=cmd_deploy)
+    sp.add_parser('status').set_defaults(func=cmd_status); sp.add_parser('doctor').set_defaults(func=cmd_doctor); sp.add_parser('path').set_defaults(func=cmd_path); sp.add_parser('optimize').set_defaults(func=cmd_optimize)
+    dep=sp.add_parser('deploy'); dps=dep.add_subparsers(dest='deploy_cmd'); dep.set_defaults(func=cmd_deploy)
+    dps.add_parser('detect'); dps.add_parser('show')
+    dplan=dps.add_parser('plan'); dplan.add_argument('--refresh',action='store_true'); dplan.add_argument('--timeout',type=int,default=600)
+    dset=dps.add_parser('set'); dset.add_argument('target'); dset.add_argument('--evidence',required=True); dset.add_argument('--timeout',type=int,default=1800); dset.add_argument('--description',default=''); dset.add_argument('command',nargs=argparse.REMAINDER)
+    drm=dps.add_parser('remove'); drm.add_argument('target')
+    drun=dps.add_parser('run'); drun.add_argument('target',nargs='?',default='dev'); drun.add_argument('--execute',action='store_true')
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     sc=sks.add_parser('create'); sc.add_argument('name'); sc.add_argument('--category',required=True); sc.add_argument('--cost',default='medium',choices=['tiny','low','medium','high']); sc.add_argument('--priority',type=int,default=50); sc.add_argument('--task-types',default='',dest='task_types',help='comma-separated: bug,feature,architecture,design,prototype,planning'); sc.add_argument('--triggers',default='',help='comma-separated keyword triggers'); sc.add_argument('--stages',default='',help='comma-separated prompt stages'); sc.add_argument('--prompt',required=True,help='Skill prompt body, lazy-loaded once selected'); sc.add_argument('--description',default='',help='Short README summary'); sc.add_argument('--always-consider',action='store_true')
     sk.set_defaults(func=cmd_skill)
