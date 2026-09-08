@@ -140,7 +140,8 @@ usage: ai pipeline [-h] [--dry-run] [--resume] [--task-id TASK_ID]
 Inspect or configure reusable validators.
 
 ```text
-usage: ai validators [-h] [--task-id TASK_ID] {show,install,remove,set} ...
+usage: ai validators [-h] [--task-id TASK_ID]
+                     {show,install,propose,remove,set} ...
 ```
 
 ### `ai validators show`
@@ -157,6 +158,14 @@ usage: ai validators show [-h]
 
 ```text
 usage: ai validators install [-h]
+```
+
+### `ai validators propose`
+
+
+
+```text
+usage: ai validators propose [-h] [--apply] [--json]
 ```
 
 ### `ai validators remove`

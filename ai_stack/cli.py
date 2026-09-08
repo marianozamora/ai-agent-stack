@@ -78,6 +78,7 @@ def parser():
     validators=sp.add_parser('validators'); vs=validators.add_subparsers(dest='action',required=True); validators.set_defaults(func=cmd_validators)
     vs.add_parser('show')
     vs.add_parser('install')
+    prop=vs.add_parser('propose'); prop.add_argument('--apply',action='store_true',help='Write the proposed validators (never overwrites a configured gate)'); prop.add_argument('--json',action='store_true')
     validate=sp.add_parser('validate'); validate.add_argument('name',choices=list(INSTRUCTIONS)); validate.set_defaults(func=cmd_validate)
     remove=vs.add_parser('remove'); remove.add_argument('name',choices=GATES)
     setting=vs.add_parser('set'); setting.add_argument('name',choices=GATES)

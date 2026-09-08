@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse, hashlib, json, os, re, shutil, sys, tempfile, time, uuid
 from pathlib import Path
+from detect import proposal, render
 from core import contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import gate_attempt_number, record_metric
@@ -51,7 +52,23 @@ def validator_config(state):
 
 
 def cmd_validators(args):
-    state=repo_state(git_root()); config=validator_config(state)
+    root=git_root(); state=repo_state(root); config=validator_config(state)
+    if args.action=='propose':
+        report=proposal(root,config['validators'])
+        if args.json: print(json.dumps(report,indent=2))
+        else:
+            print('Detected check tooling'); print('\n'.join(render(report)))
+        added=[row for row in report['rows'] if row['action']=='add']
+        if not args.apply:
+            if added and not args.json:
+                print('\nNothing written. Re-run with --apply to configure the proposed gates.')
+            return
+        for row in added: config['validators'][row['gate']]=row['validator']
+        validate_config(config)
+        save_json(state/'validators.json',config)
+        print('\nApplied: '+(', '.join(row['gate'] for row in added) or 'nothing to add'))
+        print('Saved:',state/'validators.json')
+        return
     if args.action=='install':
         for name in INSTRUCTIONS:
             existing=config['validators'].get(name)

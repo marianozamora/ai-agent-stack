@@ -3,6 +3,7 @@ import json, shutil, time
 from typing import Any
 from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
+from detect import proposal, render
 from skills import enabled_skills, skill_registry
 from validators import run_codex_json
 
@@ -103,6 +104,15 @@ def cmd_init(args):
     print("Repository modified: NO")
     print("Languages:  "+(', '.join(profile['languages']) or 'unknown'))
     print(f"Default base: {base}")
+    # Report the detected tooling but never write it: validators.json holds commands
+    # `ai pipeline` executes, so applying a proposal stays an explicit, separate act.
+    configured=load_json(state/'validators.json',{}).get('validators',{})
+    report=proposal(root,configured)
+    print('\nCheck tooling detected:')
+    print('\n'.join(render(report)))
+    if any(row['action']=='add' for row in report['rows']):
+        print('\nRun `ai validators propose --apply` to configure these gates,')
+        print('then `ai validators install` for the bundled semantic validators.')
 
 
 def cmd_status(args):
