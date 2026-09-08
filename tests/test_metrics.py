@@ -1,4 +1,8 @@
+import argparse
+import contextlib
+import io
 import json
+import os
 import sys
 import tempfile
 import time
@@ -121,6 +125,94 @@ class GateAttemptNumberTests(unittest.TestCase):
             self.assertEqual(metrics.gate_attempt_number(state, 'T', 'checks'), 4)
             self.assertEqual(metrics.gate_attempt_number(state, 'T', 'cleanup'), 2)
             self.assertEqual(metrics.gate_attempt_number(state, 'MISSING', 'checks'), 1)
+
+
+class AppendEventAndRecordLabelTests(unittest.TestCase):
+    def test_append_event_writes_exactly_the_given_row(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            metrics.append_event(state, {'event': 'custom', 'x': 1})
+            lines = (state / 'metrics.jsonl').read_text().splitlines()
+            self.assertEqual(json.loads(lines[0]), {'event': 'custom', 'x': 1})
+
+    def test_record_label_does_not_touch_the_active_task(self):
+        """record_label() must never resolve through task_state(): a label is very
+        often filed against a task that is not the one currently active."""
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            with patch.object(metrics, 'task_state', side_effect=AssertionError('must not be called')):
+                metrics.record_label(state, task_key='closed-task', gate='security', attempt=1,
+                                     passed=False, label='false_positive', note='reviewed by hand')
+            row = json.loads((state / 'metrics.jsonl').read_text().splitlines()[0])
+            self.assertEqual(row['event'], 'gate_label')
+            self.assertEqual(row['task_key'], 'closed-task')
+            self.assertEqual(row['gate'], 'security')
+            self.assertEqual(row['label'], 'false_positive')
+            self.assertEqual(row['note'], 'reviewed by hand')
+            self.assertIn('stack_version', row)
+
+
+class CmdMetricsLabelTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = Path(self.tmp.name)
+        (self.state / 'metrics.jsonl').write_text('\n'.join(json.dumps(r) for r in [
+            {'event': 'gate', 'task_key': 'T1', 'gate': 'checks', 'attempt': 1, 'passed': False},
+            {'event': 'gate', 'task_key': 'T1', 'gate': 'checks', 'attempt': 2, 'passed': True},
+        ]) + '\n')
+        patcher = patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop('AI_GATE', None)
+        os.environ.pop('AI_TASK_DIR', None)
+
+    def _ns(self, **fields):
+        defaults = dict(gate='checks', task_key='T1', attempt=None, true_positive=False,
+                        false_positive=False, note=None)
+        return argparse.Namespace(**{**defaults, **fields})
+
+    def test_defaults_to_the_most_recent_attempt(self):
+        # attempt 2 is the most recent for (T1, checks), but it PASSED -- refused.
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(true_positive=True), self.state)
+        self.assertIn('Only a FAILED gate attempt', str(caught.exception))
+
+    def test_explicit_attempt_selects_the_failed_one(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            metrics.cmd_metrics_label(self._ns(attempt=1, false_positive=True), self.state)
+        self.assertIn('checks attempt=1 -> false_positive', buf.getvalue())
+        rows = [json.loads(x) for x in (self.state / 'metrics.jsonl').read_text().splitlines()]
+        labels = [r for r in rows if r['event'] == 'gate_label']
+        self.assertEqual(len(labels), 1)
+        self.assertEqual(labels[0]['attempt'], 1)
+
+    def test_passed_attempt_is_refused(self):
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(attempt=2, true_positive=True), self.state)
+        self.assertIn('Only a FAILED gate attempt', str(caught.exception))
+
+    def test_no_matching_attempt_is_a_clear_error(self):
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(gate='regression', true_positive=True), self.state)
+        self.assertIn("No recorded 'regression' gate attempt", str(caught.exception))
+
+    def test_no_matching_attempt_number_is_a_clear_error(self):
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(attempt=9, true_positive=True), self.state)
+        self.assertIn('attempt 9', str(caught.exception))
+
+    def test_requires_a_human_outside_a_gate(self):
+        os.environ['AI_GATE'] = 'checks'
+        try:
+            with self.assertRaises(SystemExit):
+                metrics.cmd_metrics_label(self._ns(attempt=1, false_positive=True), self.state)
+        finally:
+            del os.environ['AI_GATE']
+        # Nothing was appended by the refused call.
+        rows = [json.loads(x) for x in (self.state / 'metrics.jsonl').read_text().splitlines()]
+        self.assertEqual([r for r in rows if r['event'] == 'gate_label'], [])
 
 
 if __name__ == '__main__':

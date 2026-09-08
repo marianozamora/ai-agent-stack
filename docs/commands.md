@@ -226,8 +226,8 @@ Report or prune task metrics.
 usage: ai metrics [-h] [--all-tasks] [--json]
                   [--by {day,week,gate,profile,task_type,task}]
                   [--since SINCE] [--top TOP] [--format {text,json,csv}]
-                  [--budget BUDGET] [--task-id TASK_ID]
-                  {prune} ...
+                  [--budget BUDGET] [--campaign] [--task-id TASK_ID]
+                  {prune,label} ...
 ```
 
 ### `ai metrics prune`
@@ -236,6 +236,16 @@ usage: ai metrics [-h] [--all-tasks] [--json]
 
 ```text
 usage: ai metrics prune [-h] --older-than OLDER_THAN [--confirm]
+```
+
+### `ai metrics label`
+
+
+
+```text
+usage: ai metrics label [-h] --task-key TASK_KEY [--attempt ATTEMPT]
+                        (--true-positive | --false-positive) [--note NOTE]
+                        {checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}
 ```
 
 ## `ai benchmark`

@@ -14,6 +14,8 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 - [ ] Driver interfaces for external tools (Context7, Graphify, CodeGraph, RTK).
 - [ ] Capability/plugin interfaces.
 - [ ] Multi-repository workspace orchestration.
+- [x] Instrumentation for a real-usage validation campaign (`ai metrics label`, `ai metrics --campaign`).
+- [ ] Actually run the validation campaign (20–30 real tasks, human-labeled) using the tools above and act on its recommendations.
 
 ## Measurement follow-ups
 
