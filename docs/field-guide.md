@@ -70,6 +70,7 @@ number below is enforced, not advisory.
 |---|---|
 | `ai ticket check --file\|--text\|-` | Analyze pasted ticket text: acceptance criteria, Figma link, mentioned blockers. |
 | `ai skill list\|explain\|enable\|disable\|dry-run` | Inspect/tune the lazy skill router. |
+| `ai skill create <name> --category ... --prompt ...` | Add a new skill to the router (writes to the installed stack, not the repo). |
 | `ai handoff "<note>" --next "<step>"` | Write a compact resume-point for a follow-up session. |
 | `ai optimize` | Print current token-policy/budget summary. |
 | `ai rules list\|add\|remove` | Repository-specific conventions injected into every prompt. |

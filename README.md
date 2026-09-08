@@ -12,11 +12,16 @@ ai skill list
 ai skill list --task "login regression"
 ai skill explain diagnosing-bugs
 ai skill dry-run tdd
+ai skill create api-contract-review --category quality --task-types feature,architecture \
+  --triggers "openapi,breaking change" --stages "diff contract,check consumers" \
+  --prompt "Compare the API contract before/after and flag breaking changes."
 ai handoff "continue auth fix" --next "run focused regression test"
 ai optimize
 ```
 
 Token policy: classify first, progressive disclosure, one tool per question, diff-first review, cache before fetch, evidence before model debate, compact PASS outputs, and hard per-profile budgets. All mutable state remains under `~/.config/ai-agent-stack/repos/<repo-id>/`.
+
+`ai skill create` writes a new skill (`skill.json` + `prompt.md` + `README.md`) into the installed stack's own `skills/` directory and registers it in `skills/registry.json`, enabled by default — the same metadata-only router (`select_skills()`) picks it up automatically for future tasks whose text matches its `--triggers`/`--task-types`, no extra wiring needed. Like `ai optimize`, this touches the stack's bundled files, never the work repository.
 
 
 A **zero-footprint**, token-aware orchestration layer for Claude Code + Codex over existing repositories.
@@ -145,6 +150,7 @@ is available on most report-style commands for scripting.
 |---|---|
 | `ai ticket check --file\|--text\|-` | Analyze pasted ticket text: acceptance criteria, Figma link, mentioned blockers. |
 | `ai skill list\|explain\|enable\|disable\|dry-run` | Inspect/tune the lazy skill router. |
+| `ai skill create <name> --category ... --prompt ...` | Add a new skill to the router (writes to the installed stack, not the repo). |
 | `ai handoff "<note>" --next "<step>"` | Write a compact resume-point for a follow-up session. |
 | `ai optimize` | Print current token-policy/budget summary. |
 | `ai rules list\|add\|remove` | Repository-specific conventions injected into every prompt. |

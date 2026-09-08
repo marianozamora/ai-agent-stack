@@ -1,7 +1,11 @@
 from __future__ import annotations
-import json
+import json, re
 from pathlib import Path
 from core import STACK_ROOT, classify_task, context_caps, git_root, load_json, repo_state, save_json
+
+
+TASK_TYPES=['bug','feature','architecture','design','prototype','planning']
+COSTS=['tiny','low','medium','high']
 
 
 def skill_root()->Path:
@@ -78,6 +82,7 @@ def cmd_skill(args):
             selected=select_skills(state,args.task,args.profile,None,None)
             print('\nRecommended:', ', '.join(selected) or 'none')
         return
+    if args.skill_cmd=='create': return cmd_skill_create(args)
     name=args.name
     if name not in registry: raise SystemExit(f'Unknown skill: {name}')
     if args.skill_cmd=='explain':
@@ -100,3 +105,36 @@ def cmd_skill(args):
         print('  stages:     ', ' -> '.join(registry[name].get('stages',[])))
         print('  repo writes: NO')
         return
+
+
+def cmd_skill_create(args):
+    name=args.name
+    if not re.fullmatch(r'[a-z][a-z0-9-]*',name):
+        raise SystemExit('Skill name must be lowercase letters, digits and hyphens, starting with a letter.')
+    if args.cost not in COSTS:
+        raise SystemExit(f"Unknown cost {args.cost!r}. Valid: {', '.join(COSTS)}")
+    task_types=[t.strip() for t in (args.task_types or '').split(',') if t.strip()]
+    bad_types=[t for t in task_types if t not in TASK_TYPES]
+    if bad_types:
+        raise SystemExit(f"Unknown task type(s): {', '.join(bad_types)}. Valid: {', '.join(TASK_TYPES)}")
+    triggers=[t.strip() for t in (args.triggers or '').split(',') if t.strip()]
+    stages=[s.strip() for s in (args.stages or '').split(',') if s.strip()]
+    registry=skill_registry()
+    if name in registry.get('skills',{}):
+        raise SystemExit(f'Skill already exists: {name}')
+    folder=skill_root()/name
+    if folder.exists():
+        raise SystemExit(f'{folder} already exists.')
+    meta={"enabled":True,"category":args.category,"cost":args.cost,"priority":args.priority,
+          "task_types":task_types,"triggers":triggers}
+    if args.always_consider: meta["always_consider"]=True
+    meta["stages"]=stages
+    folder.mkdir(parents=True)
+    (folder/'skill.json').write_text(json.dumps({"name":name,"version":1,**{k:v for k,v in meta.items() if k!='enabled'}},indent=2)+'\n')
+    (folder/'prompt.md').write_text(args.prompt.strip()+'\n')
+    (folder/'README.md').write_text(f"# {name}\n\n{(args.description or '(no description provided)').strip()}\n")
+    registry.setdefault('skills',{})[name]=meta
+    save_json(skill_root()/'registry.json',registry)
+    print('Skill created:',name)
+    print('  folder:  ',folder)
+    print('  registry:',skill_root()/'registry.json','(updated, enabled by default)')
