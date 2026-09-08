@@ -58,7 +58,8 @@ usage: ai work [-h] [--profile {fast,standard,strict}] [--base BASE]
 Run the required gates for the active task and certify readiness.
 
 ```text
-usage: ai finish [-h] [--no-resume] [--task-id TASK_ID]
+usage: ai finish [-h] [--no-resume] [--allow-overrun] [--force-unlock]
+                 [--task-id TASK_ID]
 ```
 
 ## `ai switch`
@@ -141,7 +142,7 @@ usage: ai ready [-h] [--task-id TASK_ID]
 Run and record one evidence gate.
 
 ```text
-usage: ai gate [-h] [--timeout TIMEOUT] [--task-id TASK_ID]
+usage: ai gate [-h] [--timeout TIMEOUT] [--force-unlock] [--task-id TASK_ID]
                {checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}
                ...
 ```
@@ -151,7 +152,8 @@ usage: ai gate [-h] [--timeout TIMEOUT] [--task-id TASK_ID]
 Run all required configured gates in order.
 
 ```text
-usage: ai pipeline [-h] [--dry-run] [--resume] [--task-id TASK_ID]
+usage: ai pipeline [-h] [--dry-run] [--resume] [--allow-overrun]
+                   [--force-unlock] [--task-id TASK_ID]
 ```
 
 ## `ai validators`

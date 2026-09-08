@@ -603,7 +603,10 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
                       '"usage":{"input_tokens":30000,"output_tokens":20000}}))')
         self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', big_script)
         output = self.ai('pipeline', ok=False)
-        self.assertIn('usage budget exceeded', output)
+        self.assertIn('BUDGET_EXCEEDED', output)
+        # The gate that crossed the budget is named, along with what never ran.
+        self.assertIn('crossed at:  cleanup', output)
+        self.assertIn('not run:', output)
         report = json.loads(self.ai('metrics', '--json'))
         self.assertEqual(report['gate_attempts'], 1)
         self.assertEqual(report['pipeline_budget_exceeded'], 1)

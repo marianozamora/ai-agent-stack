@@ -5,6 +5,7 @@ from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root,
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
 from skills import enabled_skills, skill_registry
+from tasks import running_tasks
 from validators import run_codex_json
 
 
@@ -125,6 +126,8 @@ def cmd_status(args):
     enabled=sum(1 for x in enabled_skills(state).values() if x['enabled']); print('Skills:',enabled,'enabled /',len(enabled_skills(state)),'installed')
     print('Token policy: lazy skills + hard profile budgets')
     print('Code Review Graph:', 'ready' if crg_cmd() and crg_exec(root,state,['status'],check=False)[0]==0 else ('installed/not-built' if crg_cmd() else 'off'))
+    running=running_tasks(state,root)
+    print('Pipelines running:', ', '.join(f'{r["id"]} (pid {r["pid"]})' for r in running) or 'none')
     bad=contamination(root); print('Zero-footprint:', 'PASS' if not bad else 'FAIL');
     if bad:
         for x in bad: print('  tracked:',x)

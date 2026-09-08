@@ -386,11 +386,19 @@ def summarize(rows):
     for usage_key in ('input_tokens', 'output_tokens'):
         values = [row['usage'][usage_key] for row in pipelines if isinstance(row.get('usage'), dict) and usage_key in row['usage']]
         pipeline_usage[usage_key] = {'reported_total': sum(values) if values else None, 'reported_runs': len(values)}
-    budget_exceeded = sum(
-        row.get('status') != 'PR_READY' and isinstance(row.get('usage'), dict) and row.get('usage_budget')
-        and (row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)) >= row['usage_budget']
-        for row in pipelines
-    )
+    def stopped_on_budget(row):
+        if row.get('status') == 'BUDGET_EXCEEDED':
+            return True
+        # Rows recorded before BUDGET_EXCEEDED existed carry status FAILED, so a
+        # historical overrun is still inferred from reported usage against the budget.
+        # A run that finished with --allow-overrun is PR_READY and never counts.
+        if row.get('status') in ('PR_READY', 'BUDGET_EXCEEDED') or not isinstance(row.get('usage'), dict):
+            return False
+        budget = row.get('usage_budget')
+        spent = row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)
+        return bool(budget) and spent >= budget
+
+    budget_exceeded = sum(stopped_on_budget(row) for row in pipelines)
     return {
         'events': len(rows), 'gate_attempts': len(gates),
         'gate_passes': sum(row.get('passed') is True for row in gates),

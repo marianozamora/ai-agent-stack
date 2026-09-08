@@ -8,7 +8,7 @@ next one. An explicit lifecycle makes the active task visible and makes contract
 reuse a deliberate act (`ai start --resume`) instead of an accident.
 """
 from __future__ import annotations
-import json, re, time
+import contextlib, json, os, re, socket, time
 from pathlib import Path
 from core import (TASK_ID_PATTERN, active_task_id, git_root, load_json, repo_state,
                   resolve_base, save_json, set_active_task, shasum, task_state)
@@ -71,6 +71,77 @@ def require_open_task(state:Path)->tuple[Path,dict]:
                          f"({meta.get('close_reason') or 'no reason recorded'}). "
                          "Run `ai start <id>` for new work, or `ai switch <id>` to an open task.")
     return task,meta
+
+
+LOCK_NAME = 'pipeline.lock'
+
+
+def process_alive(pid:int)->bool:
+    try: os.kill(pid,0)
+    except ProcessLookupError: return False
+    except PermissionError: return True   # exists, owned by another user
+    except (OSError,TypeError,ValueError): return False
+    return True
+
+
+def lock_state(held:dict)->str:
+    """'ours' | 'stale' | 'held' | 'foreign' for an existing lock file."""
+    if not isinstance(held,dict) or not isinstance(held.get('pid'),int): return 'stale'
+    if held['pid']==os.getpid() and held.get('host')==socket.gethostname(): return 'ours'
+    # A pid from another machine says nothing about a process here, so it is never
+    # assumed dead: a shared external state directory would silently double-run.
+    if held.get('host')!=socket.gethostname(): return 'foreign'
+    return 'held' if process_alive(held['pid']) else 'stale'
+
+
+@contextlib.contextmanager
+def task_lock(directory:Path,command:str,*,force:bool=False):
+    """Serialize gate/pipeline runs for one task.
+
+    Yields True when this call acquired the lock and False when the current process
+    already holds it — `ai pipeline` invokes `ai gate` in-process, and a re-entrant
+    acquisition must neither deadlock nor release the outer lock on the inner exit.
+    """
+    path=directory/LOCK_NAME
+    payload={'pid':os.getpid(),'host':socket.gethostname(),'command':command,'started_at':time.time()}
+    for _ in range(2):
+        try:
+            handle=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+        except FileExistsError:
+            held=load_json(path,{}); state=lock_state(held)
+            if state=='ours':
+                yield False
+                return
+            if state=='stale' and not force:
+                print(f'Reclaiming a stale lock from pid {held.get("pid")} (no such process).')
+            elif not force:
+                where=f' on {held.get("host")}' if state=='foreign' else ''
+                raise SystemExit(
+                    f'NEEDS_HUMAN: {held.get("command","a pipeline")} is already running for this task '
+                    f'(pid {held.get("pid")}{where}, since {time.strftime("%H:%M:%S",time.localtime(held.get("started_at",0)))}).\n'
+                    f'Wait for it to finish, or pass --force-unlock if that process is gone.\nLock: {path}') from None
+            path.unlink(missing_ok=True)
+            continue
+        try:
+            with os.fdopen(handle,'w') as output: json.dump(payload,output)
+            yield True
+        finally:
+            path.unlink(missing_ok=True)
+        return
+    raise SystemExit(f'NEEDS_HUMAN: could not acquire the task lock at {path}.')
+
+
+def running_tasks(state:Path,root:Path)->list[dict]:
+    """Tasks in this checkout that currently hold a pipeline lock."""
+    out=[]
+    for meta in all_tasks(state,root):
+        path=task_dir(state,root,meta['id'])/LOCK_NAME
+        if path.exists():
+            held=load_json(path,{})
+            out.append({'id':meta['id'],'pid':held.get('pid'),'host':held.get('host'),
+                        'command':held.get('command'),'started_at':held.get('started_at'),
+                        'state':lock_state(held)})
+    return out
 
 
 def contract_path(state:Path,root:Path,identity:str)->Path:
@@ -206,7 +277,9 @@ def cmd_finish(args):
             print('  ai validators install           # configures the bundled semantic gates')
         raise SystemExit(1)
     print(f'Finishing task: {meta.get("id")}')
-    cmd_pipeline(argparse.Namespace(dry_run=False,resume=not args.no_resume))
+    cmd_pipeline(argparse.Namespace(dry_run=False,resume=not args.no_resume,
+                                    allow_overrun=getattr(args,'allow_overrun',False),
+                                    force_unlock=getattr(args,'force_unlock',False)))
 
 
 def cmd_current(args):
@@ -221,12 +294,16 @@ def cmd_current(args):
     plan=load_json(directory/'state/current-plan.json',{})
     readiness=load_json(directory/'state/readiness.json',{})
     gates={p.stem:bool(load_json(p,{}).get('passed')) for p in sorted((directory/'gates').glob('*.json'))}
+    run=load_json(directory/'state/pipeline-run.json',{})
+    lock=load_json(directory/LOCK_NAME,{}) if (directory/LOCK_NAME).exists() else {}
     payload:dict[str,object]={'id':identity,'status':meta.get('status'),'title':meta.get('title') or None,
              'base':meta.get('base') or plan.get('scope',{}).get('base'),
              'profile':plan.get('profile'),'risk':plan.get('risk',{}).get('risk'),
              'task_type':plan.get('task_type'),'directory':str(directory),
              'contract':str(directory/'contracts/current-pr.yml'),
-             'readiness':readiness.get('status','none'),'gates':gates}
+             'readiness':readiness.get('status','none'),'gates':gates,
+             'last_run':run.get('status'),'overrun_gate':run.get('overrun_gate'),
+             'running':bool(lock) and lock_state(lock)!='stale'}
     if args.json: print(json.dumps(payload,indent=2)); return
     print(f'Active task: {identity}'+(f' — {meta["title"]}' if meta.get('title') else ''))
     print(f'  status:    {payload["status"]}')
@@ -236,6 +313,12 @@ def cmd_current(args):
     print(f'  contract:  {payload["contract"]}')
     print(f'  readiness: {payload["readiness"]}')
     print('  gates:     '+(', '.join(f'{n}={"PASS" if ok else "FAIL"}' for n,ok in gates.items()) or 'none recorded'))
+    if run:
+        detail=f' (crossed at {run["overrun_gate"]})' if run.get('status')=='BUDGET_EXCEEDED' else ''
+        print(f'  last run:  {run.get("status")}{detail}')
+        if run.get('remaining'): print(f'  not run:   {", ".join(run["remaining"])}')
+    if payload['running']:
+        print(f'  RUNNING:   {lock.get("command")} (pid {lock.get("pid")} on {lock.get("host")})')
 
 
 def cmd_tasks(args):

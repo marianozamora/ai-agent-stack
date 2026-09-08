@@ -9,7 +9,7 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 - [ ] Remove the deprecated branch-derived task identity fallback.
 - [x] Fail-closed base resolution.
 - [ ] Richer risk signals for new, renamed and binary files.
-- [ ] Per-task pipeline locking and explicit post-gate budget-overrun status.
+- [x] Per-task pipeline locking and explicit post-gate budget-overrun status.
 - [ ] Driver interfaces for model providers and external tools.
 - [ ] Capability/plugin interfaces.
 - [ ] Multi-repository workspace orchestration.
