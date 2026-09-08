@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Breaking: fail-closed base resolution.** `collect_scope()` used to verify `--base` with `git rev-parse --verify` and silently fall back to `HEAD` when it failed. In any repository whose default branch was not literally `main` (the old `--base` default), that produced an empty scope — which drove `classify()` to LOW risk, dropped the `review` gate out of `required_gates()`, and let `ai ready` certify `PR_READY` over a diff no gate had ever seen. New `core.resolve_base()` refuses an unverifiable base and names the refs the repository actually has (`origin/HEAD`, `origin/<name>`, main/master/develop/trunk), suggesting the closest match — most often `origin/<name>` for a branch that only exists on the remote. `--base` no longer defaults to `main`: it defaults to the base recorded by `ai init` (which now autodetects and stores `default_base` in `repo.json`, and accepts `ai init --base <ref>`), and every command that takes a base resolves it at a single point in `cli.main()`. `ai status` and `ai doctor` report the active base. `repo.json` is now merged rather than rewritten on each `repo_state()` call, so durable per-repo settings survive.
 - Make mypy blocking, split the fast PR suite from the full subprocess matrix, and test installation and execution from a built wheel.
 - Add a rebuildable SQLite index for metrics while retaining `metrics.jsonl` as the append-only audit source.
 - Generate the command reference from argparse and reduce version/history duplication across README and roadmap.

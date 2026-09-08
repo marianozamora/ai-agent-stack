@@ -55,8 +55,12 @@ def repo_state(root:Path|None=None, create=True)->Path:
     d=CONFIG_ROOT/"repos"/rid
     if create:
         for sub in ["contracts","state","graphify","docs-cache","code-review-graph","review","task-cache","handoffs","skill-state"]: (d/sub).mkdir(parents=True,exist_ok=True)
-        meta={"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())}
-        (d/"repo.json").write_text(json.dumps(meta,indent=2)+"\n")
+        # Merge, never clobber: repo.json now carries durable per-repo settings
+        # (default_base) that a plain rewrite on every repo_state() call would discard.
+        meta=load_json(d/"repo.json",{})
+        if not isinstance(meta,dict): meta={}
+        meta.update({"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())})
+        (d/"repo.json").write_text(json.dumps(meta,indent=2,sort_keys=True)+"\n")
         if not (d/"rules.json").exists(): (d/"rules.json").write_text("[]\n")
         if not (d/"lessons.json").exists(): (d/"lessons.json").write_text("[]\n")
         if not (d/"context7-libraries.json").exists(): (d/"context7-libraries.json").write_text("{}\n")
@@ -179,9 +183,71 @@ def profile_repo(root:Path,state:Path)->dict:
     save_json(state/'project-profile.json',profile); return profile
 
 
+BASE_CANDIDATES = ('main','master','develop','trunk')
+
+
+def verify_ref(root:Path,ref:str)->bool:
+    """True when `ref` names a commit that exists in this repository."""
+    if not ref or ref.startswith('-'): return False
+    return bool(run(["git","rev-parse","--verify","--quiet",ref+"^{commit}"],cwd=root,check=False))
+
+
+def origin_head(root:Path)->str:
+    """The remote's own default branch, when origin/HEAD is set locally."""
+    ref=run(["git","symbolic-ref","--quiet","--short","refs/remotes/origin/HEAD"],cwd=root,check=False)
+    return ref if verify_ref(root,ref) else ''
+
+
+def base_suggestions(root:Path,requested:str|None=None)->list[str]:
+    """Refs this repository actually has, best guess first."""
+    out:list[str]=[]
+    def add(ref:str):
+        if ref and ref not in out and verify_ref(root,ref): out.append(ref)
+    # A local name that only exists on the remote is by far the most common near-miss.
+    if requested and '/' not in requested: add('origin/'+requested)
+    add(origin_head(root))
+    for name in BASE_CANDIDATES: add('origin/'+name); add(name)
+    return out
+
+
+def base_error(root:Path,base:str,*,explicit:bool)->str:
+    suggestions=base_suggestions(root,base)
+    origin=('--base '+base) if explicit else f'the stored default base ({base})'
+    lines=[f'FAILED: base ref {base!r} does not exist in this repository.',
+           f'It came from {origin}; nothing is assumed in its place.']
+    if suggestions:
+        lines.append('Refs detected here: '+', '.join(suggestions[:5]))
+        lines.append(f'Try: --base {suggestions[0]}   (persist it with: ai init --base {suggestions[0]})')
+    else:
+        lines.append('No usable base ref was detected. Pass an existing branch, tag or commit with --base.')
+    return '\n'.join(lines)
+
+
+def resolve_base(root:Path,base:str|None,state:Path|None=None)->str:
+    """Resolve the diff base fail-closed; never degrade an unknown base to HEAD.
+
+    A base that silently became HEAD produced an empty scope, which drove classify()
+    to LOW risk, dropped the review gate out of required_gates() and let `ai ready`
+    certify PR_READY over a diff no gate had ever seen. Any base that cannot be
+    verified is now an error naming the refs this repository really has.
+    """
+    if base:
+        if verify_ref(root,base): return base
+        raise SystemExit(base_error(root,base,explicit=True))
+    stored=load_json((state or Path())/'repo.json',{}).get('default_base') if state else None
+    if stored:
+        if verify_ref(root,stored): return stored
+        raise SystemExit(base_error(root,stored,explicit=False))
+    detected=base_suggestions(root)
+    if detected: return detected[0]
+    raise SystemExit('FAILED: no base ref could be detected (looked for origin/HEAD, '
+                     +', '.join(BASE_CANDIDATES)+').\nPass an existing branch, tag or commit with --base.')
+
+
 def collect_scope(root:Path,base:str)->dict:
-    try: run(["git","rev-parse","--verify",base],cwd=root)
-    except Exception: base="HEAD"
+    # `base` must already be resolved by resolve_base(); this guard keeps the old
+    # silent degradation to HEAD from ever creeping back in through a new call site.
+    if not verify_ref(root,base): raise SystemExit(base_error(root,base,explicit=True))
     files=run(["git","diff","--name-only",base],cwd=root,check=False).splitlines()
     untracked=run(["git","ls-files","--others","--exclude-standard"],cwd=root,check=False).splitlines()
     files=sorted(set([f for f in files+untracked if f and not any(f.startswith(p) for p in AI_PATTERNS)]))

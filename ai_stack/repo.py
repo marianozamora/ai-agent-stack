@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, shutil, time
 from typing import Any
-from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, safe_head, save_json, task_state
+from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from skills import enabled_skills, skill_registry
 from validators import run_codex_json
@@ -83,16 +83,31 @@ Already-detected static facts (languages, package managers, tooling): {json.dump
     print(json.dumps(deep,indent=2))
 
 
+def base_report(root,state)->str:
+    """How `ai status`/`ai doctor` describe the diff base, without ever guessing one."""
+    stored=load_json(state/'repo.json',{}).get('default_base')
+    if stored: return f'{stored} (recorded)' if verify_ref(root,stored) else f'{stored} (recorded, MISSING — rerun ai init --base <ref>)'
+    detected=base_suggestions(root)
+    return f'{detected[0]} (detected; record it with ai init)' if detected else 'FAIL: none detected'
+
+
 def cmd_init(args):
     root=git_root(); state=repo_state(root); profile=profile_repo(root,state)
+    # cli.main() resolves --base before dispatching; resolve here too so a direct
+    # call (tests, embedding) still records a verified base rather than none.
+    base=getattr(args,'base',None) or resolve_base(root,None,state)
+    meta=load_json(state/'repo.json',{}); meta['default_base']=base
+    save_json(state/'repo.json',meta)
     print(f"Repository: {root}")
     print(f"State:      {state}")
     print("Repository modified: NO")
     print("Languages:  "+(', '.join(profile['languages']) or 'unknown'))
+    print(f"Default base: {base}")
 
 
 def cmd_status(args):
     root=git_root(); state=repo_state(root); print('Repository:',root); print('State:',state)
+    print('Base:', base_report(root,state))
     print('Profile:', 'present' if (state/'project-profile.json').exists() else 'missing')
     print('Contract:', 'present' if (task_state(state)/'contracts/current-pr.yml').exists() else 'missing')
     print('Graphify:', 'ready' if (state/'graphify/graph.json').exists() else 'off')
@@ -113,6 +128,7 @@ def cmd_doctor(args):
     try:
         root=git_root(); state=repo_state(root); bad=contamination(root)
         print('\nRepository:',root); print('External state:',state)
+        print('Base:', base_report(root,state))
         print('Zero-footprint:', 'PASS' if not bad else 'FAIL')
         for x in bad: print('  tracked:',x)
         state_files=['rules.json','lessons.json','patterns.json','validators.json',

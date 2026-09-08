@@ -7,7 +7,7 @@ Generated from the CLI parser. Run `python3 scripts/generate_command_reference.p
 Initialize external state and detect repository tooling.
 
 ```text
-usage: ai init [-h] [--task-id TASK_ID]
+usage: ai init [-h] [--base BASE] [--task-id TASK_ID]
 ```
 
 ## `ai run`
