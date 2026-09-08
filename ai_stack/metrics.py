@@ -2,8 +2,8 @@ from __future__ import annotations
 import csv, hashlib, json, sqlite3, sys, time
 from pathlib import Path
 from typing import Any
-from core import VERSION, git_root, load_json, repo_state, require_human, task_state
-from workflow import parse_window, summarize, usage_report
+from core import VERSION, context_caps, git_root, load_json, repo_state, require_human, task_state
+from workflow import campaign_report, parse_window, summarize, usage_report
 
 
 INDEX_VERSION='1'
@@ -89,15 +89,34 @@ def load_metric_rows(state:Path,*,event:str|None=None,task_key:str|None=None)->t
     return rows,malformed
 
 
+def append_event(state:Path,row:dict):
+    """Append one already-built row and refresh the index. The append-only primitive
+    every recorder (record_metric, record_label) shares; never mutates a prior line."""
+    p=state/'metrics.jsonl'
+    with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
+    connection=_sync_metric_index(state); connection.close()
+
+
 def record_metric(state:Path,event:str,**data):
     task=task_state(state)
     identity=load_json(task/'task.json',{})
     plan=load_json(task/'state/current-plan.json',{})
-    p=state/'metrics.jsonl'; row={"ts":time.time(),"event":event,"stack_version":VERSION,
+    row={"ts":time.time(),"event":event,"stack_version":VERSION,
         "task_key":task.name,"task_id":identity.get('id'),"profile":plan.get('profile'),
         "risk":(plan.get('risk') or {}).get('risk'),"task_type":plan.get('task_type'),**data}
-    with p.open('a') as f: f.write(json.dumps(row,sort_keys=True)+"\n")
-    connection=_sync_metric_index(state); connection.close()
+    append_event(state,row)
+
+
+def record_label(state:Path,*,task_key:str,gate:str,attempt:int|None,passed:bool|None,label:str,note:str):
+    """A human's true/false-positive judgment on one recorded gate attempt.
+
+    Deliberately not routed through record_metric(): that resolves the *active* task via
+    task_state(), but a labeled attempt is very often on a task that has since been closed
+    or is not the one currently active in this checkout.
+    """
+    row={"ts":time.time(),"event":"gate_label","stack_version":VERSION,
+        "task_key":task_key,"gate":gate,"attempt":attempt,"passed":passed,"label":label,"note":note}
+    append_event(state,row)
 
 
 def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
@@ -123,6 +142,18 @@ def cmd_metrics(args):
             for row in kept: f.write(json.dumps(row,sort_keys=True)+"\n")
         rebuild_metric_index(state)
         print(f'Pruned {removed} event(s); {len(kept)} remain.')
+        return
+    if getattr(args,'metrics_cmd',None)=='label':
+        cmd_metrics_label(args,state)
+        return
+    if getattr(args,'campaign',False):
+        rows,malformed=load_metric_rows(state)
+        since=parse_window(args.since) if args.since else None
+        budgets={name:context_caps(name)['usage_tokens'] for name in ('fast','standard','strict')}
+        report=campaign_report(rows,since=since,usage_budgets=budgets)
+        report['malformed_events_skipped']=malformed
+        if args.json: print(json.dumps(report,indent=2)); return
+        print_campaign_report(report)
         return
     rows,malformed=load_metric_rows(state)
     if not args.all_tasks:
@@ -167,3 +198,49 @@ def cmd_metrics(args):
     for name,value in report['pipeline_usage'].items():
         total=value['reported_total']
         print(f"pipeline {name}: {total if total is not None else 'unreported'} ({value['reported_runs']} reporting runs)")
+
+
+def print_campaign_report(report):
+    print(f"Campaign: {report['tasks']} task(s), {report['reached_pr_ready']} reached PR_READY")
+    if report.get('malformed_events_skipped'):
+        print(f"  ({report['malformed_events_skipped']} malformed event(s) skipped)")
+    print('\nBy task type:')
+    for task_type,stats in sorted(report['by_task_type'].items(),key=lambda kv:str(kv[0])):
+        median=stats['median_time_to_ready_seconds']; p90=stats['p90_time_to_ready_seconds']
+        tokens=stats['median_tokens']
+        print(f"  {str(task_type or 'unclassified'):14} n={stats['n']:<3} ready={stats['reached_pr_ready']}/{stats['n']} "
+              f"median={median if median is not None else '-'}s p90={p90 if p90 is not None else '-'}s "
+              f"retries(median/max)={stats['median_retries']}/{stats['max_retries']} "
+              f"tokens(median)={tokens if tokens is not None else 'unreported'}")
+    if report['gate_labels']:
+        print('\nGate false-positive rates (human-labeled, via `ai metrics label`):')
+        for gate,stats in sorted(report['gate_labels'].items()):
+            rate=stats['false_positive_rate']
+            print(f"  {gate:12} labeled={stats['labeled']:<3} "
+                  f"false_positive_rate={f'{rate:.0%}' if rate is not None else 'n/a'}")
+    else:
+        print('\nNo gate attempts labeled yet. Label some with:')
+        print('  ai metrics label <gate> --task-key <key> --true-positive|--false-positive')
+    print(f"\nfindings_raised: {report['findings_raised_caveat']}")
+    if report['recommendations']:
+        print('\nRecommendations:')
+        for line in report['recommendations']: print(f'  - {line}')
+
+
+def cmd_metrics_label(args,state):
+    require_human('Metrics labeling')
+    rows,_=load_metric_rows(state,event='gate',task_key=args.task_key)
+    matches=[row for row in rows if row.get('gate')==args.gate]
+    if args.attempt is not None: matches=[row for row in matches if row.get('attempt')==args.attempt]
+    if not matches:
+        where=f' attempt {args.attempt}' if args.attempt is not None else ''
+        raise SystemExit(f'No recorded {args.gate!r} gate attempt{where} for task {args.task_key!r}. '
+                         'Find the right task_key and attempt with `ai metrics --all-tasks --by task --json`.')
+    target=matches[-1]
+    if target.get('passed'):
+        raise SystemExit('Only a FAILED gate attempt can be labeled true/false positive '
+                         '(a PASS is required to carry no unresolved findings).')
+    label='false_positive' if args.false_positive else 'true_positive'
+    record_label(state,task_key=args.task_key,gate=args.gate,attempt=target.get('attempt'),
+                passed=target.get('passed'),label=label,note=args.note or '')
+    print(f"Labeled: task={args.task_key} gate={args.gate} attempt={target.get('attempt')} -> {label}")

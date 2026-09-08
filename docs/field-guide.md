@@ -84,6 +84,33 @@ flowchart LR
     L -.->|advisory prompt context| PLAN
 ```
 
+## Running a real-usage validation campaign
+
+The stack cannot tell you whether it is actually working — only a human running it
+against real tasks can. `ai metrics label`/`ai metrics --campaign` are instrumentation
+for that, not a substitute for doing it:
+
+```bash
+# After a gate fails, judge it while the context is fresh (ideally within 24h):
+ai metrics label checks --task-key <key> --false-positive   # the gate was wrong to block
+ai metrics label security --task-key <key> --true-positive  # the gate caught a real issue
+
+# Find a task's key from a closed task's directory name, or:
+ai metrics --all-tasks --by task --json
+
+# After 20-30 tasks across task types and profiles:
+ai metrics --campaign
+```
+
+The report is stratified by `task_type` (time to `PR_READY`, retries, tokens) and by
+`profile` (tokens against that profile's budget), and turns three fixed thresholds
+into plain-language recommendations: a gate's false-positive rate over 20% suggests
+making it advisory; a task type whose p90 time-to-ready is over 3x its median names
+the gate dominating that group's duration; a profile eating over 80% of its token
+budget suggests recalibrating `context_caps`. `findings_raised` is a volume count,
+not a claim about what got ignored — the stack cannot distinguish an override from a
+genuine fix without an explicit label.
+
 ## Zero-footprint: nothing lands in your checkout
 
 Rules, contracts, gate logs, metrics and every learned artifact live outside

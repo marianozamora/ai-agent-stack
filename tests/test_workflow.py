@@ -596,6 +596,52 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.ai('metrics', 'prune', '--older-than', '0d', '--confirm')
         self.assertEqual((state_root / 'metrics.jsonl').read_text().strip(), '')
 
+    def test_metrics_label_and_campaign_report(self):
+        self.plan()
+        task_key = Path(self.ai('path').strip()).name
+        self.ai('gate', 'checks', '--', sys.executable, '-c',
+                'import json, sys; print(json.dumps({"status":"FAIL","evidence":["fixture"],'
+                '"findings":["Debug print left in app.txt:12"]})); sys.exit(1)', ok=False)
+        self.ai('gate', 'checks', '--', sys.executable, '-c',
+                'import json; print(json.dumps({"status":"PASS","evidence":["fixture verified"]}))')
+        self.configure_pipeline()
+        self.ai('pipeline')
+
+        # Labeling is human-only, same invariant as lessons/prompts.
+        self.env['AI_GATE'] = 'checks'
+        self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--false-positive', ok=False)
+        del self.env['AI_GATE']
+
+        # The PASSED (second) attempt cannot be judged true/false positive.
+        out = self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--true-positive', ok=False)
+        self.assertIn('Only a FAILED gate attempt', out)
+
+        # Label the failed attempt explicitly (attempt 1).
+        out = self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--attempt', '1', '--false-positive')
+        self.assertIn('checks attempt=1 -> false_positive', out)
+
+        # A gate/attempt with no recorded rows is a clear error, not a crash.
+        self.ai('metrics', 'label', 'regression', '--task-key', task_key, '--true-positive', ok=False)
+        self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--attempt', '9', '--true-positive', ok=False)
+
+        report = json.loads(self.ai('metrics', '--campaign', '--json'))
+        self.assertEqual(report['tasks'], 1)
+        self.assertEqual(report['reached_pr_ready'], 1)
+        self.assertEqual(report['gate_labels']['checks'],
+                         {'true_positive': 0, 'false_positive': 1, 'labeled': 1, 'false_positive_rate': 1.0})
+        detail = report['tasks_detail'][0]
+        self.assertEqual(detail['task_type'], 'feature')
+        # attempt 1 (manual FAIL) + attempt 2 (manual PASS) + attempt 3 (pipeline re-runs
+        # checks since its own configured command differs from the manual one above).
+        self.assertEqual(detail['retries_by_gate']['checks'], 3)
+        self.assertTrue(detail['reached_pr_ready'])
+        self.assertIsNotNone(detail['time_to_ready_seconds'])  # falls back to the `plan` event's ts
+        self.assertIn('volume signal', report['findings_raised_caveat'])
+
+        text = self.ai('metrics', '--campaign')
+        self.assertIn('feature', text)
+        self.assertIn('false_positive_rate', text)
+
     def test_pipeline_usage_budget_stops_pipeline(self):
         self.plan()
         self.configure_pipeline()

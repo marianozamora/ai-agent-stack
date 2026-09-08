@@ -520,6 +520,50 @@ recurring failures. It prints what it would remove before requiring `--confirm`,
 rewrites the file with only the kept rows — there is no separate archive; a human who
 wants one should copy `metrics.jsonl` first.
 
+## Real-usage validation campaign (`ai metrics label`, `ai metrics --campaign`)
+
+Instrumentation for running the stack against real tasks and measuring the outcomes
+the plan called for: time to `PR_READY`, gate false-positive rate, retries, tokens by
+task type, and findings raised — deliberately *not* the campaign itself. Actually
+running 20–30 real tasks against real repositories, with real Claude/Codex calls, on a
+schedule where each `FAIL` is labeled within 24 hours by the human who saw it, is a
+usage study a human has to run and direct; nothing here fabricates or infers that data.
+
+`ai_stack/workflow.py`'s `campaign_report(rows, *, since=None, usage_budgets=None)`
+reads only what the stack already records — `task_start`/`plan` (a task's start,
+falling back to the first `plan` event for tasks that predate `ai start` or still use
+the deprecated branch-derived identity), `gate`/`pipeline` (evidence and outcomes),
+`task_close` (final readiness) — plus a new `gate_label` event from `ai metrics label`.
+It never infers a false positive, or which findings a human ignored, from outcomes
+alone: a false-positive rate exists only where a human has labeled attempts, and
+`findings_raised` (distinct finding hashes across a task's own failed attempts before
+the gate passed) ships with an explicit `findings_raised_caveat` string in every report
+rather than a metric name that oversells what the data can support. `usage_budgets` is
+an optional `{profile: usage_tokens}` map the caller (`cmd_metrics`, which can import
+`core.context_caps`) supplies, since `workflow.py` stays stdlib-only and cannot look
+that up itself.
+
+`ai metrics label <gate> --task-key K [--attempt N] --true-positive|--false-positive`
+is `require_human()`-guarded, the same "curation is human-only" invariant `ai lessons
+confirm`/`ai prompt promote` already enforce — a model running inside a gate must not
+be able to judge its own verdict. It defaults to the most recent recorded attempt for
+that `(task_key, gate)` pair and refuses to label a `PASS` (the verdict schema already
+forbids a `PASS` from carrying findings, so there is nothing to judge). Labels are
+appended via a new `metrics.append_event()` primitive that `record_metric()` now also
+uses internally — `record_label()` deliberately does not resolve through
+`task_state()`, since a label is very often filed against a task that is not the one
+currently active, or is already closed.
+
+`ai metrics --campaign [--since SPEC] [--json]` stratifies by both `task_type` and
+`profile` (time/retries by the former, since that's what the plan asked for; the
+token-vs-budget comparison by the latter, since budgets are defined per profile) and
+emits plain-language `recommendations` from the thresholds fixed before the campaign
+plan was written: a gate's false-positive rate over 20% (minimum 5 labeled attempts,
+so one relabeled sample can't flip the recommendation) suggests making it advisory;
+a task type's p90 time-to-ready over 3x its median names the gate with the most total
+duration in that group and suggests investigating outliers; a profile's median token
+usage over 80% of its budget suggests recalibrating `context_caps`.
+
 ## v0.9 "Measurement" — Phase 4 (prompt versioning)
 
 Closes the gap identified when scoping v0.9: `ai prompt`'s A/B evaluation (v0.8 Phase 4)
