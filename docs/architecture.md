@@ -120,6 +120,16 @@ The hierarchy is conditional, not a mandate to call every tool. CRG is the defau
 
 The wrapper sets `CRG_DATA_DIR` to the external per-repo state directory. `ai impact` is deterministic and LLM-free. `ai review` starts from CRG's compact impact and launches Codex with a read-only sandbox. CRG evidence may elevate risk but never automatically lower a conservative heuristic risk.
 
+## Reviewing an adhoc target (`ai review --commit`/`--pr`)
+
+Every other command that reads a diff needs the target already checked out. `ai review --commit <sha>` / `--pr <n>` instead build the review in a disposable, detached worktree via `core.temp_worktree(root, ref)` — `git worktree add --detach <tmp> <ref>`, always removed (`git worktree remove --force`) on exit via a `try`/`finally`, even when the review body raises. `cmd_review` passes that worktree's path as `root` through the same `collect_scope`/`build_review_prompt`/CRG/Codex path the ordinary case uses; nothing downstream needed to know its `root` might be a worktree rather than the caller's actual checkout, since a worktree shares the parent repository's object database.
+
+`--commit <sha>` resolves to `(full_sha, parent_sha)`; a root commit has no parent, so it falls back to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`, present in every repository with no ref pointing to it). `collect_scope()`'s ref-verification guard special-cases exactly that constant — it's a tree object, not a commit-ish, so `verify_ref()`'s `^{commit}` check would otherwise reject it even though `git diff <empty-tree>` itself works fine.
+
+`--pr <n>` needs `gh` (already one of the optional tools `ai doctor` checks for): `gh pr view <n> --json baseRefName,headRefName` resolves the PR's base branch and its own head branch name for the label, then `git fetch origin pull/<n>/head:refs/remotes/origin/pr/<n>` pulls the PR's head commit directly — this works for PRs from forks too, without adding the fork as a remote, since GitHub exposes `refs/pull/<n>/head` for every PR against the base repository. The resolved base (`origin/<baseRefName>`) is verified the same way every other base is, via `verify_ref`/`base_error`.
+
+An adhoc review's prompt and metadata go to `state/adhoc-reviews/<commit-or-pr-label>/current-review.md`/`.json`, never into the active task's own `state/current-review.md` — reviewing an unrelated commit or PR must not clobber the evidence for whatever the active task is actually working on.
+
 ## Zero-footprint invariant
 
 The framework must not add tracked AI configuration, contracts, metrics, graph outputs, generated prompts, CRG databases, or MCP files to work repositories. Per-repo data belongs under the external config directory. `ai doctor` / `ai status` detect known contamination.

@@ -98,5 +98,51 @@ class BaseResolutionTests(unittest.TestCase):
             self.assertFalse(core.verify_ref(root, '--all'))
 
 
+class TempWorktreeTests(unittest.TestCase):
+    """The disposable-worktree primitive `ai review --commit`/`--pr` builds on."""
+
+    def test_checks_out_the_ref_and_cleans_up_on_exit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = build_repo(Path(d))
+            (root / 'app.py').write_text('value = 2\n')
+            subprocess.run(['git', 'commit', '-am', 'second'], cwd=root, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            first = subprocess.run(['git', 'rev-parse', 'HEAD^'], cwd=root, check=True,
+                                   capture_output=True, text=True).stdout.strip()
+            with core.temp_worktree(root, first) as checkout:
+                self.assertTrue(checkout.is_dir())
+                self.assertEqual((checkout / 'app.py').read_text(), 'value = 1\n')
+                self.assertNotEqual(checkout, root)
+            self.assertFalse(checkout.exists())
+            listing = subprocess.run(['git', 'worktree', 'list'], cwd=root, check=True,
+                                     capture_output=True, text=True).stdout
+            self.assertNotIn(str(checkout), listing)
+
+    def test_cleans_up_even_when_the_body_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = build_repo(Path(d))
+            with self.assertRaises(RuntimeError):
+                with core.temp_worktree(root, 'master') as checkout:
+                    raise RuntimeError('review body failed')
+            self.assertFalse(checkout.exists())
+
+    def test_never_touches_the_callers_own_checkout(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = build_repo(Path(d))
+            (root / 'app.py').write_text('value = 2\n')
+            subprocess.run(['git', 'commit', '-am', 'second'], cwd=root, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            before = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, check=True,
+                                    capture_output=True, text=True).stdout
+            with core.temp_worktree(root, 'HEAD^'):
+                pass
+            after = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, check=True,
+                                   capture_output=True, text=True).stdout
+            self.assertEqual(before, after)
+            status = subprocess.run(['git', 'status', '--porcelain'], cwd=root, check=True,
+                                    capture_output=True, text=True).stdout
+            self.assertEqual(status, '')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,7 +1,37 @@
 from __future__ import annotations
-import os, re, shutil, subprocess, time
+import contextlib, json, os, re, shutil, subprocess, time
 from pathlib import Path
-from core import classify, collect_scope, context_caps, enforce_budget, git_root, repo_state, save_json, task_state
+from core import (EMPTY_TREE, base_error, classify, collect_scope, context_caps, enforce_budget,
+                  git_root, repo_state, resolve_base, run, save_json, task_state, temp_worktree, verify_ref)
+
+
+def resolve_commit_target(root:Path,sha:str)->tuple[str,str]:
+    """Full commit sha and its diff base: the parent, or the empty tree for a root commit."""
+    full=run(["git","rev-parse","--verify","--quiet",sha+"^{commit}"],cwd=root,check=False)
+    if not full: raise SystemExit(f'FAILED: commit {sha!r} does not exist in this repository.')
+    parent=run(["git","rev-parse","--verify","--quiet",full+"^"],cwd=root,check=False)
+    return full,(parent or EMPTY_TREE)
+
+
+def resolve_pr_target(root:Path,number:int)->tuple[str,str,str]:
+    """Fetches a PR's head into this repo's object database (no branch/checkout
+    change, works for forks too via GitHub's refs/pull/<n>/head) and returns
+    (head_sha, base_ref, label)."""
+    gh=shutil.which('gh')
+    if not gh: raise SystemExit('GitHub CLI (gh) missing. Install/authenticate gh to review a PR '
+                                'by number, or use --commit <sha> instead.')
+    raw=run([gh,"pr","view",str(number),"--json","baseRefName,headRefName"],cwd=root,check=False)
+    try: info=json.loads(raw) if raw else {}
+    except ValueError: info={}
+    base_name=info.get('baseRefName')
+    if not base_name: raise SystemExit(f'Could not resolve PR #{number} via gh pr view; '
+                                       'check the number and that gh is authenticated for this repo.')
+    run(["git","fetch","origin",f"pull/{number}/head:refs/remotes/origin/pr/{number}"],cwd=root)
+    head=run(["git","rev-parse","--verify",f"refs/remotes/origin/pr/{number}"],cwd=root)
+    run(["git","fetch","origin",base_name],cwd=root,check=False)  # best-effort refresh
+    base=f'origin/{base_name}'
+    if not verify_ref(root,base): raise SystemExit(base_error(root,base,source=f"PR #{number}'s base branch"))
+    return head,base,f"PR #{number} ({info.get('headRefName','?')} -> {base_name})"
 
 
 def crg_cmd()->list[str]|None:
@@ -111,29 +141,48 @@ def cmd_impact(args):
     print(out)
 
 
-def build_review_prompt(root:Path,state:Path,base:str,profile:str,impact:str)->str:
+def build_review_prompt(root:Path,state:Path,base:str,profile:str,impact:str,*,output_dir:Path|None=None)->str:
     scope=collect_scope(root,base); heuristic=classify(scope,profile)
     cr=parse_crg_risk(impact); risk=elevate_risk(heuristic,cr)
     caps=context_caps(profile)
     compact=impact[-12000:] if impact else '(CRG unavailable; use git diff plus targeted graph evidence.)'
     prompt=f'''# Independent adversarial review\n\nBase: {base}\nProfile: {profile}\nRisk: {risk['risk']} ({risk['reason']})\nChanged files: {scope['file_count']}\n\nCode Review Graph compact impact:\n```text\n{compact}\n```\n\nYou are the independent reviewer. Work read-only.\n\nContext policy:\n1. Start from the git diff and the CRG impact above.\n2. If more evidence is needed, use code-review-graph with CRG_DATA_DIR already provided by the environment. Prefer `detect-changes --brief`, affected flows, callers/importers/tests, and bounded/minimal context.\n3. Use Graphify only for architecture/community/path questions not answered by CRG.\n4. Use CodeGraph only when exact symbol navigation is materially better.\n5. Use Context7 only for version-sensitive external library/API facts.\n6. Read raw source only for changed/impacted locations needed to prove a finding.\n\nReview only for correctness, security/auth, data integrity, concurrency, backwards compatibility, concrete regression risks, and missing tests. No style-only findings; Ponytail handles final code quality.\n\nReturn at most {caps['findings']} findings. Each finding: SEVERITY | CONFIDENCE | FILE:LINE | CONCRETE FAILURE SCENARIO | EVIDENCE.\nDo not modify files and do not propose broad rewrites.\nFinish with a single-line JSON object containing status (PASS only when no unresolved findings, otherwise FAIL) and a nonempty evidence list of concrete checked facts.\n'''
     enforce_budget(prompt,caps['context_chars'],'review context')
-    path=task_state(state)/'state'/'current-review.md'; path.write_text(prompt)
-    save_json(task_state(state)/'state'/'current-review.json',{'base':base,'profile':profile,'risk':risk,'scope':scope,'created_at':int(time.time())})
+    # An adhoc commit/PR target writes to its own directory under external state,
+    # never into the active task's own current-review.md/json -- reviewing an
+    # unrelated commit or PR must not clobber the active task's review artifact.
+    directory=output_dir or task_state(state)/'state'
+    directory.mkdir(parents=True,exist_ok=True)
+    (directory/'current-review.md').write_text(prompt)
+    save_json(directory/'current-review.json',{'base':base,'profile':profile,'risk':risk,'scope':scope,'created_at':int(time.time())})
     return prompt
 
 
 def cmd_review(args):
     root=git_root(); state=repo_state(root)
-    impact=crg_impact(root,state,args.base,refresh=args.refresh,build_if_missing=args.build) if crg_cmd() else ''
-    prompt=build_review_prompt(root,state,args.base,args.profile,impact)
-    print('Review context: ',task_state(state)/'state'/'current-review.md')
-    print('CRG:            ','ready' if impact else ('installed but graph unavailable' if crg_cmd() else 'missing'))
-    if not args.launch:return
-    codex=shutil.which('codex')
-    if not codex: raise SystemExit('Codex CLI missing. Review prompt was prepared; rerun with Codex installed.')
-    # Codex exec supports a read-only sandbox. The CRG external-data environment
-    # is inherited so the reviewer can query the graph without touching the repo.
-    env=crg_env(state)
-    p=subprocess.run([codex,'exec','-s','read-only','-C',str(root),prompt],cwd=root,env=env)
-    raise SystemExit(p.returncode)
+    commit=getattr(args,'commit',None); pr=getattr(args,'pr',None)
+    if commit and pr: raise SystemExit('Use --commit or --pr, not both.')
+    label=None; output_dir=None
+    context:contextlib.AbstractContextManager[Path]
+    if commit:
+        head,base=resolve_commit_target(root,commit)
+        context=temp_worktree(root,head); label=f'commit {head[:12]}'; output_dir=state/'adhoc-reviews'/head[:12]
+    elif pr:
+        head,base,label=resolve_pr_target(root,pr)
+        context=temp_worktree(root,head); output_dir=state/'adhoc-reviews'/f'pr-{pr}'
+    else:
+        base=resolve_base(root,args.base,state); context=contextlib.nullcontext(root)
+    with context as review_root:
+        impact=crg_impact(review_root,state,base,refresh=args.refresh,build_if_missing=args.build) if crg_cmd() else ''
+        prompt=build_review_prompt(review_root,state,base,args.profile,impact,output_dir=output_dir)
+        review_path=(output_dir/'current-review.md') if output_dir else task_state(state)/'state'/'current-review.md'
+        print('Review context: ',review_path,f'({label})' if label else '')
+        print('CRG:            ','ready' if impact else ('installed but graph unavailable' if crg_cmd() else 'missing'))
+        if not args.launch:return
+        codex=shutil.which('codex')
+        if not codex: raise SystemExit('Codex CLI missing. Review prompt was prepared; rerun with Codex installed.')
+        # Codex exec supports a read-only sandbox. The CRG external-data environment
+        # is inherited so the reviewer can query the graph without touching the repo.
+        env=crg_env(state)
+        p=subprocess.run([codex,'exec','-s','read-only','-C',str(review_root),prompt],cwd=review_root,env=env)
+        raise SystemExit(p.returncode)

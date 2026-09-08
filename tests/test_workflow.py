@@ -860,6 +860,44 @@ if mode=='exit': sys.exit(2)
         state = Path(self.ai('path').strip())
         self.assertTrue((state / 'state/current-review.md').exists())
 
+    def test_review_commit_targets_a_specific_commit_without_touching_the_checkout(self):
+        # `ai review --commit` reviews one commit in isolation, in a disposable
+        # worktree, and must never move this checkout's own HEAD or leave files dirty.
+        before_head = self.git('rev-parse', 'HEAD')
+        (self.repo / 'app.txt').write_text('second commit content\n')
+        self.git('commit', '-am', 'second commit')
+        second = self.git('rev-parse', 'HEAD')
+        self.git('reset', '--hard', before_head)  # this checkout goes back to being clean/behind
+
+        output = self.ai('review', '--commit', second, '--no-launch')
+        self.assertIn(f'(commit {second[:12]})', output)
+        state = Path(self.ai('path').strip()).parents[1]
+        artifact = state / 'adhoc-reviews' / second[:12] / 'current-review.md'
+        self.assertTrue(artifact.is_file())
+        self.assertIn('Changed files: 1', artifact.read_text())
+        # The active task's own review artifact must be untouched by an adhoc review.
+        self.assertFalse((Path(self.ai('path').strip()) / 'state/current-review.md').exists())
+
+        # This checkout is exactly where it was before the review ran.
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before_head)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(len(self.git('worktree', 'list').splitlines()), 1)  # only this repo's own entry left
+
+    def test_review_commit_and_pr_together_is_rejected_by_the_parser(self):
+        self.ai('review', '--commit', 'HEAD', '--pr', '1', '--no-launch', ok=False)
+
+    def test_review_bad_commit_fails_closed(self):
+        output = self.ai('review', '--commit', 'not-a-real-sha', '--no-launch', ok=False)
+        self.assertIn('does not exist', output)
+
+    def test_review_pr_without_gh_fails_with_an_actionable_message(self):
+        env = dict(self.env)
+        env['PATH'] = '/usr/bin:/bin'  # a PATH with no `gh` on it
+        result = subprocess.run([sys.executable, str(ROOT / 'ai_stack/cli.py'), 'review', '--pr', '1', '--no-launch'],
+                                cwd=self.repo, env=env, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('GitHub CLI (gh) missing', result.stdout + result.stderr)
+
     def test_docs_and_figma_and_crg_and_graph_doctor_without_external_tools(self):
         docs = self.ai('docs', 'doctor')
         self.assertIn('Context7:', docs)

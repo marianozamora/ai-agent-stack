@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib, json, os, re, subprocess, sys, tempfile, time
+import contextlib, hashlib, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 from typing import Any
 from workflow import ORDER
@@ -40,6 +40,24 @@ def run(cmd:list[str], cwd:Path|None=None, check=True, capture=True, env=None)->
 def git_root()->Path:
     try: return Path(run(["git","rev-parse","--show-toplevel"]))
     except Exception as exc: raise SystemExit("Not inside a git repository.") from exc
+
+
+@contextlib.contextmanager
+def temp_worktree(root:Path,ref:str):
+    """A detached, disposable worktree checked out at `ref`.
+
+    Lets a command review a target (a commit, a fetched PR head) without ever
+    touching the caller's own working tree or branch. Shares the same object
+    database as `root`, so nothing needs re-cloning or re-fetching for content
+    already reachable from `root`. Always removed on exit, even on error.
+    """
+    with tempfile.TemporaryDirectory(prefix='ai-review-target-') as directory:
+        path=Path(directory)/'checkout'
+        run(["git","worktree","add","--detach",str(path),ref],cwd=root)
+        try:
+            yield path
+        finally:
+            run(["git","worktree","remove","--force",str(path)],cwd=root,check=False)
 
 
 def remote_id(root:Path)->tuple[str,str]:
@@ -230,6 +248,9 @@ def profile_repo(root:Path,state:Path)->dict:
 
 
 BASE_CANDIDATES = ('main','master','develop','trunk')
+EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's well-known empty-tree object,
+# present in every repository with no ref pointing to it; the base a root commit
+# (no parent to diff against) uses instead.
 
 
 def verify_ref(root:Path,ref:str)->bool:
@@ -305,7 +326,10 @@ def resolve_base(root:Path,base:str|None,state:Path|None=None)->str:
 def collect_scope(root:Path,base:str)->dict:
     # `base` must already be resolved by resolve_base(); this guard keeps the old
     # silent degradation to HEAD from ever creeping back in through a new call site.
-    if not verify_ref(root,base): raise SystemExit(base_error(root,base,source='an unresolved caller'))
+    # EMPTY_TREE is a tree object, not a commit-ish, so verify_ref() (which checks
+    # `^{commit}`) would reject it even though `git diff` itself accepts it fine.
+    if base!=EMPTY_TREE and not verify_ref(root,base):
+        raise SystemExit(base_error(root,base,source='an unresolved caller'))
     files=run(["git","diff","--name-only",base],cwd=root,check=False).splitlines()
     untracked=run(["git","ls-files","--others","--exclude-standard"],cwd=root,check=False).splitlines()
     files=sorted(set([f for f in files+untracked if f and not any(f.startswith(p) for p in AI_PATTERNS)]))

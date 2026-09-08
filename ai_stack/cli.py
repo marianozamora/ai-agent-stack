@@ -77,7 +77,9 @@ def parser():
     tl=sp.add_parser('tasks'); tl.add_argument('--status',choices=['active','paused','closed']); tl.add_argument('--json',action='store_true'); tl.set_defaults(func=cmd_tasks)
     tk=sp.add_parser('ticket'); tks=tk.add_subparsers(dest='ticket_cmd',required=True); tk.set_defaults(func=cmd_ticket)
     tkc=tks.add_parser('check'); tkc.add_argument('--file'); tkc.add_argument('--text'); tkc.add_argument('--json',action='store_true')
-    rev=sp.add_parser('review'); rev.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); rev.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); rev.add_argument('--refresh',action='store_true'); rev.add_argument('--build',action='store_true'); rev.add_argument('--no-launch',dest='launch',action='store_false',default=True); rev.set_defaults(func=cmd_review)
+    rev=sp.add_parser('review'); rev.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); rev.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); rev.add_argument('--refresh',action='store_true'); rev.add_argument('--build',action='store_true'); rev.add_argument('--no-launch',dest='launch',action='store_false',default=True)
+    revtarget=rev.add_mutually_exclusive_group(); revtarget.add_argument('--commit',help='Review this one commit in isolation (against its parent), in a disposable worktree; ignores --base'); revtarget.add_argument('--pr',type=int,help='Review this GitHub PR by number, in a disposable worktree; needs gh, ignores --base')
+    rev.set_defaults(func=cmd_review)
     imp=sp.add_parser('impact'); imp.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); imp.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); imp.add_argument('--refresh',action='store_true'); imp.add_argument('--build',action='store_true'); imp.set_defaults(func=cmd_impact)
     q=sp.add_parser('ready'); q.add_argument('--no-launch',action='store_true',help=argparse.SUPPRESS); q.set_defaults(func=cmd_ready)
     gate=sp.add_parser('gate'); gate.add_argument('name',choices=GATES); gate.add_argument('--timeout',type=int,default=600); gate.add_argument('--force-unlock',action='store_true',help="Reclaim this task's lock when the owning process is gone (must precede the gate name)"); gate.add_argument('command',nargs=argparse.REMAINDER); gate.set_defaults(func=cmd_gate)
@@ -169,7 +171,11 @@ def main():
     # `init` is exempt: it must be runnable in a brand-new repo with zero commits
     # (nothing to verify any ref against yet), which is exactly the state `ai init`
     # exists to bootstrap from; cmd_init resolves its own base, tolerantly.
-    if hasattr(args,'base') and args.cmd!='init':
+    # `review --commit`/`--pr` is exempt too: its base is derived from the target
+    # itself (the commit's parent, or the PR's own base branch), not from --base,
+    # and it runs against a disposable worktree cmd_review builds, not this root.
+    adhoc_review=args.cmd=='review' and (getattr(args,'commit',None) or getattr(args,'pr',None))
+    if hasattr(args,'base') and args.cmd!='init' and not adhoc_review:
         root=git_root(); args.base=core.resolve_base(root,args.base,repo_state(root))
     args.func(args)
 

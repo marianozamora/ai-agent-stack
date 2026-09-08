@@ -117,7 +117,8 @@ Prepare or launch a bounded Codex review.
 
 ```text
 usage: ai review [-h] [--profile {fast,standard,strict}] [--base BASE]
-                 [--refresh] [--build] [--no-launch] [--task-id TASK_ID]
+                 [--refresh] [--build] [--no-launch]
+                 [--commit COMMIT | --pr PR] [--task-id TASK_ID]
 ```
 
 ## `ai impact`
