@@ -1,11 +1,12 @@
 from __future__ import annotations
-import hashlib, json, os, re, shutil, sys, textwrap, time, uuid
+import hashlib, json, re, sys, textwrap, time, uuid
 from pathlib import Path
 from core import classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, safe_head, save_json, shasum, task_state
 from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
 from metrics import record_metric
 from prompts import assign_prompt_variants
+from providers import builder as get_builder
 from skills import load_skill_context, select_skills
 from tools import ctx7_cmd
 from workflow import analyze_ticket_text
@@ -226,11 +227,10 @@ def cmd_planrun(args,launch:bool):
         if ticket_analysis['blockers_mentioned']:
             print('  blockers:   ','; '.join(ticket_analysis['blockers_mentioned'])+' (advisory; not verified)')
     if launch:
-        claude=shutil.which('claude')
-        if not claude: raise SystemExit('Claude CLI missing. Use ai plan to only prepare.')
+        active_builder=get_builder(state)
         env=crg_env(state)
         env['AI_TASK_ID']=load_json(task_state(state)/'task.json',{})['id']
-        os.execvpe(claude,[claude,prompt],env)
+        active_builder.launch(prompt,root,env)  # replaces this process; never returns on success
 
 
 def cmd_ticket(args):

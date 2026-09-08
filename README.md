@@ -100,7 +100,7 @@ Optional integrations include Context7, Graphify, CodeGraph, Code Review Graph, 
 ## Guarantees and limits
 
 - Gate evidence is reproducible and invalidated when its inputs change.
-- Semantic validators run Codex read-only and require structured verdicts.
+- Semantic validators run through a configured reviewer (Codex by default) read-only and require structured verdicts; see `ai providers` to inspect or swap the builder/reviewer.
 - Learned lessons require human confirmation and cannot relax required gates.
 - Token/context limits are profile-bound; missing usage remains unreported rather than estimated.
 - `PR_READY` means the configured evidence is fresh. It is not permission to merge or deploy without the repository's normal human and CI controls.

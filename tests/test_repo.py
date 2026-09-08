@@ -163,6 +163,14 @@ class RepoSandboxTests(unittest.TestCase):
         parsed = json.loads(out)
         self.assertIn('languages', parsed)
 
+    def test_cmd_profile_deep_reports_the_configured_reviewer_by_name(self):
+        # setUp() already stubs repo.shutil.which -> None for every module, so this
+        # reaches the reviewer-availability check with no reviewer available.
+        with self.assertRaises(SystemExit) as caught:
+            repo.cmd_profile(argparse.Namespace(refresh=False, deep=True, timeout=5))
+        self.assertEqual(str(caught.exception),
+                         'Codex CLI missing. Install/authenticate Codex to run a deep profile.')
+
 
 class CmdInitOnAnEmptyRepoTests(unittest.TestCase):
     """A repo with zero commits has no ref any candidate base can verify against --

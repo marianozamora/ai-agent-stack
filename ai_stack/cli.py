@@ -20,6 +20,7 @@ from learning import cmd_confidence, cmd_failures, cmd_lessons
 from lifecycle import cmd_handoff, cmd_planrun, cmd_ticket
 from metrics import cmd_metrics
 from prompts import cmd_prompt
+from providers import BUILDERS, REVIEWERS, cmd_providers
 from repo import cmd_doctor, cmd_init, cmd_optimize, cmd_profile, cmd_rules, cmd_status
 from skills import cmd_skill
 from tasks import cmd_close, cmd_current, cmd_finish, cmd_start, cmd_switch, cmd_tasks, cmd_work
@@ -51,6 +52,7 @@ COMMAND_DESCRIPTIONS = {
     'rules':'Manage repository-specific rules.', 'docs':'Use cached, version-specific library documentation.',
     'figma':'Check or configure Figma connectivity.', 'crg':'Manage Code Review Graph data.',
     'graph':'Build or query the architecture graph.',
+    'providers':'Inspect or configure the builder/reviewer providers.',
 }
 
 
@@ -143,6 +145,7 @@ def parser():
     f=sp.add_parser('figma'); fs=f.add_subparsers(dest='figma_cmd',required=True); fs.add_parser('doctor'); fsetup=fs.add_parser('setup'); fsetup.add_argument('--claude-only',action='store_true'); fsetup.add_argument('--codex-only',action='store_true'); f.set_defaults(func=cmd_figma)
     c=sp.add_parser('crg'); cs=c.add_subparsers(dest='crg_cmd',required=True); cs.add_parser('doctor'); cs.add_parser('build'); cs.add_parser('status'); up=cs.add_parser('update'); up.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); up.add_argument('--brief',action='store_true',default=True); de=cs.add_parser('detect'); de.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); de.add_argument('--brief',action='store_true',default=True); c.set_defaults(func=cmd_crg)
     g=sp.add_parser('graph'); gs=g.add_subparsers(dest='graph_cmd',required=True); gs.add_parser('doctor'); gs.add_parser('build'); gs.add_parser('sync'); q=gs.add_parser('query'); q.add_argument('query'); pa=gs.add_parser('path'); pa.add_argument('start'); pa.add_argument('end'); e=gs.add_parser('explain'); e.add_argument('node'); g.set_defaults(func=cmd_graph)
+    pv=sp.add_parser('providers'); pvs=pv.add_subparsers(dest='providers_cmd'); pvshow=pvs.add_parser('show'); pvshow.add_argument('--json',action='store_true'); pvs.add_parser('doctor'); pvset=pvs.add_parser('set'); pvset.add_argument('--builder',choices=list(BUILDERS)); pvset.add_argument('--reviewer',choices=[*REVIEWERS,'command']); pvset.add_argument('reviewer_command',nargs=argparse.REMAINDER,help='Executable for --reviewer command, after --'); pv.set_defaults(func=cmd_providers)
     for name,command in sp.choices.items(): command.description=COMMAND_DESCRIPTIONS[name]
     for choice in sp._choices_actions: choice.help=COMMAND_DESCRIPTIONS[choice.dest]
     for command in sp.choices.values():
