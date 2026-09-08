@@ -46,7 +46,12 @@ def ensure_contract(state:Path,task:str,figma:str|None=None):
           enabled: {str(bool(figma)).lower()}
         '''))
     elif task:
-        s=p.read_text(); s=re.sub(r'^objective:.*$',f'objective: {json.dumps(task)}',s,count=1,flags=re.M); p.write_text(s)
+        # A function replacement, not an f-string: re.sub() treats a string repl as its own
+        # backslash-escape template, so json.dumps() output containing a non-ASCII char
+        # (escaped as \uXXXX) raises "bad escape \u" - a callable's return value is
+        # inserted literally instead.
+        def _objective_line(m:re.Match)->str: return f'objective: {json.dumps(task)}'
+        s=p.read_text(); s=re.sub(r'^objective:.*$',_objective_line,s,count=1,flags=re.M); p.write_text(s)
     if figma:
         d=task_state(state)/'contracts'/'current-design.yml'
         d.write_text(textwrap.dedent(f'''\
@@ -73,7 +78,12 @@ def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
     if not items: return False
     text=contract_path.read_text()
     if not re.search(r'^acceptance:\s*\[\s*\]\s*$',text,re.M): return False
-    contract_path.write_text(re.sub(r'^acceptance:\s*\[\s*\]\s*$','acceptance: '+json.dumps(items),text,flags=re.M))
+    # A function replacement, not a plain string: re.sub() treats a string repl as its own
+    # backslash-escape template, so json.dumps() output containing a non-ASCII character
+    # (escaped as \uXXXX, e.g. an accented word from a Spanish ticket) raises
+    # "bad escape \u" - a callable's return value is inserted literally instead.
+    def _acceptance_line(m:re.Match)->str: return 'acceptance: '+json.dumps(items)
+    contract_path.write_text(re.sub(r'^acceptance:\s*\[\s*\]\s*$',_acceptance_line,text,flags=re.M))
     return True
 
 

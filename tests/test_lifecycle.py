@@ -66,6 +66,16 @@ class LifecyclePureTests(unittest.TestCase):
         self.assertFalse(lifecycle.populate_acceptance_if_empty(p, ['new item']))
         self.assertEqual(p.read_text(), original)
 
+    def test_populate_acceptance_survives_non_ascii_items(self):
+        # Regression: json.dumps() escapes non-ASCII as \uXXXX by default, and re.sub()
+        # interprets a plain string repl as its own backslash-escape template - a bare
+        # accented word ("función") used to raise "re.error: bad escape \u".
+        p = self.dir / 'c.yml'
+        p.write_text('acceptance: []\n')
+        items = ['La función suma(a, b) sigue funcionando', 'Añade soporte para ñ']
+        self.assertTrue(lifecycle.populate_acceptance_if_empty(p, items))
+        self.assertIn('acceptance: ' + json.dumps(items), p.read_text())
+
     # --- semantic_fingerprint ---------------------------------------
     def test_semantic_fingerprint_hashes_only_present_files(self):
         (self.dir / 'package.json').write_text('{"name":"x"}')
@@ -172,6 +182,17 @@ class LifecycleSandboxTests(unittest.TestCase):
         self.assertIn('objective: "Second task"', text)
         self.assertNotIn('First task', text)
         self.assertIn('acceptance: ["human wrote this"]', text)
+
+    def test_ensure_contract_rewrites_objective_with_non_ascii_text(self):
+        # Regression: same re.sub()-repl-is-a-template pitfall as populate_acceptance_if_empty -
+        # rewriting the objective on an existing contract used to crash on an accented task string.
+        state = Path(self.tmp.name) / 'st3b'
+        state.mkdir()
+        lifecycle.ensure_contract(state, 'First task', None)
+        task = 'agregar función resta a app.py'
+        lifecycle.ensure_contract(state, task, None)
+        pr = core.task_state(state) / 'contracts' / 'current-pr.yml'
+        self.assertIn(f'objective: {json.dumps(task)}', pr.read_text())
 
     # --- cmd_handoff -------------------------------------------------
     def test_cmd_handoff_writes_payload_within_budget_and_prints_it(self):
