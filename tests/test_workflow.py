@@ -782,6 +782,29 @@ if mode=='exit': sys.exit(2)
         self.assertIn('Graphify:', graph)
         self.assertIn('Graph storage:', graph)
 
+    def test_deploy_reports_none_detected_on_a_plain_repo(self):
+        output = self.ai('deploy')
+        self.assertIn('Docker: none detected', output)
+        self.assertIn('No deployment tooling or documentation detected', output)
+
+    def test_deploy_detects_docker_ci_and_deploy_docs(self):
+        (self.repo / 'Dockerfile').write_text('FROM scratch\n')
+        workflows = self.repo / '.github/workflows'
+        workflows.mkdir(parents=True)
+        (workflows / 'ci.yml').write_text('name: ci\n')
+        (self.repo / 'scripts').mkdir()
+        (self.repo / 'scripts/deploy.sh').write_text('#!/bin/sh\necho deploying\n')
+        (self.repo / 'README.md').write_text('# App\n\n## Deploy\n\nRun scripts/deploy.sh\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'add deploy tooling')
+
+        output = self.ai('deploy')
+        self.assertIn('Dockerfile', output)
+        self.assertIn('.github/workflows/ci.yml', output)
+        self.assertIn('scripts/deploy.sh', output)
+        self.assertIn('README.md', output)
+        self.assertNotIn('No deployment tooling', output)
+
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):

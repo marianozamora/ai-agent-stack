@@ -69,6 +69,40 @@ a defect, breaking `git blame` continuity for no correctness benefit. The
 format-check step stays wired up only as an informational signal for anyone
 curious how far the tree has drifted from PEP8 defaults, never as a gate.
 
+## Test categories
+
+`tests/` uses a naming convention rather than a test framework's tagging
+feature (no `pytest.mark.*`, since CI's actual test runner is stdlib
+`unittest discover`, not `pytest` - `pytest` only reads these same
+`unittest.TestCase` files locally as a convenience, per the zero-dependency
+stance). The category is the filename:
+
+- `test_core_helpers.py`, `test_skills_create.py` — **unit**: import a module
+  directly off `sys.path` (no subprocess), for pure functions and
+  command handlers that take an `argparse.Namespace` directly.
+- `test_workflow.py`, `test_workflow_helpers.py` — **integration**: drive the
+  real `ai_stack/cli.py` entry point as a subprocess against a throwaway git
+  repo, exercising the full CLI/argparse/state-file path.
+- `test_performance_budgets.py` — **performance/budget**: pins
+  `enforce_budget()`'s exact boundary and confirms a profile's
+  `context_caps()['context_chars']` actually changes pass/fail through the
+  full `build_prompt()` path, not just in the caps table.
+- `test_security_injection.py` — **security**: pins the mitigations for the
+  two user-string-into-subprocess-argv surfaces this project has (`--base`
+  reaching `git`, a skill name reaching a filesystem path). There's no
+  `shell=True`/`os.system` anywhere in `ai_stack/` (`core.run()` always calls
+  `subprocess.run` with an argv list), so classic shell metacharacter
+  injection isn't a reachable class here; what's tested is git *option*
+  injection via a ref-shaped `--base` value and path traversal via an
+  unvalidated skill name.
+
+Run one category in isolation with `unittest`'s own `-p` pattern (no plugin
+needed): `python3 -m unittest discover -s tests -p 'test_security_*.py'`. A
+genuine end-to-end (e2e) category — one that launches Claude/Codex for real
+instead of the fixture reviewers `test_workflow.py` uses — isn't set up yet;
+it would need real model credentials and cost, so it's deliberately left as a
+manual/CI-optional addition rather than part of the default suite.
+
 ## Context hierarchy
 
 ```mermaid

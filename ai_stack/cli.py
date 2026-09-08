@@ -21,7 +21,7 @@ from metrics import cmd_metrics
 from prompts import cmd_prompt
 from repo import cmd_doctor, cmd_init, cmd_optimize, cmd_profile, cmd_rules, cmd_status
 from skills import cmd_skill
-from tools import cmd_docs, cmd_figma, cmd_graph
+from tools import cmd_deploy, cmd_docs, cmd_figma, cmd_graph
 from validators import INSTRUCTIONS
 
 
@@ -90,7 +90,7 @@ def parser():
     for name in ('confirm','reject','retire','promote'):
         sub=lcs.add_parser(name); sub.add_argument('lesson_id')
     lprune=lcs.add_parser('prune'); lprune.add_argument('--unseen-days',type=int,default=90)
-    sp.add_parser('status').set_defaults(func=cmd_status); sp.add_parser('doctor').set_defaults(func=cmd_doctor); sp.add_parser('path').set_defaults(func=cmd_path); sp.add_parser('optimize').set_defaults(func=cmd_optimize)
+    sp.add_parser('status').set_defaults(func=cmd_status); sp.add_parser('doctor').set_defaults(func=cmd_doctor); sp.add_parser('path').set_defaults(func=cmd_path); sp.add_parser('optimize').set_defaults(func=cmd_optimize); sp.add_parser('deploy').set_defaults(func=cmd_deploy)
     sk=sp.add_parser('skill'); sks=sk.add_subparsers(dest='skill_cmd'); sl=sks.add_parser('list'); sl.add_argument('--task'); sl.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); se=sks.add_parser('explain'); se.add_argument('name'); sen=sks.add_parser('enable'); sen.add_argument('name'); sdis=sks.add_parser('disable'); sdis.add_argument('name'); sd=sks.add_parser('dry-run'); sd.add_argument('name'); sd.add_argument('--profile',choices=['fast','standard','strict'],default='standard')
     sc=sks.add_parser('create'); sc.add_argument('name'); sc.add_argument('--category',required=True); sc.add_argument('--cost',default='medium',choices=['tiny','low','medium','high']); sc.add_argument('--priority',type=int,default=50); sc.add_argument('--task-types',default='',dest='task_types',help='comma-separated: bug,feature,architecture,design,prototype,planning'); sc.add_argument('--triggers',default='',help='comma-separated keyword triggers'); sc.add_argument('--stages',default='',help='comma-separated prompt stages'); sc.add_argument('--prompt',required=True,help='Skill prompt body, lazy-loaded once selected'); sc.add_argument('--description',default='',help='Short README summary'); sc.add_argument('--always-consider',action='store_true')
     sk.set_defaults(func=cmd_skill)

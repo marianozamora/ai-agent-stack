@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, shutil, subprocess, time
+import fnmatch, json, os, re, shutil, subprocess, time
 from pathlib import Path
 from core import git_root, load_json, profile_repo, repo_state, run, save_json, shasum
 
@@ -108,3 +108,41 @@ def cmd_figma(args):
         if not did: raise SystemExit('Neither Claude nor Codex CLI is available.')
         print('Complete the OAuth authentication flow in each client.')
         return
+
+
+def detect_deploy(root:Path)->dict:
+    # Heuristic, offline, tracked-files-only detection - no network, no model call.
+    # Mirrors profile_repo()'s use of `git ls-files` so untracked/ignored scratch
+    # files (build output, local .env) never influence the result.
+    try: files=run(["git","ls-files"],cwd=root).splitlines()
+    except Exception: files=[]
+    fset=set(files)
+    docker=[f for f in files if f=='Dockerfile' or f.endswith('/Dockerfile') or fnmatch.fnmatch(f,'docker-compose*.y*ml')]
+    ci_cd=sorted(f for f in files if f.startswith('.github/workflows/') and f.endswith(('.yml','.yaml')))
+    paas=[f for f in ('Procfile','fly.toml','render.yaml','vercel.json','netlify.toml','app.yaml','now.json','serverless.yml','serverless.yaml') if f in fset]
+    infra=sorted(f for f in files if f.endswith('.tf') or f.startswith(('k8s/','kubernetes/','manifests/','helm/','charts/')))
+    scripts=sorted(f for f in files if re.search(r'(^|/)deploy[^/]*\.(sh|py|js|ts|rb)$',f,re.I) or (f=='Makefile' and 'deploy' in (root/f).read_text(errors='ignore').lower()))
+    docs=[]
+    for f in files:
+        if f=='README.md' or (f.startswith('docs/') and f.endswith('.md')):
+            text=(root/f).read_text(errors='ignore')
+            if re.search(r'(?im)^#+\s*deploy',text): docs.append(f)
+    return {'docker':docker,'ci_cd':ci_cd,'paas':paas,'infra':infra,'scripts':scripts,'docs':docs}
+
+
+def cmd_deploy(args):
+    root=git_root(); found=detect_deploy(root)
+    print('Deployment detection (local heuristic; tracked files only, no network, no model call)')
+    labels=[('Docker','docker'),('CI/CD workflows','ci_cd'),('PaaS/serverless config','paas'),
+            ('Infra as code / k8s manifests','infra'),('Deploy scripts','scripts'),('Docs with a Deploy section','docs')]
+    any_found=False
+    for label,key in labels:
+        items=found[key]
+        if items:
+            any_found=True
+            print(f'  {label}:')
+            for f in items: print('    -',f)
+        else:
+            print(f'  {label}: none detected')
+    if not any_found:
+        print('\nNo deployment tooling or documentation detected in tracked files.')
