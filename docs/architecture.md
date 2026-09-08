@@ -48,8 +48,8 @@ same-directory `from <module> import <name>`, matching the existing
   graph, each depending on several of the modules above.
 
 The boundary rule: a function lives with the domain that owns the external
-state file it reads or writes (e.g. every read/write of `metrics.jsonl` is in
-`metrics.py`); a primitive used by two or more domains moves down into
+state it reads or writes (for example, `metrics.py` owns both the audited
+`metrics.jsonl` source and its disposable SQLite query index); a primitive used by two or more domains moves down into
 `core.py` rather than one domain importing another's helper. This is a pure
 reorganization — no command, flag, output string, or file format changed.
 
@@ -57,9 +57,8 @@ reorganization — no command, flag, output string, or file format changed.
 
 `ruff check` (`F`/`E9`/`B`/`UP`) is blocking in CI: real correctness and bug
 lints only — unused imports/names, syntax errors, common bug patterns,
-outdated syntax. `mypy` and `ruff format --check` both run but are advisory
-(`continue-on-error`), for different reasons: `mypy` because the codebase has
-partial type hints and is being tightened incrementally; `ruff format`
+outdated syntax. `mypy` is also blocking and checks typed JSON/dict boundaries.
+`ruff format --check` remains advisory (`continue-on-error`)
 **permanently**, by deliberate decision, not as a pending step. This
 codebase's terse style — semicolon-joined statements, one-line function
 bodies, minimal vertical whitespace — is intentional throughout, not
@@ -174,7 +173,9 @@ LLM or treats a prior model statement as sufficient proof of readiness.
 Character budgets are enforced before writing generated prompts or handoffs.
 Model-internal tool/retry counts remain orchestration instructions. Installation
 uses validated release directories and an active symlink, with rollback when
-activation fails. CI covers Python 3.10/3.13 on Linux and macOS.
+activation fails. Pull requests run fast unit, smoke, wheel/entry-point, lint
+and type guarantees; the Python 3.10/3.13 Linux/macOS subprocess matrix runs
+after merge, weekly and on demand.
 
 ## Configured pipelines and metrics
 
@@ -197,10 +198,11 @@ bundled validators before model execution. Reviewer completion events supply
 token counts, while missing cost data remains unreported.
 
 `ai_stack/workflow.py` holds reusable configuration validation, process execution,
-usage normalization and aggregation. The CLI retains repository/task resolution
-and orchestration. Gate events include task key, task ID, profile, duration,
-outcome and optional reported usage. Metrics do not estimate missing usage or
-observe model-internal calls. Existing repository-level events are retained.
+usage normalization and aggregation. `metrics.jsonl` remains the append-only,
+human-readable audit source. `metrics.sqlite3` is a derived index: appended rows
+are indexed incrementally; rewrites and pruning trigger an automatic rebuild.
+Task/gate counts and filtered learning reads therefore avoid reparsing the entire
+JSONL history. Metrics do not estimate missing usage or observe model-internal calls.
 
 Each profile's `context_caps` also carries a `usage_tokens` runtime budget.
 `ai pipeline` sums reported input/output tokens from executed and resumed gates

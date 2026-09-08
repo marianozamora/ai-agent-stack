@@ -30,8 +30,8 @@ def cmd_docs(args):
         return
     cmd=ctx7_cmd()
     if args.docs_cmd=='detect':
-        p=load_json(state/'project-profile.json',{}) or profile_repo(root,state)
-        deps=p.get('dependencies',{}); print(json.dumps(deps,indent=2)); return
+        profile=load_json(state/'project-profile.json',{}) or profile_repo(root,state)
+        deps=profile.get('dependencies',{}); print(json.dumps(deps,indent=2)); return
     if args.docs_cmd=='library':
         if not cmd: raise SystemExit('ctx7 CLI missing. Install with: npm install -g ctx7')
         q=args.query or f"Documentation for {args.name} used by this repository"

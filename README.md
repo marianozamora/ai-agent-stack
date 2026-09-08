@@ -1,54 +1,12 @@
 # AI Agent Stack
 
-> Looking for a one-page recap of every command and diagram? See the
-> [Field Guide](docs/field-guide.md).
+A zero-footprint, token-aware workflow for using Claude Code and Codex over existing repositories.
 
-## v0.7 Skills + token efficiency
+The stack prepares bounded implementation context, records fresh validation evidence and certifies whether a change is ready for human review. Framework state stays outside the repository being changed.
 
-Skills are strategies, not additional agents. The router reads only compact registry metadata and lazy-loads at most 1/2/3 skill prompts in fast/standard/strict.
+Current release: see [`VERSION`](VERSION). Changes between releases are recorded in [`CHANGELOG.md`](CHANGELOG.md).
 
-```bash
-ai skill list
-ai skill list --task "login regression"
-ai skill explain diagnosing-bugs
-ai skill dry-run tdd
-ai skill create api-contract-review --category quality --task-types feature,architecture \
-  --triggers "openapi,breaking change" --stages "diff contract,check consumers" \
-  --prompt "Compare the API contract before/after and flag breaking changes."
-ai handoff "continue auth fix" --next "run focused regression test"
-ai optimize
-```
-
-Token policy: classify first, progressive disclosure, one tool per question, diff-first review, cache before fetch, evidence before model debate, compact PASS outputs, and hard per-profile budgets. All mutable state remains under `~/.config/ai-agent-stack/repos/<repo-id>/`.
-
-`ai skill create` writes a new skill (`skill.json` + `prompt.md` + `README.md`) into the installed stack's own `skills/` directory and registers it in `skills/registry.json`, enabled by default — the same metadata-only router (`select_skills()`) picks it up automatically for future tasks whose text matches its `--triggers`/`--task-types`, no extra wiring needed. Like `ai optimize`, this touches the stack's bundled files, never the work repository.
-
-
-A **zero-footprint**, token-aware orchestration layer for Claude Code + Codex over existing repositories.
-
-It combines:
-
-- Claude routing: Haiku / Sonnet / Opus / Fable by role and risk
-- Codex adversarial review tiers
-- RTK for compressed terminal output
-- CodeGraph for symbol-level code intelligence
-- Graphify for architecture routes, communities and cross-file relationships
-- Code Review Graph (CRG) for diff impact, blast radius, affected flows, test gaps and minimal review context
-- Context7 for current, version-specific external library documentation
-- Figma MCP + Design Contracts for design-driven tickets
-- Cleanup + Ponytail final PR gates
-
-## Core principle
-
-**Nothing from the framework is committed to the repository you are working on.**
-
-```text
-~/.local/share/ai-agent-stack/          # engine
-~/.config/ai-agent-stack/repos/<id>/    # rules, contracts, graph, docs cache, metrics
-~/work/company-repo/                    # no framework files
-```
-
-## Install
+## Quickstart
 
 ```bash
 git clone https://github.com/marianozamora/ai-agent-stack.git
@@ -56,760 +14,100 @@ cd ai-agent-stack
 ./install.sh
 ```
 
-Ensure `~/.local/bin` is on `PATH`, then from any git repository:
+Ensure `~/.local/bin` is on `PATH`. Then, inside a Git repository:
 
 ```bash
 ai init
 ai doctor
+
+# Configure project-specific deterministic checks once.
+ai validators set --adapter exit-code --evidence "Tests passed" checks -- npm test
+ai validators set --adapter exit-code --evidence "Regression suite passed" regression -- npm run test:regression
+ai validators install
+
+# Run a task.
+ai plan "implement ticket #1450" --task-id 1450
+ai run "implement ticket #1450" --task-id 1450
+ai pipeline --resume --task-id 1450
+ai ready --task-id 1450
 ```
 
-Optional tools:
+Use `ai plan` when another agent will consume the generated prompt, or `ai run` to launch Claude directly. `ai pipeline` executes configured gates; `ai ready` only evaluates recorded, fresh evidence and never launches a model.
 
-```bash
-npm install -g ctx7                         # Context7
-uv tool install graphifyy                   # Graphify
-uv tool install code-review-graph             # Code Review Graph
-npm i -g @colbymchenry/codegraph            # CodeGraph
-brew install rtk                            # RTK (macOS)
-```
+See the generated [command reference](docs/commands.md) for every command and flag, and the [field guide](docs/field-guide.md) for the complete lifecycle diagrams.
 
-## Daily usage
-
-```bash
-ai plan "implement ticket #1450"
-ai impact --base main                      # deterministic structural impact
-ai run  "implement ticket #1450"
-ai review --base main                      # CRG context -> Codex read-only
-ai run  "implement ticket #1450" --profile strict
-ai run  "ticket with design" --figma "https://figma.com/design/..."
-ai ready
-```
-
-The external repo state can be inspected with:
-
-```bash
-ai path
-ai status
-```
-
-## Task lifecycle
+## Workflow
 
 ```mermaid
 flowchart LR
-    A["ai plan / ai run<br/>(profile, base, --figma, --ticket-file)"] --> B["Orchestration prompt<br/>rules + skills + lessons + contract"]
-    B --> C["Implementation<br/>(Claude, outside this diagram)"]
-    C --> D["ai gate NAME -- COMMAND<br/>(one per required gate)"]
-    D -->|PASS| E{More required<br/>gates?}
-    D -->|FAIL| D
-    E -->|yes| D
-    E -->|no| F["ai ready"]
-    F -->|fresh + passed| G["PR_READY"]
-    F -->|missing/stale| H["NEEDS_HUMAN"]
-    F -->|any failed| I["FAILED"]
-    J["ai pipeline"] -.->|runs every required gate,<br/>then ai ready, in one call| D
+    A["plan / run"] --> B["implementation"]
+    B --> C["configured gates"]
+    C --> D{"fresh evidence?"}
+    D -->|yes| E["PR_READY"]
+    D -->|missing| F["NEEDS_HUMAN"]
+    D -->|failed| G["FAILED"]
 ```
 
-`ai gate`/`ai pipeline` bind every recorded PASS to a fingerprint of the repo,
-index, base, plan, rules and validator config (`evidence_fingerprint()`); any
-change invalidates it. `ai ready` never launches a model — it only recomputes
-that fingerprint against what's recorded, so certification stays reproducible
-offline.
+Every gate result is bound to a fingerprint of the repository, index, base, plan, contracts, rules and validator configuration. A relevant change invalidates prior evidence. Resume only reuses evidence whose fingerprint and artifact hashes still match.
 
-## Command reference
-
-Every command groups under `ai <command> [subcommand] [flags]`. `--json`
-is available on most report-style commands for scripting.
-
-**Core workflow**
-
-| Command | Purpose |
-|---|---|
-| `ai init` | Detect languages/tooling for the current repo; first-run setup. |
-| `ai plan "<task>"` | Build the orchestration prompt and task contract; print it (no launch). |
-| `ai run "<task>"` | Same as `plan`, then launch Claude with the prompt. |
-| `ai ready` | Certify `PR_READY`/`NEEDS_HUMAN`/`FAILED` from recorded gate evidence only. |
-| `ai gate NAME -- CMD` | Run one gate's command, record its verdict/evidence/usage. |
-| `ai pipeline [--dry-run\|--resume]` | Run every required gate in order, then `ai ready`. |
-| `ai status` / `ai doctor` | Repo state summary / tool-availability + zero-footprint check. |
-| `ai path` | Print this task's external state directory. |
-
-**Setup, validators & context tools**
-
-| Command | Purpose |
-|---|---|
-| `ai validators show\|install\|set\|remove` | Configure per-gate commands; `install` adds the bundled semantic ones. |
-| `ai validate NAME` | Entry point the bundled validators use internally (run via `ai gate`, not directly). |
-| `ai docs doctor\|setup\|detect\|library\|query` | Context7: version-specific library documentation. |
-| `ai figma doctor\|setup` | Figma MCP connectivity for design-driven tasks. |
-| `ai crg doctor\|build\|status\|update\|detect` | Code Review Graph: diff impact, blast radius, test gaps. |
-| `ai graph doctor\|build\|sync\|query\|path\|explain` | Graphify: macro architecture, routes, communities. |
-
-**Tickets, skills & rules**
-
-| Command | Purpose |
-|---|---|
-| `ai ticket check --file\|--text\|-` | Analyze pasted ticket text: acceptance criteria, Figma link, mentioned blockers. |
-| `ai skill list\|explain\|enable\|disable\|dry-run` | Inspect/tune the lazy skill router. |
-| `ai skill create <name> --category ... --prompt ...` | Add a new skill to the router (writes to the installed stack, not the repo). |
-| `ai handoff "<note>" --next "<step>"` | Write a compact resume-point for a follow-up session. |
-| `ai optimize` | Print current token-policy/budget summary. |
-| `ai rules list\|add\|remove` | Repository-specific conventions injected into every prompt. |
-
-**Measurement (v0.9)**
-
-| Command | Purpose |
-|---|---|
-| `ai metrics [--by ...] [--budget N]` | Gate/pipeline outcomes and token usage; dimensional report, CSV export, advisory budget. |
-| `ai metrics prune --older-than SPEC --confirm` | Delete recorded events older than a window (human-gated). |
-| `ai benchmark` | Routing/skill-selection comparison across profiles for fixed fixtures (no execution). |
-| `ai benchmark run\|list\|report\|compare` | End-to-end sandboxed pipeline scenarios with pass/fail verdicts; fully isolated from real state. |
-
-**Learning (v0.8)**
-
-| Command | Purpose |
-|---|---|
-| `ai profile [--deep]` | Static project profile; `--deep` is an opt-in Codex read of architecture/stack/DB/deploy. |
-| `ai confidence` | Historical pass-rate forecast card for the current change (advisory only). |
-| `ai failures [show\|rebuild\|export]` | Recurring `(gate, finding)` patterns across tasks. |
-| `ai lessons [derive\|add\|confirm\|reject\|retire\|promote\|prune]` | Empirical, human-curated context injected into future prompts. |
-| `ai prompt [list\|show\|experiment\|report\|promote\|reset\|rollback\|history]` | A/B experiments and versioning on bundled validator instructions. |
-
-## Token budgets
-
-The Context Governor enforces bounded defaults instead of unlimited context:
-
-| Profile | Skills | Raw files | Review files | Findings | Context7 queries | Review rounds |
-|---|---:|---:|---:|---:|---:|---:|
-| fast | 1 | 4 | 5 | 3 | 1 | 0 |
-| standard | 2 | 8 | 10 | 3 | 3 | 1 |
-| strict | 3 | 12 | 15 | 5 | 5 | 1 |
-
-Strict means stronger evidence/review, not unlimited agent debate.
-
-## Per-repository rules
-
-Rules are stored outside the checkout and automatically injected into orchestration context.
-
-```bash
-ai rules
-ai rules add "Controllers stay thin; business logic belongs in services."
-ai rules add --scope "src/frontend/**" "Reuse existing design-system components."
-ai rules remove 2
-```
-
-Rule precedence:
+The default gate order is:
 
 ```text
-explicit repo rule
-  > repository tooling/config
-  > established architecture
-  > nearby module convention
-  > generic SOLID / FP advice
+cleanup → checks → regression → contract → review → security
+        → ponytail → design → summary → provenance
 ```
 
-## Graphify — macro architecture
-
-Graphify maps cross-file relationships and paths. The wrapper stores its output externally using `GRAPHIFY_OUT`.
-
-```bash
-ai graph doctor
-ai graph build
-ai graph query "show the auth flow"
-ai graph path AuthService CommunityService
-ai graph explain PermissionService
-```
-
-Use Graphify for *where in the architecture?* and CodeGraph for *which exact symbols/callers?*.
-
-
-## Code Review Graph — review intelligence
-
-CRG is used for **review-time structural evidence**, not as another general-purpose agent.
-The wrapper forces its database and generated artifacts into the external per-repo state using `CRG_DATA_DIR`. It does **not** run `code-review-graph install` inside company repositories.
-
-```bash
-ai crg doctor
-ai crg build
-ai crg update --base main
-ai crg detect --base main
-```
-
-High-level commands:
-
-```bash
-ai impact --base main          # no LLM; blast radius/risk/test-gap summary
-ai impact --base main --refresh
-ai review --base main          # compact CRG impact -> Codex `exec -s read-only`
-ai review --base main --build  # build CRG first if missing
-ai review --no-launch          # only prepare the bounded review prompt
-```
-
-The risk engine allows CRG evidence to **elevate** a heuristic risk level, never lower it automatically. This keeps structural evidence conservative. Review scope should start with CRG's minimal/brief impact and only expand to Graphify, CodeGraph or raw source when needed.
-
-Tool routing:
-
-```text
-Architecture / subsystem route  -> Graphify
-Exact symbol navigation         -> CodeGraph
-Diff / blast radius / test gaps -> Code Review Graph
-External library documentation  -> Context7
-Shell/tests/log output           -> RTK
-```
-
-## Context7 — current external docs
-
-Context7 is **CLI-first** to keep documentation retrieval deterministic and bounded.
-
-```bash
-ai docs doctor
-ai docs detect                         # dependency versions detected in repo profile
-ai docs library nextjs "middleware"  # resolve and cache Context7 ID
-ai docs query nextjs "How does middleware work in this installed version?"
-```
-
-Or query an exact ID directly:
-
-```bash
-ai docs query /vercel/next.js "App Router middleware behavior"
-```
-
-Resolved library IDs are cached per repo. Docs query results are cached by query hash, so repeated reviews do not repeatedly spend Context7 calls/context. Use `--refresh` when you explicitly want new docs.
-
-Context7 is only used when a task depends on **external API/framework knowledge**. It should not be called to understand project-specific behavior.
-
-## Figma
-
-```bash
-ai run "implement checkout screen" --figma "<frame-url>"
-```
-
-The orchestrator uses Figma as an input to a compact Design Contract. Raw design context should not remain in the prompt after extraction. Ponytail additionally checks material design fidelity.
+Review, security and design are included according to profile, risk and task inputs.
 
 ## Profiles
 
-| Profile | Typical use | Raw files | Reviews | Context7 queries |
-|---|---|---:|---:|---:|
-| `fast` | trivial/local | 4 | 0 | 1 |
-| `standard` | normal feature | 8 | 1 | 3 |
-| `strict` | high-risk | 12 | 1 | 5 |
+| Profile | Skills | Raw files | Review files | Findings | Usage budget |
+|---|---:|---:|---:|---:|---:|
+| `fast` | 1 | 4 | 5 | 3 | 40,000 tokens |
+| `standard` | 2 | 8 | 10 | 3 | 120,000 tokens |
+| `strict` | 3 | 12 | 15 | 5 | 250,000 tokens |
 
-## Final PR pipeline
+Strict means stronger evidence and review, not unlimited context or agent debate.
 
-```text
-Implementation
-   ↓
-checks
-   ↓
-Regression
-   ↓
-Codex adversarial/security (conditional)
-   ↓
-Cleanup
-   ↓
-checks
-   ↓
-provenance gate
-   ↓
-Ponytail quality gate
-   ↓
-design fidelity (when applicable)
-   ↓
-PR summary
-   ↓
-PR_READY / NEEDS_HUMAN / FAILED
-```
-
-Cleanup removes unnecessary comments/debug residue and accidental Claude/Codex/AI provenance from newly generated source/docs/PR text. Existing commit history is **never silently rewritten**.
-
-## Zero-footprint check
-
-```bash
-ai doctor
-ai status
-```
-
-Known framework artifacts tracked inside the work repository cause the zero-footprint check to fail.
-
-## Why Graphify + CodeGraph + CRG + Context7?
+## State and privacy boundary
 
 ```text
-Graphify  = map of the city's roads
-CodeGraph = GPS down to the exact function
-CRG       = impact scanner for the current diff and execution flows
-Context7  = current manual for the external vehicle/API
-RTK       = compressed telemetry
-Claude/Codex = decisions and implementation/review
+~/.local/share/ai-agent-stack/           # installed engine
+~/.config/ai-agent-stack/repos/<id>/     # contracts, gates, rules, metrics, caches
+~/work/company-repo/                     # no framework state committed here
 ```
 
-The goal is to feed models the **smallest authoritative context** that can answer the current question.
+`metrics.jsonl` remains the human-readable audit source. A disposable `metrics.sqlite3` index makes task/gate queries incremental and is rebuilt automatically after the JSONL file is rewritten or removed.
 
-## License
+Optional integrations include Context7, Graphify, CodeGraph, Code Review Graph, Figma MCP and RTK. Missing optional tools degrade to explicit status rather than silently becoming evidence.
 
-This project is licensed under the [MIT License](LICENSE).
-Third-party tools mentioned in this repository are distributed separately under their respective licenses.
+## Guarantees and limits
 
-## Verified workflow (0.9.4)
+- Gate evidence is reproducible and invalidated when its inputs change.
+- Semantic validators run Codex read-only and require structured verdicts.
+- Learned lessons require human confirmation and cannot relax required gates.
+- Token/context limits are profile-bound; missing usage remains unreported rather than estimated.
+- `PR_READY` means the configured evidence is fresh. It is not permission to merge or deploy without the repository's normal human and CI controls.
 
-Select a task identity when working on multiple tickets in the same checkout:
+## Development
 
-```bash
-export AI_TASK_ID=ticket-1450
-ai plan "implement ticket #1450" --profile standard
-ai path
-# Implement the task, then run the actual project checks:
-ai gate checks -- npm test
-ai gate regression -- npm run test:regression
-ai ready
-```
-
-Use the check commands provided by your project. `ai gate` executes the command
-without an implicit shell, records its exit code and output outside the checkout,
-and binds evidence to the repository contents, index, HEAD, base revision, plan,
-contracts and repository rules. Put options before the gate name, for example
-`ai gate --timeout 120 checks -- npm test`.
-
-Required gates are `checks`, `regression`, `contract`, `cleanup`, `provenance`,
-`ponytail` and `summary`. `review` is also required for standard/strict or elevated
-risk, `security` for security-sensitive changes, and `design` for Figma tasks.
-Run your project-specific validator or review adapter through each named gate.
-For gates other than checks/regression, its final stdout line must be a JSON object
-such as `{"status":"PASS","evidence":["Acceptance criteria verified against test results"]}`.
-A failed review must emit `FAIL` or exit nonzero. A successful model process alone
-is insufficient. The framework checks recorded evidence and freshness; the chosen
-validators remain responsible for the accuracy of their conclusions.
-
-`ai ready` never launches a model. It returns `PR_READY` only when every required
-gate has fresh successful evidence; missing/stale evidence returns `NEEDS_HUMAN`
-and a failed gate returns `FAILED`, both with a nonzero exit status. Perform cleanup
-before recording final gates. Any change during a gate invalidates its result;
-rerun against the final state. Re-run affected checks after fixes.
-
-Artifacts live under `repos/<repo-id>/tasks/<task-key>/`. The key includes the
-checkout path and task ID. The default ID is the branch (HEAD for detached
-checkouts); `--task-id` overrides `AI_TASK_ID`. Rules, skills preferences and tool
-caches remain shared per repository. Existing 0.7.0 artifacts are left intact;
-run `ai plan` to initialize the new task state. `ai path` now prints that task's
-artifact directory. Use different IDs for concurrent tasks in the same checkout.
-
-Generated orchestration/review prompts and serialized handoffs are rejected when
-they exceed the selected character budget. Shorten the input or explicitly select
-a larger profile; no acceptance criteria are silently discarded. Limits on tools,
-retries and agent calls inside an independently launched model remain instructions
-for that model, not runtime counters enforced by this CLI.
-
-Installation validates a separate release before switching the active symlink.
-Failed activation restores the previous installation; previous releases are kept
-under `~/.local/share/ai-agent-stack-releases/`. Only the runtime files and license
-are copied. Reinstalling from the installed directory is supported.
-
-Run the same checks as CI locally:
+Fast checks used for pull requests:
 
 ```bash
-python3 tests/validate.py
-python3 -m unittest discover -s tests -v
+ruff check .
+mypy ai_stack
+python3 scripts/generate_command_reference.py --check
+python3 -m pytest -q --ignore=tests/test_workflow.py
+bash tests/package_smoke.sh
 bash tests/smoke.sh
 ```
 
-## Reusable validators and sequential pipeline
-
-Configure each validator once per repository. Commands are argument arrays,
-executed from the checkout without an implicit shell. Configuration is stored
-externally in `repos/<repo-id>/validators.json`, shared across tasks.
+The subprocess-heavy matrix runs after merges, weekly and on demand:
 
 ```bash
-# Options precede the gate name. Use the real commands from your project.
-ai validators set --adapter exit-code --evidence "Unit tests passed" checks -- npm test
-ai validators set --adapter exit-code --evidence "Regression suite passed" regression -- npm run test:regression
-ai validators install
-ai validators show
-
-ai pipeline --dry-run
-ai pipeline
-ai pipeline --resume
-ai metrics
-ai metrics --json
-ai metrics --all-tasks --json
+python3 -m pytest -n auto -q --ignore=tests/test_workflow.py
+python3 -m pytest -q tests/test_workflow.py
+python3 -m unittest discover -s tests
 ```
 
-The test commands above are project-specific examples. `ai validators install`
-adds bundled contract, cleanup, review, security, ponytail, design, summary and
-provenance validators. It preserves custom commands, including checks/regression,
-and refreshes previously installed bundled commands after an upgrade.
-The reusable adapters are `json` (default) and `exit-code`. The JSON adapter
-requires a final stdout line containing `status: "PASS"` and a nonempty `evidence`
-array, even for checks/regression. The exit-code adapter translates a successful
-command into that verdict using the explicitly configured evidence description.
-Use it for tools whose exit status certifies the described check; it does not
-perform a semantic review on its own. A nonzero exit always fails either adapter.
-Remove a configuration with `ai validators remove NAME`.
-
-Validators receive `AI_TASK_ID`, `AI_TASK_DIR`, `AI_REPO_STATE`, `AI_GATE` and
-`AI_BASE`. They can read task contracts, plans and prior gate logs from those
-external directories. Bundled semantic validators launch Codex; custom commands
-control their own execution.
-
-Pipeline preflight requires every applicable validator before running anything.
-Order is cleanup → checks → regression → contract → review → security →
-ponytail → design → summary → provenance, omitting conditional gates when not
-required. Cleanup here is a read-only check: apply cleanup fixes before running
-the pipeline. Any validator that changes repository/task inputs fails and stops
-the sequence. Timeouts terminate the process group on Linux/macOS. There are no
-automatic retries. Final certification still goes through `ai ready`.
-
-`--resume` reuses successful evidence only when its fingerprint and log hash are
-current. Changes to validator configuration invalidate prior evidence, as do code,
-contracts and rules changes. Summary and provenance records also bind the generated
-summary hash, so editing or deleting that artifact invalidates their evidence.
-Run one pipeline per task at a time.
-
-Bundled validators require an installed, authenticated Codex CLI supporting
-`exec --output-schema`, `--output-last-message` and `--json`. They use the
-configured default model with a read-only sandbox and no approval escalation.
-The protocol follows [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
-Each required semantic gate makes one reviewer invocation; provider usage/billing
-applies. Token counts are captured from completion events; cost is not estimated.
-
-Before running, fill the external `contracts/current-pr.yml` printed by `ai path`
-with concrete acceptance criteria and constraints. For design tasks, populate the
-design contract and provide verifiable design evidence. A reviewer must return
-`NEEDS_HUMAN` for missing evidence. An empty acceptance list is rejected before
-review. Cleanup is a read-only residue review, contract maps requirements to
-evidence, review checks correctness, security inspects trust boundaries, ponytail
-checks local conventions and design verifies material requirements.
-
-Summary and provenance require all preceding applicable gates to have fresh
-successful evidence. The summary wrapper writes `state/pr-summary.md` externally;
-provenance then reviews that draft, changed deliverables and commit messages,
-distinguishing legitimate integration names from accidental attribution. Nothing
-is published or rewritten. Reviewer output is independently checked: process
-success alone, malformed JSON, missing output, PASS with blockers, and empty
-evidence cannot pass. These are model reviews, not deterministic proofs.
-Diagnostics are retained in the task's `review/*-events.jsonl` files.
-
-Run a bundled validator individually through the gate recorder, for example
-`ai gate contract -- ai validate contract`. The `validate` entry point requires
-the gate environment so execution remains covered by its timeout and fingerprint.
-
-Metrics are scoped to the current checkout and task by default. They report gate
-attempts, passes, failures, elapsed gate time, repeated attempts and pipeline
-successes. Repeated attempts include intentional reruns, not just failed retries.
-`--all-tasks` aggregates repository events; older events without task IDs remain
-visible only in that aggregate. Optional usage comes from the validator's final
-JSON line, for example:
-
-```json
-{"status":"PASS","evidence":["Acceptance criteria verified"],"usage":{"input_tokens":1200,"output_tokens":180,"cost_usd":0.004}}
-```
-
-```bash
-ai metrics --all-tasks --by day --since 30d
-ai metrics --all-tasks --by gate --top 5
-ai metrics --all-tasks --by week --format csv
-ai metrics --all-tasks --by day --budget 2000000
-ai metrics prune --older-than 365d --confirm
-```
-
-`--by` switches to a dimensional usage report instead of the flat summary:
-`day`/`week` bucket by UTC calendar (a `--since`/`--until` window accepts
-`30d`, `12w`, or an absolute `YYYY-MM-DD`), or group by `gate`/`profile`/
-`task_type`/`task`. `--top N` keeps only the N highest-`total_tokens` rows.
-Every row keeps the same honesty rule as the flat summary: unreported usage is
-`null` and counted separately (`reported_attempts`/`unreported_attempts`),
-never zero-filled, so a row missing usage data never looks cheaper than it is.
-`--format csv` writes to STDOUT only — no `--out` flag, the same reasoning as
-`ai failures export`, so a model running inside a gate cannot write it into
-the checkout; malformed-event warnings move to STDERR in that mode so STDOUT
-stays pipeable into a spreadsheet import. `--budget N` prints one advisory
-line comparing spend in the window to `N` tokens — like the `ai pipeline`
-preflight note, this can never block anything; nothing in this stack gates on
-historical usage.
-
-`ai metrics prune` is `require_human`-guarded (refuses inside `AI_GATE`/
-`AI_TASK_DIR`, unlike `ai lessons derive`'s unrelated candidate pruning) since
-it deletes the substrate `ai failures`/`ai confidence`/`ai prompt report` read
-— a model running inside a gate must not be able to erase the record of its
-own recurring failures. It requires `--confirm`, prints what it would remove
-first, and never touches events inside the requested window.
-
-Every recorded gate event also carries `risk`, `task_type`, `stack_version`, a
-1-based `attempt` number and a bounded list of normalized, hashed `findings`
-(never raw model text — see `normalize_finding`/`finding_signature` in
-`ai_stack/workflow.py`). Nothing consumes these yet; they are the recorded
-substrate for the upcoming v0.8 failure-pattern, lessons and confidence
-features, added with no new model calls and no change to gate outcomes.
-
-Each profile also carries a runtime token budget (`fast` 40000, `standard` 120000,
-`strict` 250000 reported input+output tokens per pipeline run). `ai pipeline`
-accumulates reported usage across executed and reused gates and stops before
-starting the next gate once that budget is met, returning `NEEDS_HUMAN` instead
-of continuing to spend on further reviewer calls. Gates without reported usage
-(most exit-code adapters) do not count against the budget. `ai metrics` reports
-`pipeline_budget_exceeded` and the aggregated `pipeline_usage` totals alongside
-per-gate usage; unreported usage remains `null`, never estimated.
-
-```bash
-ai benchmark
-ai benchmark --json
-```
-
-```bash
-ai failures
-ai failures --gate cleanup --min 3 --json
-ai failures show pat_9f2c1a4b7d30
-ai failures rebuild
-ai failures export
-```
-
-`ai failures` reports failure patterns: a `(gate, finding hash)` pair observed
-across at least 2 distinct tasks. This is a verifiable fact about the recorded
-log (`metrics.jsonl`), not a diagnosis — the displayed `example` text is the
-model's original finding and is never asserted to be true. Every `ai failures`
-command recomputes patterns from `metrics.jsonl` on the spot (like `ai metrics`)
-and writes the result to `patterns.json` as a persisted snapshot; `rebuild` runs
-the same computation and prints a summary. This file is excluded from the
-evidence fingerprint, so recomputing it never invalidates an in-flight task's
-gate evidence. `export` prints anonymized
-`{gate, hash, occurrences}` counts to STDOUT only — no example text, no scope
-hint, no repository identifier, and no `--out` flag, so a model running inside
-a gate cannot write it into the checkout.
-
-```bash
-ai profile
-ai profile --deep
-ai profile --deep --refresh
-```
-
-`ai profile` prints the static, free project profile (languages, package
-managers, formatters/linters/tests detected, dependencies) that `ai plan`
-already generates on first use. `ai profile --deep` is a separate, explicit,
-opt-in step: it launches Codex read-only (same sandboxed, ephemeral,
-schema-validated protocol the bundled validators use) to read and *understand*
-the repository rather than just detect file presence — architecture pattern
-(backend/frontend split, layering), the stack actually in use, database
-technology and schema structure if any, deployment/CI-CD workflow, links to
-other repositories (submodules, workspace/monorepo references, explicit
-mentions), and a real summary of what key docs (README, ARCHITECTURE.md,
-CONTRIBUTING.md) actually say, not just that they exist. It is intentionally
-never automatic: understanding architecture requires a model call, and running
-one on every `ai plan` would silently add cost to every task. The result is
-cached in `project-deep-profile.json` keyed by the analyzed commit — rerunning
-without `--refresh` on an unchanged commit reuses it and makes no model call;
-`--refresh` forces a fresh read.
-
-Every field is labeled for what it is: a model's interpretation of the
-repository, not verified fact — the saved profile carries an explicit
-`caveat`, and the model must list anything it could not verify or was
-inferring rather than reading directly in `confidence_caveats`. `ai plan`
-references the file by path in the orchestration prompt (`not generated — run
-ai profile --deep` when absent) rather than inlining its content, so the
-injection itself costs no extra context budget; a task that needs the detail
-reads the file.
-
-```bash
-ai ticket check --file ticket.txt
-ai ticket check --text "$(pbpaste)"
-cat ticket.txt | ai ticket check
-ai plan "..." --ticket-file ticket.txt
-```
-
-`ai ticket check` reads pasted ticket content — copied from Jira, GitHub
-Issues, Linear, anywhere — and analyzes it with plain regex, no model call and
-no network: whether acceptance criteria are present (a `## Acceptance
-Criteria` heading with bullets, or `- [ ]` checklist items), a Figma link, and
-any text mentioning a blocker or dependency (`blocked by`, `depends on`,
-`waiting on`). Unlike `ai profile --deep`, there is no external fetch to
-manage credentials or connectivity for — you paste the content, it stays
-entirely local, and the analysis is deterministic pattern matching, not an
-interpretation of whether the ticket is actually sufficient to start work.
-
-`ai plan "..." --ticket-file FILE` runs the same analysis and wires the result
-into the task automatically: a detected Figma link is adopted the same way an
-inline URL in the task description already is, and detected acceptance items
-fill the contract's `acceptance: []` — using the exact same emptiness check
-the `contract` gate itself uses, so this can only ever fill a blank list,
-never overwrite a human-authored one. Blockers/dependencies mentioned in the
-text are printed as advisory lines in `ai plan`'s output and saved in the
-snapshot, never a gate: there is no live source here to confirm a mentioned
-blocker is still actually open, so surfacing it for a human to judge is the
-honest ceiling for what a pasted, un-verifiable string can support. The
-snapshot (`state/ticket.json`) is part of the evidence fingerprint, so
-re-running `--ticket-file` with different content invalidates stale evidence
-the same way `ai lessons`'/`ai prompt`'s task-scoped snapshots already do.
-
-```bash
-ai lessons derive
-ai lessons
-ai lessons confirm les_9f2c1a4b7d30
-ai lessons promote les_9f2c1a4b7d30
-ai lessons reject les_9f2c1a4b7d30
-ai lessons retire les_9f2c1a4b7d30
-ai lessons add "Prefer the repository's existing retry helper" --scope "src/workers/**"
-ai lessons prune --unseen-days 90
-```
-
-`ai lessons derive` turns failure patterns into `candidate` lessons in the
-repo-scoped `lessons.json` (which replaces the unused `observations.json`
-from earlier releases). A candidate's `text` is a pattern's own normalized
-finding example, verbatim — never a model-generated summary, so there is
-nothing synthesized to hallucinate. Re-running `derive` refreshes an existing
-candidate's counts but never touches a `confirmed`, `rejected` or `retired`
-lesson, so a rejection is sticky and a confirmed lesson's text is stable.
-
-Only a human curates lessons: `add`, `confirm`, `reject`, `retire` and
-`promote` all refuse to run when `AI_GATE` or `AI_TASK_DIR` is set, so a model
-running inside a gate cannot inject a confirmed lesson of its own, retire an
-inconvenient one, or confirm its own finding into future prompt context.
-`promote` copies a confirmed lesson into `rules.json` (with `source: "lesson"`) and retires the
-lesson, so there is exactly one always-injected normative store, not two
-competing ones. `ai lessons add` records a human-authored empirical note
-(status `confirmed` immediately, no derivation needed).
-
-Only `confirmed` lessons are ever injected into a prompt, and only when their
-`scope` glob matches a file in the current change (or the lesson has no scope).
-Injection is capped hard: `fast` injects none, `standard` up to 3, `strict` up
-to 5, ranked by observation count then recency, and the assembled block is
-truncated to a tenth of the profile's context budget before the orchestration
-prompt's own budget check runs — a growing lesson store can never be the
-reason `ai plan` starts failing. Validator prompts get one line pointing at
-the task's lesson snapshot, explicitly framed as "advisory, never evidence for
-a PASS" — it can inform a reviewer's attention, never substitute for a finding.
-
-The task-scoped snapshot (`state/lessons.json`, exactly what was injected) is
-part of the evidence fingerprint, so re-planning invalidates stale evidence but
-confirming or deriving lessons mid-task does not. The repo-scoped `lessons.json`
-and `patterns.json` stay out of the fingerprint for the same reason `ai failures`
-recomputes freely: deriving lessons must never invalidate an in-flight task.
-
-```bash
-ai confidence
-ai confidence --profile strict --base main --json
-```
-
-`ai confidence` is a forecast card, not a score: observed historical pass
-rates for the current change's stratum (profile, risk, task type), each
-carrying its own sample size `n`. A gate with fewer than 5 recorded attempts
-is marked `LOW_EVIDENCE` and prints no rate at all — there is no blended
-confidence number, no confidence interval, no significance test, because at
-realistic task volumes those would look more certain than the data supports.
-It also reports failure patterns matching this change's scope and the
-projected token spend (median historical usage per required gate) against the
-profile's runtime budget.
-
-This is purely descriptive: `classify()`, `required_gates()` and `ai ready`
-never read it, and a repository with a perfect historical pass rate still runs
-every required gate for a brand-new task. The only direction confidence may
-push a human is toward more rigor (consider a stricter profile) — the same
-elevate-only asymmetry Code Review Graph impact already applies to risk. The
-same card feeds two other places: `ai plan`/`ai run` print the weakest
-required gate, matched pattern count and projected spend for the task being
-planned, and `ai pipeline` prints a non-blocking note (never a NEEDS_HUMAN)
-when projected spend from prior runs exceeds the profile's budget.
-
-```bash
-ai prompt list
-ai prompt show cleanup            # variant a: the shipped instruction, verbatim
-ai prompt experiment start cleanup --variants a,b --min-samples 15
-ai prompt experiment status
-ai prompt report
-ai prompt promote cleanup b --confirm
-ai prompt experiment stop
-ai prompt reset cleanup
-ai prompt history
-ai prompt rollback cleanup --confirm
-```
-
-`ai prompt` runs measured experiments on the bundled validators' instructions
-only (`INSTRUCTIONS` in `ai_stack/validators.py`) — never the orchestration
-prompt, whose outcome is mediated by a separately launched model and a human,
-so a measured delta there would say little about the prompt itself. Variant
-`a` is always the shipped instruction text; an alternate variant is a
-human-authored file at `templates/prompts/validator.<name>/<variant>.md` — no
-model ever writes variant text.
-
-At most one experiment runs per repository at a time. Assignment is
-deterministic, not random: `hash(task_cache_key + slot) % variant_count`, so a
-task keeps the same variant across `--resume` and the split is reproducible
-from recorded inputs rather than drawn fresh each run. The assigned variant
-and a hash of its exact body text are snapshotted once at plan time
-(`state/prompt-assignment.json`, part of the evidence fingerprint) and
-recorded on every gate event for that slot; `ai prompt report` groups by
-`(variant, sha)`, not just `variant`, so a mid-experiment text change (a stack
-upgrade that edited the file) is flagged as incomparable instead of silently
-pooling two different prompts.
-
-`ai prompt promote` is never automatic: it refuses below the experiment's
-`--min-samples` for every variant, refuses without `--confirm`, prints the
-full per-variant comparison (pass rate, first-attempt pass rate, median
-tokens, and the task-type/risk distribution so confounding is visible) before
-applying, and — like `ai lessons confirm/promote`— refuses to run at all when
-`AI_GATE` or `AI_TASK_DIR` is set, so a model running inside a gate can never
-promote its own validator's prompt. A promotion writes to the repo-scoped
-`prompt-overrides.json`, which always wins over an active experiment's hash
-for that slot and is part of the evidence fingerprint, matching the existing
-`validators.json` precedent that changing what a validator sees invalidates
-prior evidence.
-
-Every `promote`, `reset` and `rollback` appends one entry to the repo-scoped
-`prompt-history.jsonl` — an audit log, not a validator input, so it is
-deliberately excluded from the evidence fingerprint (like `patterns.json`).
-A promotion's entry carries the full comparison it was decided from
-(`variant_stats()`'s output, including `by_stack_version` so a stack upgrade
-mid-experiment is a visible confounder alongside `by_task_type`/`by_risk`),
-so the decision survives even if `metrics.jsonl` is later pruned. `ai prompt
-history [--slot NAME]` reads it back; `ai prompt rollback NAME --confirm`
-restores the promoted variant from before the slot's last promote/rollback,
-appending its own history entry — `reset`/`rollback` are `require_human`-guarded
-exactly like `promote`, so a model running inside a gate can neither promote,
-reset nor roll back its own validator's prompt.
-
-`ai benchmark` runs a fixed set of realistic task fixtures (bug fix, schema
-migration, UI copy change, integration work, a Figma-driven design task and a
-ticket breakdown) through `fast`/`standard`/`strict` and prints the resulting
-risk classification, task type, selected skills, context budget and usage
-budget per profile. It needs no active task or model call, so it stays useful
-as a fast regression check on classification and skill-selection behavior
-across profiles as the stack evolves.
-
-```bash
-ai benchmark list
-ai benchmark run
-ai benchmark run --scenario clean-small-change --profile fast
-ai benchmark report [RUN_ID]
-ai benchmark compare RUN_A RUN_B
-```
-
-`ai benchmark run` is a different, larger thing: it runs a small corpus of
-scenarios (`templates/benchmarks/pipeline/*.json`) end-to-end through the real
-`ai plan` -> `ai pipeline` -> `ai ready` flow and asserts each scenario's
-`expect` block (risk, required gates, readiness, failed gates, or a substring
-of the pipeline's own output) — a regression check on the orchestration
-itself (gate routing, fail-fast, mutation detection, budget enforcement),
-not just classification. Each scenario scripts every gate's verdict with a
-tiny synthetic validator (no model calls, no cost) so results are exact and
-reproducible; there is no `--live` mode that spends real tokens against the
-bundled semantic validators in this release.
-
-Every scenario runs inside a fully isolated sandbox: a fresh temp git repo
-with `HOME`/`XDG_CONFIG_HOME` redirected into the sandbox and `AI_GATE`/
-`AI_TASK_DIR` stripped from the child environment (the same class of bug
-already fixed once in this test suite's own harness). The child process
-cannot see or write your real `metrics.jsonl` or repo state — a benchmark run
-can never inflate `ai confidence`'s sample sizes, satisfy an `ai prompt`
-experiment's `--min-samples`, or otherwise contaminate what those commands
-report as real history. Results are recorded separately, under this repo's
-`benchmarks/` state: `index.jsonl` (one summary line per run) and
-`<run_id>.json` (full per-scenario detail). `ai benchmark run` exits nonzero
-if any scenario's expectations fail, so it's usable as a CI check.
-
-`ai benchmark compare RUN_A RUN_B` refuses when the two runs used a different
-`corpus_digest` (a hash over the scenario corpus) — the same discipline
-`variant_stats()` applies via `(variant, sha)` grouping: comparing results
-from two different corpora would be comparing different questions. `--corpus
-PATH` points either command at a different scenario directory, e.g. a
-team's private corpus of anonymized historical diffs, kept outside this repo.
-
-Usage totals include only reported nonnegative values and show how many attempts
-reported each field. Missing usage is shown as unreported, never estimated or
-treated as free. These metrics cover gate commands, not the independently
-launched implementation model. Internal model tool/retry budgets remain prompt
-instructions.
+Architecture and design rationale live in [docs/architecture.md](docs/architecture.md). Planned work lives in [ROADMAP.md](ROADMAP.md).

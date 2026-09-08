@@ -27,6 +27,10 @@ dependencies = []
 [project.scripts]
 ai = "ai_stack.cli:main"
 
+[project.optional-dependencies]
+# `pip install -e ".[dev]"` - what CI and contributors run the suite with.
+dev = ["pytest", "pytest-xdist", "coverage[toml]"]
+
 [tool.setuptools]
 packages = ["ai_stack"]
 
@@ -66,8 +70,40 @@ ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
-# Not strict yet: the codebase has partial hints. Tighten incrementally.
+# Flat-module layout: ai_stack/ is an installable package but its modules import
+# siblings by bare name (`import skills`). These three keys let mypy resolve those
+# the same way the runtime does, so its output is real type findings instead of
+# spurious "module has no attribute" noise.
+mypy_path = "ai_stack"
+explicit_package_bases = true
+namespace_packages = true
+# Type checking is blocking in CI. Add annotations at JSON/dict boundaries
+# instead of suppressing whole error classes.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.coverage.run]
+# ABSOLUTE source path, not a bare "ai_stack": the suite runs the CLI as
+# `python ai_stack/cli.py` from throwaway sandbox CWDs and its modules import
+# each other by flat name (`import core`), so neither a CWD-relative `source`
+# nor `source_pkgs = ["ai_stack"]` (flat names aren't under an `ai_stack.`
+# package) would match a subprocess. AI_STACK_ROOT is the repo root - CI sets it;
+# it also rides through to subprocesses via the inherited env. Unset, it falls
+# back to "." (in-process measurement still works from the repo root; subprocess
+# hits are simply not counted).
+source = ["${AI_STACK_ROOT-.}/ai_stack"]
+parallel = true    # each `ai` subprocess writes its own .coverage.<host>.<pid> file
+sigterm = true     # flush data when a spawned CLI child is killed by SIGTERM
+# The data file MUST live OUTSIDE this repo tree. The suite spawns throwaway git
+# sandboxes and tests/test_workflow.py hashes untracked files for its
+# evidence-fingerprint / contamination checks - a stray .coverage.* landing in a
+# sandbox breaks them. CI sets COVERAGE_FILE=${{ runner.temp }}/cov/.coverage;
+# run it locally the same way (COVERAGE_FILE=/tmp/cov/.coverage). Subprocess
+# instrumentation is wired via a cov_subprocess.pth in site-packages plus
+# COVERAGE_PROCESS_START=<abs path to this file> in the job env.
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ["if __name__ == .__main__.:", "raise NotImplementedError"]
