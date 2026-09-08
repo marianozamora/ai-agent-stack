@@ -32,6 +32,49 @@ usage: ai plan [-h] [--profile {fast,standard,strict}] [--base BASE]
                [task]
 ```
 
+## `ai start`
+
+Start a task with its own fresh contract and make it active.
+
+```text
+usage: ai start [-h] [--title TITLE] [--ticket-file TICKET_FILE] [--base BASE]
+                [--resume] [--switch] [--task-id TASK_ID]
+                id
+```
+
+## `ai switch`
+
+Make an existing open task the active one.
+
+```text
+usage: ai switch [-h] [--task-id TASK_ID] id
+```
+
+## `ai close`
+
+Close the active task and freeze its evidence.
+
+```text
+usage: ai close [-h] [--reason REASON] [--task-id TASK_ID] [id]
+```
+
+## `ai current`
+
+Show the active task and its state.
+
+```text
+usage: ai current [-h] [--json] [--task-id TASK_ID]
+```
+
+## `ai tasks`
+
+List tasks recorded for this checkout.
+
+```text
+usage: ai tasks [-h] [--status {active,paused,closed}] [--json]
+                [--task-id TASK_ID]
+```
+
 ## `ai ticket`
 
 Analyze pasted ticket content.

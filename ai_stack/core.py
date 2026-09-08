@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib, json, os, re, subprocess, tempfile, time
+import hashlib, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 from typing import Any
 from workflow import ORDER
@@ -106,17 +106,63 @@ def save_json(p:Path,obj:Any):
             tmp.unlink(missing_ok=True)
 
 
+TASK_ID_PATTERN = r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}'
+_BRANCH_FALLBACK_WARNED = False
+
+
+def active_task_id(state:Path,root:Path)->str:
+    """The task `ai start`/`ai switch` made active for this checkout.
+
+    Keyed by absolute root, not by repository: worktrees share one repo_state but
+    must never share a task, which is the same invariant the task key itself keeps.
+    """
+    entry=load_json(state/'active-task.json',{}).get('active',{}).get(str(root.resolve()))
+    return entry.get('id','') if isinstance(entry,dict) else ''
+
+
+def set_active_task(state:Path,root:Path,identity:str|None):
+    data=load_json(state/'active-task.json',{})
+    active:dict[str,Any]=data['active'] if isinstance(data,dict) and isinstance(data.get('active'),dict) else {}
+    key=str(root.resolve())
+    if identity: active[key]={'id':identity,'started_at':int(time.time())}
+    else: active.pop(key,None)
+    save_json(state/'active-task.json',{'version':1,'active':active})
+
+
+def task_identity(state:Path,root:Path)->str:
+    """--task-id > AI_TASK_ID (set by ai gate) > the active task > the branch.
+
+    The branch fallback is what let two unrelated tickets worked on one branch share
+    a contract and its stale acceptance criteria. It is kept for one release so
+    existing checkouts keep working, but it warns once per process and is deprecated.
+    """
+    global _BRANCH_FALLBACK_WARNED
+    identity=TASK_ID or os.environ.get('AI_TASK_ID') or active_task_id(state,root)
+    if identity: return identity
+    branch=run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root)
+    if branch and not _BRANCH_FALLBACK_WARNED:
+        _BRANCH_FALLBACK_WARNED=True
+        print(f'warning: no active task; using the branch {branch!r} as the task identity. '
+              'Run `ai start <id>` to make it explicit (this fallback is deprecated).',file=sys.stderr)
+    return branch
+
+
 def task_state(state:Path)->Path:
     root=git_root()
-    branch=run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root)
-    identity=TASK_ID or os.environ.get('AI_TASK_ID') or branch
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}',identity):
+    identity=task_identity(state,root)
+    if not re.fullmatch(TASK_ID_PATTERN,identity):
         raise SystemExit('Invalid task ID.')
     # Worktrees sharing a remote must never share mutable task artifacts.
     key=shasum(str(root.resolve())+'\0'+identity)[:24]
     d=state/'tasks'/key
     for sub in ('state','contracts','handoffs','review','gates'): (d/sub).mkdir(parents=True,exist_ok=True)
-    save_json(d/'task.json',{'id':identity,'root':str(root.resolve())})
+    # Merge: task.json carries lifecycle fields (status, title, created_at) that the
+    # old unconditional rewrite would have erased on the next command.
+    meta=load_json(d/'task.json',{})
+    if not isinstance(meta,dict): meta={}
+    meta.setdefault('status','active'); meta.setdefault('created_at',int(time.time()))
+    meta.update(id=identity,root=str(root.resolve()),key=key)
+    save_json(d/'task.json',meta)
     return d
 
 

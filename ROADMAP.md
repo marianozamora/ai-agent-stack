@@ -4,7 +4,8 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 
 ## v1.0 — production workflow
 
-- [ ] Explicit task lifecycle (`start`, `switch`, `close`) that prevents contract reuse across unrelated work.
+- [x] Explicit task lifecycle (`start`, `switch`, `close`, `current`, `tasks`) that prevents contract reuse across unrelated work.
+- [ ] Remove the deprecated branch-derived task identity fallback.
 - [x] Fail-closed base resolution.
 - [ ] Richer risk signals for new, renamed and binary files.
 - [ ] Per-task pipeline locking and explicit post-gate budget-overrun status.

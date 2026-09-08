@@ -6,6 +6,7 @@ from learning import confidence_card
 from metrics import gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
 from workflow import execute, finding_signature, normalize_finding, usage_from_verdict, validate_config
+from tasks import require_open_task
 from validators import INSTRUCTIONS, intact_record, model_verdict
 
 
@@ -147,7 +148,7 @@ Fresh gate evidence (read referenced logs as needed):
 
 
 def cmd_pipeline(args):
-    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    root=git_root(); state=repo_state(root); require_open_task(state); plan=current_plan(state)
     config=validator_config(state)['validators']
     required=required_gates(root,plan)
     missing=[name for name in required if name not in config]
@@ -194,7 +195,7 @@ def cmd_pipeline(args):
 
 
 def cmd_gate(args):
-    root=git_root(); state=repo_state(root); plan=current_plan(state); task=task_state(state)
+    root=git_root(); state=repo_state(root); plan=current_plan(state); task,_=require_open_task(state)
     command=args.command
     if command[:1]==['--']: command=command[1:]
     if not command: raise SystemExit('A gate requires an executable command after --.')
