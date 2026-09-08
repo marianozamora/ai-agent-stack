@@ -36,6 +36,22 @@ Use `ai plan` when another agent will consume the generated prompt, or `ai run` 
 
 See the generated [command reference](docs/commands.md) for every command and flag, and the [field guide](docs/field-guide.md) for the complete lifecycle diagrams.
 
+## Deployment
+
+`ai deploy` is detection-only by default and never mutates anything. Documenting and running a deploy is opt-in and explicit:
+
+```bash
+ai deploy                      # detect Docker/CI/PaaS/infra/scripts/docs tooling (unchanged, back-compat)
+ai deploy plan                 # ask Codex (read-only) for a dev runbook + a suggested command
+                               # review the runbook written under external state, e.g.
+                               # ~/.config/ai-agent-stack/repos/<id>/deploy-runbook.md
+ai deploy set --evidence "service responds on :8080" dev -- ./deploy.sh dev
+ai deploy run dev              # dry run: prints what would execute, executes nothing
+ai deploy run dev --execute    # actually deploys; blocked inside a gate/validator environment
+```
+
+A deploy is not a gate: it never runs as part of `ai pipeline` and never gates PR readiness. The runbook is Codex's read-only, best-effort *suggestion* — nothing from it is ever auto-written into the deploy configuration; a human reviews it and declares the real command with `ai deploy set`. All runbook and run-record state lives outside the target repository, under external state (`ai path`/`ai status`), the same as every other framework artifact.
+
 ## Workflow
 
 ```mermaid

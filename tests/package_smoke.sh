@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-python3 -m pip wheel --no-deps --no-build-isolation --wheel-dir "$TMP/dist" "$ROOT" >/dev/null
+python3 -m pip wheel --no-deps --wheel-dir "$TMP/dist" "$ROOT" >/dev/null
 python3 -m venv "$TMP/venv"
 "$TMP/venv/bin/python" -m pip install --no-deps "$TMP"/dist/*.whl >/dev/null
 
