@@ -156,7 +156,10 @@ def main():
     if not args.cmd: p.print_help(); return
     # One resolution point for every command that takes a base, so no command can
     # reach collect_scope() with an unverified ref. Fails closed with suggestions.
-    if hasattr(args,'base'):
+    # `init` is exempt: it must be runnable in a brand-new repo with zero commits
+    # (nothing to verify any ref against yet), which is exactly the state `ai init`
+    # exists to bootstrap from; cmd_init resolves its own base, tolerantly.
+    if hasattr(args,'base') and args.cmd!='init':
         root=git_root(); args.base=core.resolve_base(root,args.base,repo_state(root))
     args.func(args)
 

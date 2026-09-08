@@ -95,16 +95,25 @@ def base_report(root,state)->str:
 
 def cmd_init(args):
     root=git_root(); state=repo_state(root); profile=profile_repo(root,state)
-    # cli.main() resolves --base before dispatching; resolve here too so a direct
-    # call (tests, embedding) still records a verified base rather than none.
-    base=getattr(args,'base',None) or resolve_base(root,None,state)
-    meta=load_json(state/'repo.json',{}); meta['default_base']=base
+    # cli.main() exempts `init` from the blanket base resolution so a brand-new repo
+    # with zero commits (nothing to verify any ref against yet) can still be
+    # initialized. An explicit --base still fails loudly if it doesn't resolve; only
+    # silent autodetection over an empty repo is tolerated, and records nothing.
+    requested=getattr(args,'base',None)
+    base=None
+    try:
+        base=resolve_base(root,requested,state)
+    except SystemExit as exc:
+        if requested: raise
+        print(f'Note: {exc}')
+    meta=load_json(state/'repo.json',{})
+    if base: meta['default_base']=base
     save_json(state/'repo.json',meta)
     print(f"Repository: {root}")
     print(f"State:      {state}")
     print("Repository modified: NO")
     print("Languages:  "+(', '.join(profile['languages']) or 'unknown'))
-    print(f"Default base: {base}")
+    print(f"Default base: {base or 'none detected yet -- rerun `ai init` after your first commit'}")
     # Report the detected tooling but never write it: validators.json holds commands
     # `ai pipeline` executes, so applying a proposal stays an explicit, separate act.
     configured=load_json(state/'validators.json',{}).get('validators',{})
