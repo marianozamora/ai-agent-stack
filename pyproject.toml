@@ -46,9 +46,9 @@ select = ["F", "E9", "B", "UP"]
 ignore = [
     "E402",   # module-level import not at top (cli.py sets sys.path first today)
     "E501",   # long lines are this project's actual style, not unformatted code
-    "B904",   # raise ... from - pre-existing in the split modules; dedicated cleanup pass pending
-    "F841",   # unused locals - same; a few pre-date the cli.py split
 ]
+# B904 (raise ... from) and F841 (unused locals) are fully fixed as of the
+# cleanup pass that followed the cli.py split - no ignores needed for either.
 # Style codes (E1/E2/E7, multi-statement lines, import sorting) are never
 # selected at all - this project's terse style is intentional, not unformatted.
 

@@ -37,7 +37,7 @@ def run(cmd:list[str], cwd:Path|None=None, check=True, capture=True, env=None)->
 
 def git_root()->Path:
     try: return Path(run(["git","rev-parse","--show-toplevel"]))
-    except Exception: raise SystemExit("Not inside a git repository.")
+    except Exception as exc: raise SystemExit("Not inside a git repository.") from exc
 
 
 def remote_id(root:Path)->tuple[str,str]:

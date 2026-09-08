@@ -46,7 +46,7 @@ def validator_config(state):
         config=json.loads(path.read_text()) if path.exists() else {'version':1,'validators':{}}
         return validate_config(config)
     except (OSError,ValueError) as exc:
-        raise SystemExit(f'Invalid validator configuration: {exc}')
+        raise SystemExit(f'Invalid validator configuration: {exc}') from exc
 
 
 def cmd_validators(args):
@@ -65,7 +65,7 @@ def cmd_validators(args):
         config['validators'][args.name]={'command':command,'adapter':args.adapter,
             'timeout':args.timeout,'evidence':args.evidence}
         try: validate_config(config)
-        except ValueError as exc: raise SystemExit(str(exc))
+        except ValueError as exc: raise SystemExit(str(exc)) from exc
         save_json(state/'validators.json',config)
     elif args.action=='remove':
         config['validators'].pop(args.name,None)
@@ -104,7 +104,7 @@ def cmd_validate(args):
         slot=prompt_slot(args.name)
         assignment=load_json(task/'state/prompt-assignment.json',{}).get(slot,{'variant':'a'})
         try: instruction=variant_text(args.name,slot,assignment['variant'])
-        except SystemExit as exc: raise ValueError(str(exc))
+        except SystemExit as exc: raise ValueError(str(exc)) from exc
         prompt=f'''Validate gate: {args.name}
 {instruction}
 

@@ -71,7 +71,7 @@ Already-detected static facts (languages, package managers, tooling): {json.dump
         deep=run_codex_json(executable,root,state/'review','deep-profile',prompt,DEEP_PROFILE_SCHEMA,
                              check_deep_profile,timeout=args.timeout)
     except ValueError as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from exc
     deep={k:deep[k] for k in DEEP_PROFILE_SCHEMA['required']}|{'usage':deep.get('usage',{})}
     deep.update(version=1,generated_at=int(time.time()),analyzed_commit=current_commit,
                 caveat='AI-generated interpretation of the repository; verify before relying on it for critical decisions.')
@@ -121,9 +121,8 @@ def cmd_doctor(args):
 
 
 def cmd_optimize(args):
-    root=git_root(); state=repo_state(root)
-    files=[root/'templates/policy.md',root/'templates/orchestration.yml']
-    # The optimization target is the installed stack, not the work repo.
+    # The optimization target is the installed stack's own bundled prompts,
+    # never the work repo, so this needs no git context at all.
     targets=[STACK_ROOT/'templates/policy.md',STACK_ROOT/'templates/orchestration.yml']
     skill_prompts=list((STACK_ROOT/'skills').glob('*/prompt.md'))
     rows=[]
