@@ -45,11 +45,13 @@ class DetectionTests(unittest.TestCase):
         checks = self.row(report, 'checks')
         self.assertEqual(checks['detected_from'], ['ruff', 'mypy'])
         self.assertEqual(checks['command'], ['sh', '-c', 'ruff check . && mypy .'])
-        self.assertEqual(self.row(report, 'regression')['command'], ['pytest', '-q'])
+        self.assertEqual(self.row(report, 'regression')['command'],
+                         ['python3', '-B', '-m', 'pytest', '-q', '-p', 'no:cacheprovider'])
 
     def test_python_tests_detected_from_a_tests_directory_alone(self):
         self.write('tests/test_thing.py', 'def test_x(): pass\n')
-        self.assertEqual(self.row(self.propose(), 'regression')['command'], ['pytest', '-q'])
+        self.assertEqual(self.row(self.propose(), 'regression')['command'],
+                         ['python3', '-B', '-m', 'pytest', '-q', '-p', 'no:cacheprovider'])
 
     def test_node_uses_the_lockfile_package_manager(self):
         self.write('package.json', '{"scripts": {"lint": "eslint .", "test": "vitest run"}}')

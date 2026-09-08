@@ -6,6 +6,26 @@ generated [`commands.md`](commands.md). For the *why* behind
 each design decision, see [`architecture.md`](architecture.md); for the full
 prose walkthrough of each feature, see the main [`README.md`](../README.md).
 
+## The short path
+
+Three commands cover the normal case. Each is a composition over the granular
+commands below — same prompt builder, same gate recorder, same readiness check.
+
+```bash
+ai init                              # once per repo: records the base, reports detected tooling
+ai validators propose --apply        # once per repo: configures checks/regression
+ai validators install                # once per repo: configures the semantic gates
+
+ai start LOGIN-42 --ticket-file ticket.md   # fresh contract, becomes the active task
+ai work                                      # plan + launch the builder for that task
+ai finish                                    # run every required gate, then certify
+ai close --reason "merged"                   # freeze the evidence
+```
+
+`ai current` shows what is active at any point; `ai tasks` lists everything in
+this checkout. A task carries its own base, so `ai start --base release` keeps
+one task on a different branch than the rest without a flag on every command.
+
 ## How a task moves through the stack
 
 Every gate's PASS is bound to a fingerprint of the repo, index, base, plan,

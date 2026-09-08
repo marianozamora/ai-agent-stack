@@ -61,8 +61,14 @@ RULES = [
      lambda r: ['ruff','check','.'],'Ruff lint passed with no findings'),
     ('mypy','checks',lambda r: has(r,'mypy.ini','.mypy.ini') or pyproject_has(r,'[tool.mypy'),
      lambda r: ['mypy','.'],'mypy type check passed'),
+    # A gate whose command writes an untracked file changes the evidence fingerprint
+    # mid-run and fails itself. A bare `pytest` leaves both .pytest_cache/ and
+    # __pycache__/*.pyc behind (verified: the .pyc is the one that actually bites,
+    # since it lands under tests/ rather than at the root), so the proposal disables
+    # both -- `-B` for bytecode, `-p no:cacheprovider` for the cache directory.
+    # A repo that does not gitignore them would otherwise never pass its own gate.
     ('pytest','regression',has_python_tests,
-     lambda r: ['pytest','-q'],'pytest suite passed'),
+     lambda r: ['python3','-B','-m','pytest','-q','-p','no:cacheprovider'],'pytest suite passed'),
 
     ('eslint','checks',lambda r: has_script(r,'lint'),
      lambda r: [package_manager(r),'run','lint'],'Lint script passed'),

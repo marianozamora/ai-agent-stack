@@ -21,7 +21,7 @@ from metrics import cmd_metrics
 from prompts import cmd_prompt
 from repo import cmd_doctor, cmd_init, cmd_optimize, cmd_profile, cmd_rules, cmd_status
 from skills import cmd_skill
-from tasks import cmd_close, cmd_current, cmd_start, cmd_switch, cmd_tasks
+from tasks import cmd_close, cmd_current, cmd_finish, cmd_start, cmd_switch, cmd_tasks, cmd_work
 from tools import cmd_deploy, cmd_docs, cmd_figma, cmd_graph
 from validators import INSTRUCTIONS
 
@@ -33,6 +33,8 @@ COMMAND_DESCRIPTIONS = {
     'close':'Close the active task and freeze its evidence.',
     'current':'Show the active task and its state.',
     'tasks':'List tasks recorded for this checkout.',
+    'work':'Plan and launch the builder for the active task.',
+    'finish':'Run the required gates for the active task and certify readiness.',
     'run':'Build an orchestration prompt and launch Claude.', 'plan':'Build an orchestration prompt without launching a model.',
     'ticket':'Analyze pasted ticket content.', 'review':'Prepare or launch a bounded Codex review.',
     'impact':'Report deterministic diff impact.', 'ready':'Certify readiness from fresh gate evidence.',
@@ -64,6 +66,8 @@ def parser():
         q=sp.add_parser(name); q.add_argument('task',nargs='?',default=''); q.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); q.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); q.add_argument('--figma'); q.add_argument('--no-figma',action='store_true'); q.add_argument('--skill',action='append',default=None,help='Force a skill (repeatable; still capped by profile)'); q.add_argument('--ticket-file',help='Path to pasted ticket content; auto-fills empty acceptance criteria and Figma link')
         q.set_defaults(func=lambda a: cmd_planrun(a, a.cmd=='run'))
     st=sp.add_parser('start'); st.add_argument('id'); st.add_argument('--title',default=''); st.add_argument('--ticket-file',help='Path to pasted ticket content; fills an empty acceptance list'); st.add_argument('--base',default=None); st.add_argument('--resume',action='store_true',help='Continue an existing task and its contract instead of refusing'); st.add_argument('--switch',action='store_true',help='Pause the currently active task instead of refusing'); st.set_defaults(func=cmd_start)
+    wk=sp.add_parser('work'); wk.add_argument('task',nargs='?',default=''); wk.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); wk.add_argument('--base',default=None); wk.add_argument('--figma'); wk.add_argument('--no-figma',action='store_true'); wk.add_argument('--skill',action='append',default=None); wk.add_argument('--ticket-file'); wk.add_argument('--plan-only',action='store_true',help='Build the prompt without launching the builder'); wk.set_defaults(func=cmd_work)
+    fi=sp.add_parser('finish'); fi.add_argument('--no-resume',action='store_true',help='Re-run every gate instead of reusing fresh evidence'); fi.set_defaults(func=cmd_finish)
     sw=sp.add_parser('switch'); sw.add_argument('id'); sw.set_defaults(func=cmd_switch)
     cl=sp.add_parser('close'); cl.add_argument('id',nargs='?'); cl.add_argument('--reason',default=''); cl.set_defaults(func=cmd_close)
     cu=sp.add_parser('current'); cu.add_argument('--json',action='store_true'); cu.set_defaults(func=cmd_current)

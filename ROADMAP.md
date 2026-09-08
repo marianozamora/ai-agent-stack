@@ -4,6 +4,7 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 
 ## v1.0 — production workflow
 
+- [x] Short path for the normal case (`ai start` / `ai work` / `ai finish`).
 - [x] Explicit task lifecycle (`start`, `switch`, `close`, `current`, `tasks`) that prevents contract reuse across unrelated work.
 - [ ] Remove the deprecated branch-derived task identity fallback.
 - [x] Fail-closed base resolution.

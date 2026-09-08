@@ -164,6 +164,51 @@ def cmd_close(args):
     print(f'  evidence retained:  {task_dir(state,root,identity)}')
 
 
+def cmd_work(args):
+    """`ai work` — plan/launch for the active task, taking its title and base from it.
+
+    Composition only: it builds the same namespace `ai run`/`ai plan` receive and
+    hands off to cmd_planrun, so there is one prompt-building path, not two.
+    """
+    import argparse
+    from lifecycle import cmd_planrun
+    root=git_root(); state=repo_state(root)
+    identity=active_task_id(state,root)
+    if not identity: raise SystemExit('No active task. Run `ai start <id>` first.')
+    _,meta=require_open_task(state)
+    cmd_planrun(argparse.Namespace(
+        task=args.task or meta.get('title') or identity,
+        profile=args.profile,base=args.base,figma=args.figma,no_figma=args.no_figma,
+        skill=args.skill,ticket_file=args.ticket_file),launch=not args.plan_only)
+
+
+def cmd_finish(args):
+    """`ai finish` — run the required gates for the active task and certify readiness.
+
+    Composition only: preflight, then cmd_pipeline, which already ends in cmd_ready.
+    The preflight exists to turn "configure validators for checks, regression" into
+    an instruction the operator can act on directly.
+    """
+    import argparse
+    from core import required_gates
+    from gates import cmd_pipeline, validator_config
+    root=git_root(); state=repo_state(root)
+    task,meta=require_open_task(state)
+    plan=load_json(task/'state/current-plan.json',{})
+    if not plan: raise SystemExit('NEEDS_HUMAN: this task has no plan yet. Run `ai work` first.')
+    configured=validator_config(state)['validators']
+    missing=[name for name in required_gates(root,plan) if name not in configured]
+    if missing:
+        print('NEEDS_HUMAN: no validator configured for: '+', '.join(missing))
+        deterministic=[name for name in missing if name in ('checks','regression')]
+        if deterministic: print('  ai validators propose --apply   # configures '+', '.join(deterministic))
+        if [name for name in missing if name not in ('checks','regression')]:
+            print('  ai validators install           # configures the bundled semantic gates')
+        raise SystemExit(1)
+    print(f'Finishing task: {meta.get("id")}')
+    cmd_pipeline(argparse.Namespace(dry_run=False,resume=not args.no_resume))
+
+
 def cmd_current(args):
     root=git_root(); state=repo_state(root); identity=active_task_id(state,root)
     if not identity:

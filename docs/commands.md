@@ -42,6 +42,25 @@ usage: ai start [-h] [--title TITLE] [--ticket-file TICKET_FILE] [--base BASE]
                 id
 ```
 
+## `ai work`
+
+Plan and launch the builder for the active task.
+
+```text
+usage: ai work [-h] [--profile {fast,standard,strict}] [--base BASE]
+               [--figma FIGMA] [--no-figma] [--skill SKILL]
+               [--ticket-file TICKET_FILE] [--plan-only] [--task-id TASK_ID]
+               [task]
+```
+
+## `ai finish`
+
+Run the required gates for the active task and certify readiness.
+
+```text
+usage: ai finish [-h] [--no-resume] [--task-id TASK_ID]
+```
+
 ## `ai switch`
 
 Make an existing open task the active one.

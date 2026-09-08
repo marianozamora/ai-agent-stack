@@ -256,11 +256,19 @@ def base_suggestions(root:Path,requested:str|None=None)->list[str]:
     return out
 
 
-def base_error(root:Path,base:str,*,explicit:bool)->str:
+def task_base(state:Path,root:Path)->str:
+    """The base recorded by `ai start` for the task this command is acting on."""
+    identity=TASK_ID or os.environ.get('AI_TASK_ID') or active_task_id(state,root)
+    if not identity: return ''
+    key=shasum(str(root.resolve())+'\0'+identity)[:24]
+    meta=load_json(state/'tasks'/key/'task.json',{})
+    return meta.get('base','') if isinstance(meta,dict) else ''
+
+
+def base_error(root:Path,base:str,*,source:str)->str:
     suggestions=base_suggestions(root,base)
-    origin=('--base '+base) if explicit else f'the stored default base ({base})'
     lines=[f'FAILED: base ref {base!r} does not exist in this repository.',
-           f'It came from {origin}; nothing is assumed in its place.']
+           f'It came from {source}; nothing is assumed in its place.']
     if suggestions:
         lines.append('Refs detected here: '+', '.join(suggestions[:5]))
         lines.append(f'Try: --base {suggestions[0]}   (persist it with: ai init --base {suggestions[0]})')
@@ -279,11 +287,15 @@ def resolve_base(root:Path,base:str|None,state:Path|None=None)->str:
     """
     if base:
         if verify_ref(root,base): return base
-        raise SystemExit(base_error(root,base,explicit=True))
-    stored=load_json((state or Path())/'repo.json',{}).get('default_base') if state else None
-    if stored:
-        if verify_ref(root,stored): return stored
-        raise SystemExit(base_error(root,stored,explicit=False))
+        raise SystemExit(base_error(root,base,source='--base '+base))
+    # The task's own base outranks the repository default: `ai start --base` exists
+    # precisely so one task can be worked against a different branch than the rest.
+    for candidate,source in ((task_base(state,root) if state else '','the active task'),
+                             (load_json(state/'repo.json',{}).get('default_base') if state else '',
+                              'the stored default base')):
+        if candidate:
+            if verify_ref(root,candidate): return candidate
+            raise SystemExit(base_error(root,candidate,source=f'{source} ({candidate})'))
     detected=base_suggestions(root)
     if detected: return detected[0]
     raise SystemExit('FAILED: no base ref could be detected (looked for origin/HEAD, '
@@ -293,7 +305,7 @@ def resolve_base(root:Path,base:str|None,state:Path|None=None)->str:
 def collect_scope(root:Path,base:str)->dict:
     # `base` must already be resolved by resolve_base(); this guard keeps the old
     # silent degradation to HEAD from ever creeping back in through a new call site.
-    if not verify_ref(root,base): raise SystemExit(base_error(root,base,explicit=True))
+    if not verify_ref(root,base): raise SystemExit(base_error(root,base,source='an unresolved caller'))
     files=run(["git","diff","--name-only",base],cwd=root,check=False).splitlines()
     untracked=run(["git","ls-files","--others","--exclude-standard"],cwd=root,check=False).splitlines()
     files=sorted(set([f for f in files+untracked if f and not any(f.startswith(p) for p in AI_PATTERNS)]))
