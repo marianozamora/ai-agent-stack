@@ -386,11 +386,19 @@ def summarize(rows):
     for usage_key in ('input_tokens', 'output_tokens'):
         values = [row['usage'][usage_key] for row in pipelines if isinstance(row.get('usage'), dict) and usage_key in row['usage']]
         pipeline_usage[usage_key] = {'reported_total': sum(values) if values else None, 'reported_runs': len(values)}
-    budget_exceeded = sum(
-        row.get('status') != 'PR_READY' and isinstance(row.get('usage'), dict) and row.get('usage_budget')
-        and (row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)) >= row['usage_budget']
-        for row in pipelines
-    )
+    def stopped_on_budget(row):
+        if row.get('status') == 'BUDGET_EXCEEDED':
+            return True
+        # Rows recorded before BUDGET_EXCEEDED existed carry status FAILED, so a
+        # historical overrun is still inferred from reported usage against the budget.
+        # A run that finished with --allow-overrun is PR_READY and never counts.
+        if row.get('status') in ('PR_READY', 'BUDGET_EXCEEDED') or not isinstance(row.get('usage'), dict):
+            return False
+        budget = row.get('usage_budget')
+        spent = row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)
+        return bool(budget) and spent >= budget
+
+    budget_exceeded = sum(stopped_on_budget(row) for row in pipelines)
     return {
         'events': len(rows), 'gate_attempts': len(gates),
         'gate_passes': sum(row.get('passed') is True for row in gates),
@@ -402,4 +410,189 @@ def summarize(rows):
         'pipeline_budget_exceeded': budget_exceeded,
         'usage': usage,
         'pipeline_usage': pipeline_usage,
+    }
+
+
+def _percentile(values, p):
+    """Nearest-rank percentile of a sample; None for an empty one.
+
+    Deliberately not `statistics.quantiles()`'s interpolated methods: a real-world
+    sample here is small (tens of tasks), and a value that always lands on an actual
+    observation is easier to explain in a report than an interpolated one.
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, round(p / 100 * (len(ordered) - 1)))
+    return ordered[index]
+
+
+FINDINGS_RAISED_CAVEAT = (
+    "Distinct findings a task's own failed gate attempts raised before the gate passed -- "
+    "a volume signal, not a measure of what a human ignored. This stack cannot tell an "
+    "override from a genuine fix without a human label (see `ai metrics label`).")
+
+
+def campaign_report(rows, *, since=None, usage_budgets=None):
+    """Aggregate a real-usage validation campaign from recorded events plus human labels.
+
+    Reads `task_start`/`plan` (task start), `gate`/`pipeline` (evidence and outcomes),
+    `task_close` (final readiness) and `gate_label` (`ai metrics label`) events. Computes,
+    per task and then stratified by task_type and by profile: time to first PR_READY,
+    retries per gate, tokens, and — where labeled — each gate's false-positive rate.
+    Never infers a false positive or an ignored finding from outcomes alone; both require
+    an explicit human label or are reported as an explicitly caveated volume count.
+
+    `usage_budgets` is an optional {profile: usage_tokens} map (from `core.context_caps`,
+    which this stdlib-only module cannot import itself) used only to flag a profile whose
+    median consumption is eating most of its budget.
+    """
+    if since is not None:
+        rows = [row for row in rows if row.get('ts', 0) >= since]
+
+    by_task: dict[Any, dict[str, list]] = {}
+    for row in rows:
+        key = row.get('task_key')
+        if key is None:
+            continue
+        bucket = by_task.setdefault(key, {'starts': [], 'plans': [], 'gates': [], 'pipelines': [], 'closes': []})
+        event = row.get('event')
+        if event == 'task_start':
+            bucket['starts'].append(row)
+        elif event == 'plan':
+            bucket['plans'].append(row)
+        elif event == 'gate':
+            bucket['gates'].append(row)
+        elif event == 'pipeline':
+            bucket['pipelines'].append(row)
+        elif event == 'task_close':
+            bucket['closes'].append(row)
+
+    labels: dict[Any, list[dict]] = {}
+    for row in rows:
+        if row.get('event') == 'gate_label':
+            labels.setdefault(row.get('gate'), []).append(row)
+
+    tasks = []
+    for key, bucket in by_task.items():
+        plans, starts, closes = bucket['plans'], bucket['starts'], bucket['closes']
+        task_type = plans[-1].get('task_type') if plans else None
+        profile = plans[-1].get('profile') if plans else None
+        task_id = (starts[0].get('task_id') if starts else plans[0].get('task_id') if plans else None)
+
+        start_candidates = [row['ts'] for row in starts + plans if isinstance(row.get('ts'), (int, float))]
+        started_at = min(start_candidates) if start_candidates else None
+        ready_candidates = [row['ts'] for row in bucket['pipelines']
+                            if row.get('status') == 'PR_READY' and isinstance(row.get('ts'), (int, float))]
+        ready_at = min(ready_candidates) if ready_candidates else None
+        time_to_ready = (ready_at - started_at if started_at is not None and ready_at is not None
+                         and ready_at >= started_at else None)
+        if closes:
+            final_status = closes[-1].get('readiness')
+        elif bucket['pipelines']:
+            final_status = bucket['pipelines'][-1].get('status')
+        else:
+            final_status = None
+
+        retries_by_gate: dict[str, int] = {}
+        duration_by_gate: dict[str, float] = {}
+        findings_seen: set[str] = set()
+        usage_values: dict[str, list[int]] = {'input_tokens': [], 'output_tokens': []}
+        for gate_row in bucket['gates']:
+            gate_name = gate_row.get('gate')
+            if gate_name:
+                attempt = gate_row.get('attempt') or 1
+                retries_by_gate[gate_name] = max(retries_by_gate.get(gate_name, 1), attempt)
+                duration_by_gate[gate_name] = duration_by_gate.get(gate_name, 0) + (gate_row.get('duration_seconds') or 0)
+            for finding in gate_row.get('findings') or []:
+                if isinstance(finding, dict) and isinstance(finding.get('hash'), str):
+                    findings_seen.add(finding['hash'])
+            usage = gate_row.get('usage')
+            if isinstance(usage, dict):
+                for field in usage_values:
+                    if field in usage:
+                        usage_values[field].append(usage[field])
+
+        tasks.append({
+            'task_key': key, 'task_id': task_id, 'task_type': task_type, 'profile': profile,
+            'started_at': started_at, 'ready_at': ready_at, 'time_to_ready_seconds': time_to_ready,
+            'reached_pr_ready': ready_at is not None, 'final_status': final_status,
+            'retries_by_gate': retries_by_gate, 'duration_by_gate': duration_by_gate,
+            'max_retries': max(retries_by_gate.values()) if retries_by_gate else 1,
+            'findings_raised': len(findings_seen),
+            'input_tokens': sum(usage_values['input_tokens']) if usage_values['input_tokens'] else None,
+            'output_tokens': sum(usage_values['output_tokens']) if usage_values['output_tokens'] else None,
+        })
+
+    def _stratify(field):
+        groups: dict[Any, list[dict]] = {}
+        for task in tasks:
+            groups.setdefault(task[field], []).append(task)
+        report = {}
+        for value, entries in groups.items():
+            times = [t['time_to_ready_seconds'] for t in entries if t['time_to_ready_seconds'] is not None]
+            totals = [(t['input_tokens'] or 0) + (t['output_tokens'] or 0) for t in entries
+                     if t['input_tokens'] is not None or t['output_tokens'] is not None]
+            duration_totals: dict[str, float] = {}
+            for t in entries:
+                for gate, seconds in t['duration_by_gate'].items():
+                    duration_totals[gate] = duration_totals.get(gate, 0) + seconds
+            dominant_gate = max(duration_totals, key=lambda g: duration_totals[g]) if duration_totals else None
+            median_time = round(statistics.median(times), 1) if times else None
+            p90_time = round(_percentile(times, 90), 1) if times else None
+            report[value] = {
+                'n': len(entries),
+                'reached_pr_ready': sum(1 for t in entries if t['reached_pr_ready']),
+                'median_time_to_ready_seconds': median_time,
+                'p90_time_to_ready_seconds': p90_time,
+                'dominant_gate_by_duration': dominant_gate,
+                'median_retries': round(statistics.median([t['max_retries'] for t in entries]), 2),
+                'max_retries': max(t['max_retries'] for t in entries),
+                'median_tokens': round(statistics.median(totals)) if totals else None,
+                'reporting_tasks_for_tokens': len(totals),
+                'median_findings_raised': round(statistics.median([t['findings_raised'] for t in entries]), 1),
+            }
+        return report
+
+    by_task_type = _stratify('task_type')
+    by_profile = _stratify('profile')
+
+    gate_labels: dict[str, dict] = {}
+    for gate, entries in labels.items():
+        true_positive = sum(1 for e in entries if e.get('label') == 'true_positive')
+        false_positive = sum(1 for e in entries if e.get('label') == 'false_positive')
+        labeled = true_positive + false_positive
+        gate_labels[gate] = {'true_positive': true_positive, 'false_positive': false_positive,
+                             'labeled': labeled,
+                             'false_positive_rate': round(false_positive / labeled, 3) if labeled else None}
+
+    recommendations = []
+    min_labeled = 5  # below this, one relabeled sample would flip the recommendation
+    for gate, stats in sorted(gate_labels.items()):
+        if stats['labeled'] >= min_labeled and stats['false_positive_rate'] is not None and stats['false_positive_rate'] > 0.20:
+            recommendations.append(
+                f"{gate}: false-positive rate {stats['false_positive_rate']:.0%} over {stats['labeled']} labeled "
+                f"attempts (>20%) -- consider making it advisory (non-blocking) by default.")
+    for task_type, stats in sorted(by_task_type.items(), key=lambda kv: str(kv[0])):
+        if stats['median_time_to_ready_seconds'] and stats['p90_time_to_ready_seconds']:
+            if stats['p90_time_to_ready_seconds'] > 3 * stats['median_time_to_ready_seconds']:
+                gate_note = f" ({stats['dominant_gate_by_duration']} dominates gate duration)" if stats['dominant_gate_by_duration'] else ''
+                recommendations.append(
+                    f"{task_type or 'unclassified'}: p90 time to PR_READY is "
+                    f"{stats['p90_time_to_ready_seconds']:.0f}s vs a median of {stats['median_time_to_ready_seconds']:.0f}s "
+                    f"(>3x) -- investigate outliers{gate_note}.")
+    if usage_budgets:
+        for profile, stats in sorted(by_profile.items(), key=lambda kv: str(kv[0])):
+            budget = usage_budgets.get(profile)
+            if budget and stats['median_tokens'] and stats['median_tokens'] > 0.8 * budget:
+                recommendations.append(
+                    f"{profile or 'unclassified'}: median usage {stats['median_tokens']} tokens is over 80% "
+                    f"of its {budget}-token budget -- recalibrate context_caps for this profile.")
+
+    return {
+        'tasks': len(tasks), 'reached_pr_ready': sum(1 for t in tasks if t['reached_pr_ready']),
+        'by_task_type': by_task_type, 'by_profile': by_profile, 'gate_labels': gate_labels,
+        'findings_raised_caveat': FINDINGS_RAISED_CAVEAT,
+        'recommendations': recommendations,
+        'tasks_detail': sorted(tasks, key=lambda t: (str(t['task_type']), str(t['task_key']))),
     }

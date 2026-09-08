@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / 'ai_stack'))
 import core  # noqa: E402
 import crg  # noqa: E402
 import lifecycle  # noqa: E402
+import providers  # noqa: E402
 
 
 class LifecyclePureTests(unittest.TestCase):
@@ -120,13 +121,16 @@ class LifecycleSandboxTests(unittest.TestCase):
         subprocess.run(['git', 'commit', '-qm', 'init'], cwd=self.repo, check=True, capture_output=True)
 
         # Redirect env + external state root; fake away every external binary.
+        # The builder/reviewer availability check now lives in providers.py (phase 5:
+        # provider abstraction), not in lifecycle.py directly, so that module joins
+        # crg here.
         envp = mock.patch.dict(os.environ, env, clear=True)
         envp.start()
         self.addCleanup(envp.stop)
         cfgp = mock.patch.object(core, 'CONFIG_ROOT', self.cfg)
         cfgp.start()
         self.addCleanup(cfgp.stop)
-        for module in (lifecycle, crg):
+        for module in (crg, providers):
             whichp = mock.patch.object(module.shutil, 'which', return_value=None)
             whichp.start()
             self.addCleanup(whichp.stop)

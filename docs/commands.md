@@ -7,7 +7,7 @@ Generated from the CLI parser. Run `python3 scripts/generate_command_reference.p
 Initialize external state and detect repository tooling.
 
 ```text
-usage: ai init [-h] [--task-id TASK_ID]
+usage: ai init [-h] [--base BASE] [--task-id TASK_ID]
 ```
 
 ## `ai run`
@@ -30,6 +30,69 @@ usage: ai plan [-h] [--profile {fast,standard,strict}] [--base BASE]
                [--figma FIGMA] [--no-figma] [--skill SKILL]
                [--ticket-file TICKET_FILE] [--task-id TASK_ID]
                [task]
+```
+
+## `ai start`
+
+Start a task with its own fresh contract and make it active.
+
+```text
+usage: ai start [-h] [--title TITLE] [--ticket-file TICKET_FILE] [--base BASE]
+                [--resume] [--switch] [--task-id TASK_ID]
+                id
+```
+
+## `ai work`
+
+Plan and launch the builder for the active task.
+
+```text
+usage: ai work [-h] [--profile {fast,standard,strict}] [--base BASE]
+               [--figma FIGMA] [--no-figma] [--skill SKILL]
+               [--ticket-file TICKET_FILE] [--plan-only] [--task-id TASK_ID]
+               [task]
+```
+
+## `ai finish`
+
+Run the required gates for the active task and certify readiness.
+
+```text
+usage: ai finish [-h] [--no-resume] [--allow-overrun] [--force-unlock]
+                 [--task-id TASK_ID]
+```
+
+## `ai switch`
+
+Make an existing open task the active one.
+
+```text
+usage: ai switch [-h] [--task-id TASK_ID] id
+```
+
+## `ai close`
+
+Close the active task and freeze its evidence.
+
+```text
+usage: ai close [-h] [--reason REASON] [--task-id TASK_ID] [id]
+```
+
+## `ai current`
+
+Show the active task and its state.
+
+```text
+usage: ai current [-h] [--json] [--task-id TASK_ID]
+```
+
+## `ai tasks`
+
+List tasks recorded for this checkout.
+
+```text
+usage: ai tasks [-h] [--status {active,paused,closed}] [--json]
+                [--task-id TASK_ID]
 ```
 
 ## `ai ticket`
@@ -79,7 +142,7 @@ usage: ai ready [-h] [--task-id TASK_ID]
 Run and record one evidence gate.
 
 ```text
-usage: ai gate [-h] [--timeout TIMEOUT] [--task-id TASK_ID]
+usage: ai gate [-h] [--timeout TIMEOUT] [--force-unlock] [--task-id TASK_ID]
                {checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}
                ...
 ```
@@ -89,7 +152,8 @@ usage: ai gate [-h] [--timeout TIMEOUT] [--task-id TASK_ID]
 Run all required configured gates in order.
 
 ```text
-usage: ai pipeline [-h] [--dry-run] [--resume] [--task-id TASK_ID]
+usage: ai pipeline [-h] [--dry-run] [--resume] [--allow-overrun]
+                   [--force-unlock] [--task-id TASK_ID]
 ```
 
 ## `ai validators`
@@ -97,7 +161,8 @@ usage: ai pipeline [-h] [--dry-run] [--resume] [--task-id TASK_ID]
 Inspect or configure reusable validators.
 
 ```text
-usage: ai validators [-h] [--task-id TASK_ID] {show,install,remove,set} ...
+usage: ai validators [-h] [--task-id TASK_ID]
+                     {show,install,propose,remove,set} ...
 ```
 
 ### `ai validators show`
@@ -114,6 +179,14 @@ usage: ai validators show [-h]
 
 ```text
 usage: ai validators install [-h]
+```
+
+### `ai validators propose`
+
+
+
+```text
+usage: ai validators propose [-h] [--apply] [--json]
 ```
 
 ### `ai validators remove`
@@ -153,8 +226,8 @@ Report or prune task metrics.
 usage: ai metrics [-h] [--all-tasks] [--json]
                   [--by {day,week,gate,profile,task_type,task}]
                   [--since SINCE] [--top TOP] [--format {text,json,csv}]
-                  [--budget BUDGET] [--task-id TASK_ID]
-                  {prune} ...
+                  [--budget BUDGET] [--campaign] [--task-id TASK_ID]
+                  {prune,label} ...
 ```
 
 ### `ai metrics prune`
@@ -163,6 +236,16 @@ usage: ai metrics [-h] [--all-tasks] [--json]
 
 ```text
 usage: ai metrics prune [-h] --older-than OLDER_THAN [--confirm]
+```
+
+### `ai metrics label`
+
+
+
+```text
+usage: ai metrics label [-h] --task-key TASK_KEY [--attempt ATTEMPT]
+                        (--true-positive | --false-positive) [--note NOTE]
+                        {checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}
 ```
 
 ## `ai benchmark`
@@ -804,4 +887,37 @@ usage: ai graph path [-h] start end
 
 ```text
 usage: ai graph explain [-h] node
+```
+
+## `ai providers`
+
+Inspect or configure the builder/reviewer providers.
+
+```text
+usage: ai providers [-h] [--task-id TASK_ID] {show,doctor,set} ...
+```
+
+### `ai providers show`
+
+
+
+```text
+usage: ai providers show [-h] [--json]
+```
+
+### `ai providers doctor`
+
+
+
+```text
+usage: ai providers doctor [-h]
+```
+
+### `ai providers set`
+
+
+
+```text
+usage: ai providers set [-h] [--builder {claude}] [--reviewer {codex,command}]
+                        ...
 ```

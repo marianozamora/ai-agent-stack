@@ -22,10 +22,12 @@ import skills  # noqa: E402
 
 
 class GitBaseArgumentInjectionTests(unittest.TestCase):
-    """collect_scope() (core.py) verifies `base` with `git rev-parse --verify`
-    before using it, falling back to HEAD on failure - this is what stops a
-    ref-shaped value like `--output=<path>` from being read as a git option
-    by the later `git diff`/`git diff --numstat` calls that consume it."""
+    """resolve_base() (core.py) verifies `base` with `git rev-parse --verify`
+    before anything consumes it - this is what stops a ref-shaped value like
+    `--output=<path>` from being read as a git option by the later `git diff`/
+    `git diff --numstat` calls. An unverifiable base is now rejected outright
+    rather than quietly replaced by HEAD: the old fallback let the command
+    succeed over an empty scope, which silently downgraded risk and gates."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='sec-test-')
@@ -50,13 +52,16 @@ class GitBaseArgumentInjectionTests(unittest.TestCase):
         self.assertFalse(sentinel.exists())
         result = self.ai('impact', f'--base=--output={sentinel}')
         self.assertFalse(sentinel.exists(), 'a ref-shaped --base value must never reach git as a literal option')
-        self.assertIn('Change impact', result.stdout)
+        self.assertNotEqual(result.returncode, 0, 'an unverifiable base must fail closed')
+        self.assertIn('does not exist in this repository', result.stdout + result.stderr)
 
     def test_upload_pack_flag_shaped_base_is_rejected_as_a_ref(self):
         sentinel = self.home / 'pwned-sentinel-2.txt'
         result = self.ai('review', f'--base=--upload-pack=touch {sentinel}', '--no-launch')
         self.assertFalse(sentinel.exists())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        # The rejection must name refs that actually exist, so the operator can recover.
+        self.assertIn('Refs detected here:', result.stdout + result.stderr)
 
 
 class SkillNamePathTraversalTests(unittest.TestCase):

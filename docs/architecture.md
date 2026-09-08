@@ -187,15 +187,17 @@ exit-code adapter. Failure stops execution. Resume requires matching fingerprint
 and intact log hashes. Final readiness is recomputed rather than inferred from
 process completion.
 
-`ai_stack/validators.py` implements the bundled semantic review protocol.
-`ai validators install` adds missing semantic commands without replacing custom
-validators. Reviewers run in Codex's read-only sandbox and inherit the enclosing
-gate's process group, so its timeout terminates the reviewer and its child tools.
-Structured output is validated independently of process success. Summary creation
-is performed by the wrapper outside the checkout, before provenance review;
-both gate records include the summary artifact hash. Missing prerequisites stop
-bundled validators before model execution. Reviewer completion events supply
-token counts, while missing cost data remains unreported.
+`ai_stack/validators.py` implements the bundled semantic review protocol against
+a *reviewer* obtained from `ai_stack/providers.py` (see "Builder/reviewer
+providers" below); by default that reviewer runs in Codex's read-only sandbox
+and inherits the enclosing gate's process group, so its timeout terminates the
+reviewer and its child tools. Structured output is validated independently of
+process success. Summary creation is performed by the wrapper outside the
+checkout, before provenance review; both gate records include the summary
+artifact hash. Missing prerequisites stop bundled validators before model
+execution. Reviewer completion events supply token counts, while missing cost
+data remains unreported. `ai validators install` adds missing semantic commands
+without replacing custom validators.
 
 `ai_stack/workflow.py` holds reusable configuration validation, process execution,
 usage normalization and aggregation. `metrics.jsonl` remains the append-only,
@@ -206,17 +208,58 @@ JSONL history. Metrics do not estimate missing usage or observe model-internal c
 
 Each profile's `context_caps` also carries a `usage_tokens` runtime budget.
 `ai pipeline` sums reported input/output tokens from executed and resumed gates
-as it runs and stops before the next gate once the budget is met, recording a
-`FAILED` pipeline event with the accumulated usage and the budget it hit.
+as it runs and checks the budget both before and after each gate, stopping with
+an explicit `BUDGET_EXCEEDED` pipeline event (not `FAILED`) naming the gate that
+crossed it and what never ran; `ai pipeline --allow-overrun` continues anyway.
 `summarize()` aggregates per-pipeline usage separately from per-gate usage and
-counts runs that stopped on a budget, so `ai metrics` shows end-to-end spend
-across a whole run, not just per-gate figures.
+counts runs that stopped on a budget (`BUDGET_EXCEEDED`, or a pre-existing
+`FAILED` row from before that status existed, inferred from reported usage), so
+`ai metrics` shows end-to-end spend across a whole run, not just per-gate figures.
 
 `ai benchmark` runs a fixed set of realistic task fixtures (`BENCHMARK_TASKS` in
 `ai_stack/benchmark.py`) through `classify`, `context_caps` and `select_skills` for
 every profile, without touching git history, an active task or a model call.
 It is a deterministic regression check on risk classification and skill
 selection across profiles as those functions evolve.
+
+## Builder/reviewer providers (`ai_stack/providers.py`)
+
+The stack hard-coded Claude as the implementation agent and Codex as the
+reviewer in three places: `lifecycle.cmd_planrun`'s launch, `gates.cmd_validate`'s
+Codex invocation, and `repo.cmd_profile --deep`'s. `ai_stack/providers.py`
+factors both roles behind two narrow interfaces so a different agent can fill
+either without changing `gates.py`, `lifecycle.build_prompt`, or any command's
+output in the default configuration:
+
+- **Builder** — interactive, mutating, takes over the terminal (`available()`,
+  `launch(prompt, root, env)`). `ClaudeBuilder` replaces this process with the
+  Claude CLI via `os.execvpe`, exactly as before.
+- **Reviewer** — non-interactive, read-only, returns schema-validated JSON plus
+  reported usage (`available()`, `verdict(root, review_dir, name, prompt,
+  schema, checker, timeout)`). `CodexReviewer` wraps `run_codex_json` (moved
+  here verbatim from `validators.py`, which now re-exports it for the existing
+  `test_validators.py` coverage). `CommandReviewer` runs any configured command
+  that reads the prompt on stdin and returns one JSON line — the same protocol
+  the `json` validator adapter already defines, so a custom reviewer is not a
+  new format to learn.
+
+The reviewer contract is deliberately not negotiable: read-only, schema-
+conforming, and usage-reporting from the provider, never estimated.
+`CommandReviewer.read_only` is `False` because the stack cannot prove an
+arbitrary command's sandboxing; `ai providers doctor` reports that plainly
+("NOT guaranteed — a reviewer that can write could make its own verdict come
+true") rather than silently treating a custom reviewer as equivalent to Codex's
+sandbox.
+
+`providers.configured(state)` resolves `AI_BUILDER`/`AI_REVIEWER` environment
+overrides, then `repo.json`'s `providers` object, then the `claude`/`codex`
+defaults. `ai providers show|set|doctor` inspects and changes the stored choice;
+`set` never touches an unrelated key in `providers.reviewer_command`. The two
+call sites that used to do their own `shutil.which('codex')` check now ask the
+active reviewer for its `probe_binary` and check that themselves — kept as the
+caller's own check (not the provider's) precisely so `mock.patch.object(gates
+.shutil, 'which', ...)`-style test isolation keeps working per-module, and so a
+missing binary is reported before a prompt is ever built for it.
 
 ## v0.8 "Learning" — data flow overview
 
@@ -335,15 +378,16 @@ managers by lockfile, whether a formatter/linter/typechecker/test config
 exists. It never reads content, so it cannot say what the architecture is,
 what a docs file actually claims, or whether the repo talks to another one.
 
-`ai_stack/validators.py`'s Codex invocation was generalized from
-`model_verdict()` into `run_codex_json(executable, root, review_dir, name,
-prompt, schema, checker, timeout=None)` — the same read-only/ephemeral/
-schema-validated safety contract, decoupled from the gate-specific PASS/FAIL
-`SCHEMA`. `model_verdict()` is now a thin wrapper over it for the gate
-protocol. `cmd_profile()` in `ai_stack/repo.py` is the second caller: it has no
-enclosing `ai gate` process group, so it is the one caller that must pass an
-explicit `timeout` (default 600s via `--timeout`); `run_codex_json` persists
-diagnostics to `review/<name>-events.jsonl` even on a timeout, not only on a
+`cmd_profile()` in `ai_stack/repo.py` asks `providers.py` for the configured
+reviewer, same as `gates.cmd_validate` (see "Builder/reviewer providers"
+above), and calls its `verdict(root, review_dir, name, prompt, schema,
+checker, timeout)` directly against `DEEP_PROFILE_SCHEMA`/`check_deep_profile`
+— a distinct contract from the gate `SCHEMA`, decoupled by the shared
+`run_codex_json`/`CommandReviewer` protocol underneath both. Unlike a gate
+call, `cmd_profile --deep` has no enclosing `ai gate` process group, so it is
+the one caller that must pass an explicit `timeout` (default 600s via
+`--timeout`); `run_codex_json` persists diagnostics to
+`review/<name>-events.jsonl` even on a timeout, not only on a
 completed-but-failed run.
 
 `DEEP_PROFILE_SCHEMA`/`check_deep_profile()` define a distinct contract from
@@ -475,6 +519,50 @@ a model running inside a gate must not be able to erase the record of its own
 recurring failures. It prints what it would remove before requiring `--confirm`, and
 rewrites the file with only the kept rows — there is no separate archive; a human who
 wants one should copy `metrics.jsonl` first.
+
+## Real-usage validation campaign (`ai metrics label`, `ai metrics --campaign`)
+
+Instrumentation for running the stack against real tasks and measuring the outcomes
+the plan called for: time to `PR_READY`, gate false-positive rate, retries, tokens by
+task type, and findings raised — deliberately *not* the campaign itself. Actually
+running 20–30 real tasks against real repositories, with real Claude/Codex calls, on a
+schedule where each `FAIL` is labeled within 24 hours by the human who saw it, is a
+usage study a human has to run and direct; nothing here fabricates or infers that data.
+
+`ai_stack/workflow.py`'s `campaign_report(rows, *, since=None, usage_budgets=None)`
+reads only what the stack already records — `task_start`/`plan` (a task's start,
+falling back to the first `plan` event for tasks that predate `ai start` or still use
+the deprecated branch-derived identity), `gate`/`pipeline` (evidence and outcomes),
+`task_close` (final readiness) — plus a new `gate_label` event from `ai metrics label`.
+It never infers a false positive, or which findings a human ignored, from outcomes
+alone: a false-positive rate exists only where a human has labeled attempts, and
+`findings_raised` (distinct finding hashes across a task's own failed attempts before
+the gate passed) ships with an explicit `findings_raised_caveat` string in every report
+rather than a metric name that oversells what the data can support. `usage_budgets` is
+an optional `{profile: usage_tokens}` map the caller (`cmd_metrics`, which can import
+`core.context_caps`) supplies, since `workflow.py` stays stdlib-only and cannot look
+that up itself.
+
+`ai metrics label <gate> --task-key K [--attempt N] --true-positive|--false-positive`
+is `require_human()`-guarded, the same "curation is human-only" invariant `ai lessons
+confirm`/`ai prompt promote` already enforce — a model running inside a gate must not
+be able to judge its own verdict. It defaults to the most recent recorded attempt for
+that `(task_key, gate)` pair and refuses to label a `PASS` (the verdict schema already
+forbids a `PASS` from carrying findings, so there is nothing to judge). Labels are
+appended via a new `metrics.append_event()` primitive that `record_metric()` now also
+uses internally — `record_label()` deliberately does not resolve through
+`task_state()`, since a label is very often filed against a task that is not the one
+currently active, or is already closed.
+
+`ai metrics --campaign [--since SPEC] [--json]` stratifies by both `task_type` and
+`profile` (time/retries by the former, since that's what the plan asked for; the
+token-vs-budget comparison by the latter, since budgets are defined per profile) and
+emits plain-language `recommendations` from the thresholds fixed before the campaign
+plan was written: a gate's false-positive rate over 20% (minimum 5 labeled attempts,
+so one relabeled sample can't flip the recommendation) suggests making it advisory;
+a task type's p90 time-to-ready over 3x its median names the gate with the most total
+duration in that group and suggests investigating outliers; a profile's median token
+usage over 80% of its budget suggests recalibrating `context_caps`.
 
 ## v0.9 "Measurement" — Phase 4 (prompt versioning)
 

@@ -158,5 +158,154 @@ class HelpersTests(unittest.TestCase):
             self.assertFalse(marker.exists())
 
 
+class CampaignReportTests(unittest.TestCase):
+    """campaign_report(): the phase-6 instrumentation for a real-usage validation
+    campaign. Never infers a false positive or an 'ignored' finding from outcomes
+    alone -- both come from `gate_label` events or are reported as an explicitly
+    caveated volume count (findings_raised)."""
+
+    def test_percentile_nearest_rank_and_empty(self):
+        self.assertIsNone(workflow._percentile([], 90))
+        self.assertEqual(workflow._percentile([10], 90), 10)
+        self.assertEqual(workflow._percentile([10, 20, 30, 40, 50], 0), 10)
+        self.assertEqual(workflow._percentile([10, 20, 30, 40, 50], 100), 50)
+
+    def _task(self, key, task_type, profile, started_at, ready_at=None, gates=()):
+        """Build the rows one task contributes: a task_start, an optional PR_READY
+        pipeline event, and the given gate attempts (each a dict of overrides)."""
+        rows = [{'event': 'task_start', 'task_key': key, 'task_id': key, 'ts': started_at}]
+        for gate in gates:
+            row = {'event': 'gate', 'task_key': key, 'task_type': task_type, 'profile': profile,
+                   'gate': gate['gate'], 'attempt': gate.get('attempt', 1), 'passed': gate.get('passed', True),
+                   'duration_seconds': gate.get('duration_seconds', 0), 'findings': gate.get('findings', []),
+                   'usage': gate.get('usage')}
+            rows.append(row)
+        rows.append({'event': 'plan', 'task_key': key, 'task_type': task_type, 'profile': profile, 'ts': started_at})
+        if ready_at is not None:
+            rows.append({'event': 'pipeline', 'task_key': key, 'status': 'PR_READY', 'ts': ready_at})
+        return rows
+
+    def test_time_to_ready_and_reached_flag(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, ready_at=1300)
+        report = workflow.campaign_report(rows)
+        detail = report['tasks_detail'][0]
+        self.assertEqual(detail['time_to_ready_seconds'], 300)
+        self.assertTrue(detail['reached_pr_ready'])
+        self.assertEqual(report['by_task_type']['bug']['n'], 1)
+        self.assertEqual(report['by_task_type']['bug']['reached_pr_ready'], 1)
+
+    def test_task_that_never_reached_ready_has_no_time_and_is_not_reached(self):
+        rows = self._task('k1', 'feature', 'standard', started_at=1000)
+        report = workflow.campaign_report(rows)
+        detail = report['tasks_detail'][0]
+        self.assertIsNone(detail['time_to_ready_seconds'])
+        self.assertFalse(detail['reached_pr_ready'])
+        self.assertEqual(report['reached_pr_ready'], 0)
+
+    def test_falls_back_to_plan_ts_when_no_task_start_event(self):
+        # Pre-lifecycle (phase 1) or branch-fallback tasks never recorded task_start.
+        rows = [row for row in self._task('k1', 'bug', 'fast', started_at=1000, ready_at=1200)
+               if row['event'] != 'task_start']
+        report = workflow.campaign_report(rows)
+        self.assertEqual(report['tasks_detail'][0]['time_to_ready_seconds'], 200)
+
+    def test_retries_by_gate_and_max_retries(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, ready_at=1500, gates=[
+            {'gate': 'checks', 'attempt': 1, 'passed': False},
+            {'gate': 'checks', 'attempt': 2, 'passed': True},
+            {'gate': 'regression', 'attempt': 1, 'passed': True},
+        ])
+        detail = workflow.campaign_report(rows)['tasks_detail'][0]
+        self.assertEqual(detail['retries_by_gate'], {'checks': 2, 'regression': 1})
+        self.assertEqual(detail['max_retries'], 2)
+
+    def test_findings_raised_counts_distinct_hashes_across_failed_attempts(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, gates=[
+            {'gate': 'checks', 'attempt': 1, 'passed': False,
+             'findings': [{'hash': 'h1', 'text': 'x'}, {'hash': 'h2', 'text': 'y'}]},
+            {'gate': 'checks', 'attempt': 2, 'passed': False, 'findings': [{'hash': 'h1', 'text': 'x'}]},
+        ])
+        detail = workflow.campaign_report(rows)['tasks_detail'][0]
+        self.assertEqual(detail['findings_raised'], 2)
+        self.assertIn("volume signal", workflow.campaign_report(rows)['findings_raised_caveat'])
+
+    def test_tokens_summed_across_gate_attempts(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, gates=[
+            {'gate': 'checks', 'usage': {'input_tokens': 100, 'output_tokens': 10}},
+            {'gate': 'regression', 'usage': {'input_tokens': 50, 'output_tokens': 5}},
+        ])
+        detail = workflow.campaign_report(rows)['tasks_detail'][0]
+        self.assertEqual(detail['input_tokens'], 150)
+        self.assertEqual(detail['output_tokens'], 15)
+
+    def test_final_status_prefers_task_close_over_last_pipeline(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, ready_at=1200)
+        rows.append({'event': 'pipeline', 'task_key': 'k1', 'status': 'FAILED', 'ts': 1400})
+        rows.append({'event': 'task_close', 'task_key': 'k1', 'readiness': 'PR_READY', 'ts': 1500})
+        detail = workflow.campaign_report(rows)['tasks_detail'][0]
+        self.assertEqual(detail['final_status'], 'PR_READY')
+
+    def test_since_filters_rows_before_grouping(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, ready_at=1200)
+        rows += self._task('k2', 'bug', 'fast', started_at=500000, ready_at=500100)
+        report = workflow.campaign_report(rows, since=100000)
+        self.assertEqual(report['tasks'], 1)
+        self.assertEqual(report['tasks_detail'][0]['task_key'], 'k2')
+
+    def test_gate_labels_compute_false_positive_rate(self):
+        rows = [
+            {'event': 'gate_label', 'gate': 'security', 'label': 'false_positive'},
+            {'event': 'gate_label', 'gate': 'security', 'label': 'false_positive'},
+            {'event': 'gate_label', 'gate': 'security', 'label': 'true_positive'},
+        ]
+        stats = workflow.campaign_report(rows)['gate_labels']['security']
+        self.assertEqual(stats, {'true_positive': 1, 'false_positive': 2, 'labeled': 3,
+                                 'false_positive_rate': round(2 / 3, 3)})
+
+    def test_unlabeled_gate_has_no_rate_not_zero(self):
+        # No gate_label rows at all -> report['gate_labels'] must be empty, never a
+        # fabricated 0% rate that looks like "this gate has no false positives".
+        report = workflow.campaign_report(self._task('k1', 'bug', 'fast', 1000))
+        self.assertEqual(report['gate_labels'], {})
+
+    def test_recommendation_for_high_false_positive_rate_needs_minimum_sample(self):
+        few = [{'event': 'gate_label', 'gate': 'security', 'label': 'false_positive'}] * 2
+        self.assertEqual(workflow.campaign_report(few)['recommendations'], [])
+        many = [{'event': 'gate_label', 'gate': 'security', 'label': 'false_positive'}] * 3 \
+             + [{'event': 'gate_label', 'gate': 'security', 'label': 'true_positive'}] * 2
+        recs = workflow.campaign_report(many)['recommendations']
+        self.assertTrue(any('security' in r and 'advisory' in r for r in recs))
+
+    def test_recommendation_for_p90_outlier_names_dominant_gate(self):
+        rows = []
+        for i, started in enumerate([0, 0, 0, 0, 0]):
+            ready = 100 if i < 4 else 10000  # one big outlier among five fast tasks
+            rows += self._task(f'k{i}', 'bug', 'fast', started_at=started, ready_at=ready, gates=[
+                {'gate': 'review', 'duration_seconds': ready * 0.9},
+            ])
+        recs = workflow.campaign_report(rows)['recommendations']
+        self.assertTrue(any('bug' in r and 'review' in r for r in recs))
+
+    def test_recommendation_for_budget_needs_usage_budgets_argument(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, gates=[
+            {'gate': 'checks', 'usage': {'input_tokens': 39000, 'output_tokens': 1000}},
+        ])
+        without_budgets = workflow.campaign_report(rows)
+        self.assertEqual(without_budgets['recommendations'], [])
+        with_budgets = workflow.campaign_report(rows, usage_budgets={'fast': 40000})
+        self.assertTrue(any('fast' in r and 'context_caps' in r for r in with_budgets['recommendations']))
+
+    def test_by_profile_is_stratified_independently_of_task_type(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=0, ready_at=100)
+        rows += self._task('k2', 'feature', 'fast', started_at=0, ready_at=200)
+        report = workflow.campaign_report(rows)
+        self.assertEqual(report['by_profile']['fast']['n'], 2)
+        self.assertEqual(report['by_task_type']['bug']['n'], 1)
+
+    def test_rows_without_a_task_key_are_ignored_not_a_crash(self):
+        report = workflow.campaign_report([{'event': 'gate', 'gate': 'checks'}])
+        self.assertEqual(report['tasks'], 0)
+
+
 if __name__ == '__main__':
     unittest.main()

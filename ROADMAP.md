@@ -4,12 +4,18 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 
 ## v1.0 — production workflow
 
-- [ ] Explicit task lifecycle (`start`, `switch`, `close`) that prevents contract reuse across unrelated work.
-- [ ] Fail-closed base resolution and richer risk signals for new, renamed and binary files.
-- [ ] Per-task pipeline locking and explicit post-gate budget-overrun status.
-- [ ] Driver interfaces for model providers and external tools.
+- [x] Short path for the normal case (`ai start` / `ai work` / `ai finish`).
+- [x] Explicit task lifecycle (`start`, `switch`, `close`, `current`, `tasks`) that prevents contract reuse across unrelated work.
+- [ ] Remove the deprecated branch-derived task identity fallback.
+- [x] Fail-closed base resolution.
+- [ ] Richer risk signals for new, renamed and binary files.
+- [x] Per-task pipeline locking and explicit post-gate budget-overrun status.
+- [x] Driver interfaces for model providers (builder/reviewer, `ai providers`).
+- [ ] Driver interfaces for external tools (Context7, Graphify, CodeGraph, RTK).
 - [ ] Capability/plugin interfaces.
 - [ ] Multi-repository workspace orchestration.
+- [x] Instrumentation for a real-usage validation campaign (`ai metrics label`, `ai metrics --campaign`).
+- [ ] Actually run the validation campaign (20–30 real tasks, human-labeled) using the tools above and act on its recommendations.
 
 ## Measurement follow-ups
 

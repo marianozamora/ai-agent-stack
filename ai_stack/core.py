@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib, json, os, re, subprocess, tempfile, time
+import hashlib, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 from typing import Any
 from workflow import ORDER
@@ -55,8 +55,12 @@ def repo_state(root:Path|None=None, create=True)->Path:
     d=CONFIG_ROOT/"repos"/rid
     if create:
         for sub in ["contracts","state","graphify","docs-cache","code-review-graph","review","task-cache","handoffs","skill-state"]: (d/sub).mkdir(parents=True,exist_ok=True)
-        meta={"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())}
-        (d/"repo.json").write_text(json.dumps(meta,indent=2)+"\n")
+        # Merge, never clobber: repo.json now carries durable per-repo settings
+        # (default_base) that a plain rewrite on every repo_state() call would discard.
+        meta=load_json(d/"repo.json",{})
+        if not isinstance(meta,dict): meta={}
+        meta.update({"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())})
+        (d/"repo.json").write_text(json.dumps(meta,indent=2,sort_keys=True)+"\n")
         if not (d/"rules.json").exists(): (d/"rules.json").write_text("[]\n")
         if not (d/"lessons.json").exists(): (d/"lessons.json").write_text("[]\n")
         if not (d/"context7-libraries.json").exists(): (d/"context7-libraries.json").write_text("{}\n")
@@ -102,17 +106,63 @@ def save_json(p:Path,obj:Any):
             tmp.unlink(missing_ok=True)
 
 
+TASK_ID_PATTERN = r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}'
+_BRANCH_FALLBACK_WARNED = False
+
+
+def active_task_id(state:Path,root:Path)->str:
+    """The task `ai start`/`ai switch` made active for this checkout.
+
+    Keyed by absolute root, not by repository: worktrees share one repo_state but
+    must never share a task, which is the same invariant the task key itself keeps.
+    """
+    entry=load_json(state/'active-task.json',{}).get('active',{}).get(str(root.resolve()))
+    return entry.get('id','') if isinstance(entry,dict) else ''
+
+
+def set_active_task(state:Path,root:Path,identity:str|None):
+    data=load_json(state/'active-task.json',{})
+    active:dict[str,Any]=data['active'] if isinstance(data,dict) and isinstance(data.get('active'),dict) else {}
+    key=str(root.resolve())
+    if identity: active[key]={'id':identity,'started_at':int(time.time())}
+    else: active.pop(key,None)
+    save_json(state/'active-task.json',{'version':1,'active':active})
+
+
+def task_identity(state:Path,root:Path)->str:
+    """--task-id > AI_TASK_ID (set by ai gate) > the active task > the branch.
+
+    The branch fallback is what let two unrelated tickets worked on one branch share
+    a contract and its stale acceptance criteria. It is kept for one release so
+    existing checkouts keep working, but it warns once per process and is deprecated.
+    """
+    global _BRANCH_FALLBACK_WARNED
+    identity=TASK_ID or os.environ.get('AI_TASK_ID') or active_task_id(state,root)
+    if identity: return identity
+    branch=run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root)
+    if branch and not _BRANCH_FALLBACK_WARNED:
+        _BRANCH_FALLBACK_WARNED=True
+        print(f'warning: no active task; using the branch {branch!r} as the task identity. '
+              'Run `ai start <id>` to make it explicit (this fallback is deprecated).',file=sys.stderr)
+    return branch
+
+
 def task_state(state:Path)->Path:
     root=git_root()
-    branch=run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root)
-    identity=TASK_ID or os.environ.get('AI_TASK_ID') or branch
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}',identity):
+    identity=task_identity(state,root)
+    if not re.fullmatch(TASK_ID_PATTERN,identity):
         raise SystemExit('Invalid task ID.')
     # Worktrees sharing a remote must never share mutable task artifacts.
     key=shasum(str(root.resolve())+'\0'+identity)[:24]
     d=state/'tasks'/key
     for sub in ('state','contracts','handoffs','review','gates'): (d/sub).mkdir(parents=True,exist_ok=True)
-    save_json(d/'task.json',{'id':identity,'root':str(root.resolve())})
+    # Merge: task.json carries lifecycle fields (status, title, created_at) that the
+    # old unconditional rewrite would have erased on the next command.
+    meta=load_json(d/'task.json',{})
+    if not isinstance(meta,dict): meta={}
+    meta.setdefault('status','active'); meta.setdefault('created_at',int(time.time()))
+    meta.update(id=identity,root=str(root.resolve()),key=key)
+    save_json(d/'task.json',meta)
     return d
 
 
@@ -179,9 +229,83 @@ def profile_repo(root:Path,state:Path)->dict:
     save_json(state/'project-profile.json',profile); return profile
 
 
+BASE_CANDIDATES = ('main','master','develop','trunk')
+
+
+def verify_ref(root:Path,ref:str)->bool:
+    """True when `ref` names a commit that exists in this repository."""
+    if not ref or ref.startswith('-'): return False
+    return bool(run(["git","rev-parse","--verify","--quiet",ref+"^{commit}"],cwd=root,check=False))
+
+
+def origin_head(root:Path)->str:
+    """The remote's own default branch, when origin/HEAD is set locally."""
+    ref=run(["git","symbolic-ref","--quiet","--short","refs/remotes/origin/HEAD"],cwd=root,check=False)
+    return ref if verify_ref(root,ref) else ''
+
+
+def base_suggestions(root:Path,requested:str|None=None)->list[str]:
+    """Refs this repository actually has, best guess first."""
+    out:list[str]=[]
+    def add(ref:str):
+        if ref and ref not in out and verify_ref(root,ref): out.append(ref)
+    # A local name that only exists on the remote is by far the most common near-miss.
+    if requested and '/' not in requested: add('origin/'+requested)
+    add(origin_head(root))
+    for name in BASE_CANDIDATES: add('origin/'+name); add(name)
+    return out
+
+
+def task_base(state:Path,root:Path)->str:
+    """The base recorded by `ai start` for the task this command is acting on."""
+    identity=TASK_ID or os.environ.get('AI_TASK_ID') or active_task_id(state,root)
+    if not identity: return ''
+    key=shasum(str(root.resolve())+'\0'+identity)[:24]
+    meta=load_json(state/'tasks'/key/'task.json',{})
+    return meta.get('base','') if isinstance(meta,dict) else ''
+
+
+def base_error(root:Path,base:str,*,source:str)->str:
+    suggestions=base_suggestions(root,base)
+    lines=[f'FAILED: base ref {base!r} does not exist in this repository.',
+           f'It came from {source}; nothing is assumed in its place.']
+    if suggestions:
+        lines.append('Refs detected here: '+', '.join(suggestions[:5]))
+        lines.append(f'Try: --base {suggestions[0]}   (persist it with: ai init --base {suggestions[0]})')
+    else:
+        lines.append('No usable base ref was detected. Pass an existing branch, tag or commit with --base.')
+    return '\n'.join(lines)
+
+
+def resolve_base(root:Path,base:str|None,state:Path|None=None)->str:
+    """Resolve the diff base fail-closed; never degrade an unknown base to HEAD.
+
+    A base that silently became HEAD produced an empty scope, which drove classify()
+    to LOW risk, dropped the review gate out of required_gates() and let `ai ready`
+    certify PR_READY over a diff no gate had ever seen. Any base that cannot be
+    verified is now an error naming the refs this repository really has.
+    """
+    if base:
+        if verify_ref(root,base): return base
+        raise SystemExit(base_error(root,base,source='--base '+base))
+    # The task's own base outranks the repository default: `ai start --base` exists
+    # precisely so one task can be worked against a different branch than the rest.
+    for candidate,source in ((task_base(state,root) if state else '','the active task'),
+                             (load_json(state/'repo.json',{}).get('default_base') if state else '',
+                              'the stored default base')):
+        if candidate:
+            if verify_ref(root,candidate): return candidate
+            raise SystemExit(base_error(root,candidate,source=f'{source} ({candidate})'))
+    detected=base_suggestions(root)
+    if detected: return detected[0]
+    raise SystemExit('FAILED: no base ref could be detected (looked for origin/HEAD, '
+                     +', '.join(BASE_CANDIDATES)+').\nPass an existing branch, tag or commit with --base.')
+
+
 def collect_scope(root:Path,base:str)->dict:
-    try: run(["git","rev-parse","--verify",base],cwd=root)
-    except Exception: base="HEAD"
+    # `base` must already be resolved by resolve_base(); this guard keeps the old
+    # silent degradation to HEAD from ever creeping back in through a new call site.
+    if not verify_ref(root,base): raise SystemExit(base_error(root,base,source='an unresolved caller'))
     files=run(["git","diff","--name-only",base],cwd=root,check=False).splitlines()
     untracked=run(["git","ls-files","--others","--exclude-standard"],cwd=root,check=False).splitlines()
     files=sorted(set([f for f in files+untracked if f and not any(f.startswith(p) for p in AI_PATTERNS)]))

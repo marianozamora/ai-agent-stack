@@ -163,6 +163,61 @@ class RepoSandboxTests(unittest.TestCase):
         parsed = json.loads(out)
         self.assertIn('languages', parsed)
 
+    def test_cmd_profile_deep_reports_the_configured_reviewer_by_name(self):
+        # setUp() already stubs repo.shutil.which -> None for every module, so this
+        # reaches the reviewer-availability check with no reviewer available.
+        with self.assertRaises(SystemExit) as caught:
+            repo.cmd_profile(argparse.Namespace(refresh=False, deep=True, timeout=5))
+        self.assertEqual(str(caught.exception),
+                         'Codex CLI missing. Install/authenticate Codex to run a deep profile.')
+
+
+class CmdInitOnAnEmptyRepoTests(unittest.TestCase):
+    """A repo with zero commits has no ref any candidate base can verify against --
+    exactly the state `ai init` exists to bootstrap from, and exactly what CI's
+    package_smoke.sh exercises (`git init` with no commit, then `ai init`). This
+    must never crash; only an explicit, invalid --base should still fail loudly."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='repo-empty-')
+        self.addCleanup(self.tmp.cleanup)
+        home = Path(self.tmp.name)
+        self.repo = home / 'repo'
+        self.repo.mkdir()
+        self.cfg = home / 'config' / 'ai-agent-stack'
+        subprocess.run(['git', 'init', '-q'], cwd=self.repo, check=True, capture_output=True)
+
+        env = {k: v for k, v in os.environ.items() if k not in ('AI_GATE', 'AI_TASK_DIR')}
+        env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'), AI_TASK_ID='empty-repo')
+        envp = mock.patch.dict(os.environ, env, clear=True)
+        envp.start()
+        self.addCleanup(envp.stop)
+        cfgp = mock.patch.object(core, 'CONFIG_ROOT', self.cfg)
+        cfgp.start()
+        self.addCleanup(cfgp.stop)
+
+        old_cwd = os.getcwd()
+        os.chdir(self.repo)
+        self.addCleanup(os.chdir, old_cwd)
+
+    def _run(self, args):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            repo.cmd_init(args)
+        return buf.getvalue()
+
+    def test_autodetection_prints_a_note_and_does_not_crash(self):
+        out = self._run(argparse.Namespace(base=None))
+        self.assertIn('Repository:', out)
+        self.assertIn('none detected yet', out)
+        meta = core.load_json(core.repo_state(self.repo) / 'repo.json', {})
+        self.assertNotIn('default_base', meta)
+
+    def test_an_explicit_invalid_base_still_fails_loudly(self):
+        with self.assertRaises(SystemExit) as caught:
+            self._run(argparse.Namespace(base='nonexistent-ref'))
+        self.assertIn("'nonexistent-ref' does not exist", str(caught.exception))
+
 
 if __name__ == '__main__':
     unittest.main()

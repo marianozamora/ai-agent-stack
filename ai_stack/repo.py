@@ -1,10 +1,12 @@
 from __future__ import annotations
 import json, shutil, time
 from typing import Any
-from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, safe_head, save_json, task_state
+from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
+from detect import proposal, render
+from providers import reviewer as get_reviewer
 from skills import enabled_skills, skill_registry
-from validators import run_codex_json
+from tasks import running_tasks
 
 
 METRICS_ADVISORY_ROWS=5000  # row count above which ai doctor suggests retention for audit size
@@ -51,8 +53,10 @@ def cmd_profile(args):
     if existing and not args.refresh and existing.get('analyzed_commit')==current_commit:
         print(f"Deep profile up to date (commit {current_commit[:12]}); use --refresh to force.")
         print(json.dumps(existing,indent=2)); return
-    executable=shutil.which('codex')
-    if not executable: raise SystemExit('Codex CLI missing. Install/authenticate Codex to run a deep profile.')
+    active_reviewer=get_reviewer(state)
+    if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
+        label=active_reviewer.name.capitalize()
+        raise SystemExit(f'{label} CLI missing. Install/authenticate {label} to run a deep profile.')
     prompt=f'''Read this repository read-only and describe it factually, citing file paths for every claim.
 Do not modify files, run any command that writes, or fabricate anything you cannot verify by reading.
 Identify: 1) architecture pattern (backend/frontend separation, monolith vs services, layering);
@@ -72,8 +76,8 @@ Repository: {root}
 Already-detected static facts (languages, package managers, tooling): {json.dumps(profile)}
 '''
     try:
-        deep=run_codex_json(executable,root,state/'review','deep-profile',prompt,DEEP_PROFILE_SCHEMA,
-                             check_deep_profile,timeout=args.timeout)
+        deep=active_reviewer.verdict(root,state/'review','deep-profile',prompt,DEEP_PROFILE_SCHEMA,
+                                     check_deep_profile,timeout=args.timeout)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     deep={k:deep[k] for k in DEEP_PROFILE_SCHEMA['required']}|{'usage':deep.get('usage',{})}
@@ -83,16 +87,49 @@ Already-detected static facts (languages, package managers, tooling): {json.dump
     print(json.dumps(deep,indent=2))
 
 
+def base_report(root,state)->str:
+    """How `ai status`/`ai doctor` describe the diff base, without ever guessing one."""
+    stored=load_json(state/'repo.json',{}).get('default_base')
+    if stored: return f'{stored} (recorded)' if verify_ref(root,stored) else f'{stored} (recorded, MISSING — rerun ai init --base <ref>)'
+    detected=base_suggestions(root)
+    return f'{detected[0]} (detected; record it with ai init)' if detected else 'FAIL: none detected'
+
+
 def cmd_init(args):
     root=git_root(); state=repo_state(root); profile=profile_repo(root,state)
+    # cli.main() exempts `init` from the blanket base resolution so a brand-new repo
+    # with zero commits (nothing to verify any ref against yet) can still be
+    # initialized. An explicit --base still fails loudly if it doesn't resolve; only
+    # silent autodetection over an empty repo is tolerated, and records nothing.
+    requested=getattr(args,'base',None)
+    base=None
+    try:
+        base=resolve_base(root,requested,state)
+    except SystemExit as exc:
+        if requested: raise
+        print(f'Note: {exc}')
+    meta=load_json(state/'repo.json',{})
+    if base: meta['default_base']=base
+    save_json(state/'repo.json',meta)
     print(f"Repository: {root}")
     print(f"State:      {state}")
     print("Repository modified: NO")
     print("Languages:  "+(', '.join(profile['languages']) or 'unknown'))
+    print(f"Default base: {base or 'none detected yet -- rerun `ai init` after your first commit'}")
+    # Report the detected tooling but never write it: validators.json holds commands
+    # `ai pipeline` executes, so applying a proposal stays an explicit, separate act.
+    configured=load_json(state/'validators.json',{}).get('validators',{})
+    report=proposal(root,configured)
+    print('\nCheck tooling detected:')
+    print('\n'.join(render(report)))
+    if any(row['action']=='add' for row in report['rows']):
+        print('\nRun `ai validators propose --apply` to configure these gates,')
+        print('then `ai validators install` for the bundled semantic validators.')
 
 
 def cmd_status(args):
     root=git_root(); state=repo_state(root); print('Repository:',root); print('State:',state)
+    print('Base:', base_report(root,state))
     print('Profile:', 'present' if (state/'project-profile.json').exists() else 'missing')
     print('Contract:', 'present' if (task_state(state)/'contracts/current-pr.yml').exists() else 'missing')
     print('Graphify:', 'ready' if (state/'graphify/graph.json').exists() else 'off')
@@ -100,6 +137,8 @@ def cmd_status(args):
     enabled=sum(1 for x in enabled_skills(state).values() if x['enabled']); print('Skills:',enabled,'enabled /',len(enabled_skills(state)),'installed')
     print('Token policy: lazy skills + hard profile budgets')
     print('Code Review Graph:', 'ready' if crg_cmd() and crg_exec(root,state,['status'],check=False)[0]==0 else ('installed/not-built' if crg_cmd() else 'off'))
+    running=running_tasks(state,root)
+    print('Pipelines running:', ', '.join(f'{r["id"]} (pid {r["pid"]})' for r in running) or 'none')
     bad=contamination(root); print('Zero-footprint:', 'PASS' if not bad else 'FAIL');
     if bad:
         for x in bad: print('  tracked:',x)
@@ -113,6 +152,7 @@ def cmd_doctor(args):
     try:
         root=git_root(); state=repo_state(root); bad=contamination(root)
         print('\nRepository:',root); print('External state:',state)
+        print('Base:', base_report(root,state))
         print('Zero-footprint:', 'PASS' if not bad else 'FAIL')
         for x in bad: print('  tracked:',x)
         state_files=['rules.json','lessons.json','patterns.json','validators.json',

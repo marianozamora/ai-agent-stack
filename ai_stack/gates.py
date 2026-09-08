@@ -1,12 +1,15 @@
 from __future__ import annotations
 import argparse, hashlib, json, os, re, shutil, sys, tempfile, time, uuid
 from pathlib import Path
+from detect import proposal, render
 from core import contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
 from workflow import execute, finding_signature, normalize_finding, usage_from_verdict, validate_config
-from validators import INSTRUCTIONS, intact_record, model_verdict
+from tasks import require_open_task, task_lock
+from providers import reviewer as get_reviewer
+from validators import INSTRUCTIONS, SCHEMA, check_verdict, intact_record
 
 
 def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
@@ -50,7 +53,23 @@ def validator_config(state):
 
 
 def cmd_validators(args):
-    state=repo_state(git_root()); config=validator_config(state)
+    root=git_root(); state=repo_state(root); config=validator_config(state)
+    if args.action=='propose':
+        report=proposal(root,config['validators'])
+        if args.json: print(json.dumps(report,indent=2))
+        else:
+            print('Detected check tooling'); print('\n'.join(render(report)))
+        added=[row for row in report['rows'] if row['action']=='add']
+        if not args.apply:
+            if added and not args.json:
+                print('\nNothing written. Re-run with --apply to configure the proposed gates.')
+            return
+        for row in added: config['validators'][row['gate']]=row['validator']
+        validate_config(config)
+        save_json(state/'validators.json',config)
+        print('\nApplied: '+(', '.join(row['gate'] for row in added) or 'nothing to add'))
+        print('Saved:',state/'validators.json')
+        return
     if args.action=='install':
         for name in INSTRUCTIONS:
             existing=config['validators'].get(name)
@@ -93,8 +112,13 @@ def cmd_validate(args):
                 raise ValueError(f'Missing or stale prerequisite: {name}')
             records[name]={'command':record['command'],'verdict':record.get('verdict'),
                            'log':record['log'],'exit_code':record['exit_code']}
-        executable=shutil.which('codex')
-        if not executable: raise ValueError('Codex CLI missing. Install/authenticate Codex or configure a custom validator.')
+        active_reviewer=get_reviewer(state)
+        # This check stays here (not inside the reviewer) so a caller can name the
+        # exact binary it is missing before ever constructing a prompt for it, and
+        # so the check is independent of which reviewer is configured.
+        if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
+            label=active_reviewer.name.capitalize()
+            raise ValueError(f'{label} CLI missing. Install/authenticate {label} or configure a custom validator.')
         contract=task/'contracts/current-pr.yml'
         design=task/'contracts/current-design.yml'
         if not contract.is_file(): raise ValueError('PR contract is missing.')
@@ -131,7 +155,11 @@ Fresh gate evidence (read referenced logs as needed):
 {json.dumps(records)}
 '''
         enforce_budget(prompt,plan['caps']['context_chars'],'validator context')
-        verdict=model_verdict(executable,root,task,args.name,prompt)
+        # Inherit the gate process group: its timeout kills the reviewer and child
+        # tools. The public entry point requires ai gate, which owns execution and
+        # freshness, so no timeout is passed here.
+        verdict=active_reviewer.verdict(root,task/'review',args.name,prompt,SCHEMA,
+                                        lambda value: check_verdict(value,args.name),None)
         if verdict['status']=='PASS' and args.name=='summary':
             summary=verdict['summary_markdown']
             enforce_budget(summary,plan['caps']['handoff_chars'],'PR summary')
@@ -146,8 +174,18 @@ Fresh gate evidence (read referenced logs as needed):
     if verdict['status']!='PASS': raise SystemExit(1)
 
 
+def budget_message(overrun,budget,required,blocked)->str:
+    """Explain a budget stop: what crossed it, what it cost, and what never ran."""
+    remaining=required[required.index(blocked):]
+    crossed=overrun['gate'] or blocked
+    return ("BUDGET_EXCEEDED: this profile's usage budget was reached.\n"
+            f"  crossed at:  {crossed} ({overrun['tokens']} >= {budget} reported tokens)\n"
+            f"  not run:     {', '.join(remaining)}\n"
+            '  continue anyway with `ai pipeline --allow-overrun`, or use a larger profile.')
+
+
 def cmd_pipeline(args):
-    root=git_root(); state=repo_state(root); plan=current_plan(state)
+    root=git_root(); state=repo_state(root); require_open_task(state); plan=current_plan(state)
     config=validator_config(state)['validators']
     required=required_gates(root,plan)
     missing=[name for name in required if name not in config]
@@ -161,44 +199,67 @@ def cmd_pipeline(args):
     if budget and card['projected_usage_tokens']>budget:
         print(f"Note: projected usage from prior runs ({card['projected_usage_tokens']} tokens, n-backed) "
               f"exceeds this profile's budget ({budget}); consider a stricter profile. Continuing.")
+    task=task_state(state)
     started=time.monotonic(); status='FAILED'; executed=[]; skipped=[]
+    overrun:dict={'gate':None,'tokens':0}
     usage_total={'input_tokens':0,'output_tokens':0}
+    allow_overrun=getattr(args,'allow_overrun',False)
+    def spend(): return usage_total['input_tokens']+usage_total['output_tokens']
     try:
-        for name in required:
-            if validator_config(state)['validators']!=config:
-                raise SystemExit('NEEDS_HUMAN: validator configuration changed; rerun pipeline.')
-            spent=usage_total['input_tokens']+usage_total['output_tokens']
-            if budget and spent>=budget:
-                raise SystemExit(f'NEEDS_HUMAN: pipeline usage budget exceeded ({spent} >= {budget} reported tokens) before {name}.')
-            fingerprint=evidence_fingerprint(root,state,current_plan(state))
-            record=load_json(task_state(state)/'gates'/(name+'.json'),{})
-            item=config[name]
-            if (args.resume and record.get('passed') and intact_record(record,fingerprint)
-                    and record.get('command')==item['command'] and record.get('adapter')==item['adapter']
-                    ):
-                print(name+': fresh evidence reused'); skipped.append(name)
-                for key in usage_total: usage_total[key]+=record.get('usage',{}).get(key,0)
-                continue
-            executed.append(name)
-            cmd_gate(argparse.Namespace(name=name,**item))
-            fresh=load_json(task_state(state)/'gates'/(name+'.json'),{})
-            for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
-        cmd_ready(args)
-        status='PR_READY'
+        with task_lock(task,'ai pipeline',force=getattr(args,'force_unlock',False)):
+            for name in required:
+                if validator_config(state)['validators']!=config:
+                    raise SystemExit('NEEDS_HUMAN: validator configuration changed; rerun pipeline.')
+                if budget and not allow_overrun and spend()>=budget:
+                    # Crossing the budget is its own outcome, not a failed gate: every
+                    # gate that ran may have passed, and the rest simply never ran.
+                    overrun={'gate':overrun['gate'] or name,'tokens':spend()}
+                    status='BUDGET_EXCEEDED'
+                    raise SystemExit(budget_message(overrun,budget,required,name))
+                fingerprint=evidence_fingerprint(root,state,current_plan(state))
+                record=load_json(task/'gates'/(name+'.json'),{})
+                item=config[name]
+                if (args.resume and record.get('passed') and intact_record(record,fingerprint)
+                        and record.get('command')==item['command'] and record.get('adapter')==item['adapter']
+                        ):
+                    print(name+': fresh evidence reused'); skipped.append(name)
+                    for key in usage_total: usage_total[key]+=record.get('usage',{}).get(key,0)
+                    continue
+                executed.append(name)
+                cmd_gate(argparse.Namespace(name=name,**item))
+                fresh=load_json(task/'gates'/(name+'.json'),{})
+                for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
+                # Check after the gate too, so the gate that actually crossed the budget
+                # is the one named, not the innocent one that would have come next.
+                if budget and not allow_overrun and spend()>=budget:
+                    overrun={'gate':name,'tokens':spend()}
+            cmd_ready(args)
+            status='PR_READY'
     finally:
         record_metric(state,'pipeline',status=status,executed=executed,skipped=skipped,
-                      duration_seconds=round(time.monotonic()-started,3),usage=usage_total,usage_budget=budget)
-        spent=usage_total['input_tokens']+usage_total['output_tokens']
-        if spent: print(f"Usage: {usage_total['input_tokens']} input / {usage_total['output_tokens']} output tokens"
-                         +(f' (budget {budget})' if budget else ''))
+                      duration_seconds=round(time.monotonic()-started,3),usage=usage_total,
+                      usage_budget=budget,overrun_gate=overrun['gate'],overrun_tokens=overrun['tokens'])
+        save_json(task/'state/pipeline-run.json',{'status':status,'executed':executed,'skipped':skipped,
+            'usage':usage_total,'usage_budget':budget,'overrun_gate':overrun['gate'],
+            'remaining':[name for name in required if name not in executed and name not in skipped],
+            'finished_at':time.time()})
+        if spend(): print(f"Usage: {usage_total['input_tokens']} input / {usage_total['output_tokens']} output tokens"
+                          +(f' (budget {budget})' if budget else ''))
 
 
 def cmd_gate(args):
-    root=git_root(); state=repo_state(root); plan=current_plan(state); task=task_state(state)
+    root=git_root(); state=repo_state(root); plan=current_plan(state); task,_=require_open_task(state)
     command=args.command
     if command[:1]==['--']: command=command[1:]
     if not command: raise SystemExit('A gate requires an executable command after --.')
     if args.timeout<=0: raise SystemExit('Timeout must be positive.')
+    # Re-entrant: `ai pipeline` already holds this task's lock and calls straight
+    # into here, so the inner acquisition is a no-op that must not release it.
+    with task_lock(task,'ai gate '+args.name,force=getattr(args,'force_unlock',False)):
+        return run_gate(args,root,state,plan,task,command)
+
+
+def run_gate(args,root,state,plan,task,command):
     before=evidence_fingerprint(root,state,plan)
     started=time.monotonic()
     directory=task/'gates'
