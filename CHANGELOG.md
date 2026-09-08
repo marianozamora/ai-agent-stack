@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Make mypy blocking, split the fast PR suite from the full subprocess matrix, and test installation and execution from a built wheel.
+- Add a rebuildable SQLite index for metrics while retaining `metrics.jsonl` as the append-only audit source.
+- Generate the command reference from argparse and reduce version/history duplication across README and roadmap.
+
 ## 0.9.4
 
 - Split `ai_stack/cli.py` (2003 lines) into 11 domain modules — `core.py` (git/JSON/state primitives, risk policy), `metrics.py`, `skills.py`, `prompts.py`, `learning.py`, `crg.py`, `tools.py` (Context7/Graphify/Figma), `repo.py`, `benchmark.py`, `lifecycle.py`, `gates.py` — leaving `cli.py` as a ~130-line entry point (`parser()` + `main()`). Pure mechanical refactor: no CLI output, exit code, file format, or evidence-fingerprint computation changed; all 45 tests pass unchanged. Bare same-directory imports throughout (`from core import ...`), matching the existing `workflow`/`validators` convention, since `ai_stack/` is a flat script directory, not a package — `install.py`, `bin/ai` and `tests/validate.py` needed zero changes.

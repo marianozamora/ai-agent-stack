@@ -1,9 +1,11 @@
 """Bundled read-only semantic validators and their strict response protocol."""
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 import subprocess
 import tempfile
+from typing import Any
 
 
 INSTRUCTIONS = {
@@ -18,7 +20,7 @@ INSTRUCTIONS = {
 }
 
 
-SCHEMA = {
+SCHEMA: dict[str, Any] = {
     'type': 'object', 'additionalProperties': False,
     'required': ['status', 'evidence', 'findings', 'summary_markdown'],
     'properties': {
@@ -30,7 +32,7 @@ SCHEMA = {
 }
 
 
-def check_verdict(value, name):
+def check_verdict(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != set(SCHEMA['required']):
         raise ValueError('Validator response does not match the required fields.')
     if value['status'] not in ('PASS', 'FAIL', 'NEEDS_HUMAN'):
@@ -64,7 +66,9 @@ def intact_record(record, fingerprint):
     return True
 
 
-def run_codex_json(executable, root, review_dir, name, prompt, schema, checker, timeout=None):
+def run_codex_json(executable: str, root: Path, review_dir: Path, name: str, prompt: str,
+                   schema: dict[str, Any], checker: Callable[[Any], dict[str, Any]],
+                   timeout: int | None = None) -> dict[str, Any]:
     """Invoke Codex read-only/ephemeral with a required output schema; never mutates the checkout.
 
     Shared by the gate validator protocol and any other repository-analysis prompt that
@@ -72,8 +76,8 @@ def run_codex_json(executable, root, review_dir, name, prompt, schema, checker, 
     A gate caller relies on the enclosing `ai gate` process-group timeout instead of passing
     one here; a caller with no enclosing gate (e.g. `ai profile --deep`) must pass one.
     """
-    with tempfile.TemporaryDirectory(prefix='codex-', dir=review_dir) as directory:
-        directory = Path(directory)
+    with tempfile.TemporaryDirectory(prefix='codex-', dir=review_dir) as temporary_directory:
+        directory = Path(temporary_directory)
         schema_path = directory/'schema.json'
         final = directory/'final.json'
         schema_path.write_text(json.dumps(schema))
@@ -96,7 +100,7 @@ def run_codex_json(executable, root, review_dir, name, prompt, schema, checker, 
         if not final.is_file() or final.stat().st_size > 64000:
             raise ValueError(f'Missing or oversized reviewer output; diagnostics: {diagnostics}')
         value = checker(json.loads(final.read_text()))
-        usage = {}
+        usage: dict[str, int] = {}
         for line in events.read_text(errors='replace').splitlines():
             try:
                 event = json.loads(line)

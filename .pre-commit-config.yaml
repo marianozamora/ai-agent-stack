@@ -1,0 +1,19 @@
+# Optional local hooks. Enable with: pre-commit install
+# Mirrors the blocking half of CI (ruff check + tests/validate.py). Deliberately
+# omits `ruff format` (permanently advisory by project decision - see ci.yml) and
+# mypy (too slow for a pre-commit hook; runs in CI instead).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21  # keep in sync with the ruff pin in .github/workflows/ci.yml
+    hooks:
+      - id: ruff-check
+        args: [--force-exclude]
+
+  - repo: local
+    hooks:
+      - id: validate
+        name: source + data validation (tests/validate.py)
+        entry: python3 tests/validate.py
+        language: system
+        pass_filenames: false
+        always_run: true
