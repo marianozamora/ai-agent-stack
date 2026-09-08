@@ -695,6 +695,93 @@ if mode=='exit': sys.exit(2)
         self.assertIn('design',calls)
         self.assertEqual(calls[-2:],['summary','provenance'])
 
+    def test_init_reports_repository_state_and_languages(self):
+        output = self.ai('init')
+        self.assertIn('Repository:', output)
+        self.assertIn('State:', output)
+        self.assertIn('Repository modified: NO', output)
+        self.assertIn('Languages:', output)
+
+    def test_optimize_runs_without_a_git_repository(self):
+        outside = self.home / 'outside'
+        outside.mkdir()
+        self.repo = outside
+        output = self.ai('optimize')
+        self.assertIn('Prompt/context optimization audit', output)
+        self.assertIn('Repository modified: NO', output)
+
+    def test_skill_list_explain_enable_disable_and_dry_run(self):
+        listing = self.ai('skill')
+        self.assertIn('Skills', listing)
+        self.assertIn('handoff', listing)
+
+        explain = self.ai('skill', 'explain', 'handoff')
+        self.assertIn('"category"', explain)
+
+        disabled = self.ai('skill', 'disable', 'handoff')
+        self.assertIn('handoff: disabled', disabled)
+        self.assertIn('· handoff', self.ai('skill'))
+
+        enabled = self.ai('skill', 'enable', 'handoff')
+        self.assertIn('handoff: enabled', enabled)
+        self.assertIn('✓ handoff', self.ai('skill'))
+
+        dry_run = self.ai('skill', 'dry-run', 'handoff')
+        self.assertIn('SKILL DRY RUN', dry_run)
+        self.assertIn('repo writes: NO', dry_run)
+
+        self.assertIn('Unknown skill', self.ai('skill', 'explain', 'not-a-real-skill', ok=False))
+
+    def test_rules_add_list_and_remove(self):
+        self.assertIn('No repository-specific rules.', self.ai('rules'))
+        self.ai('rules', 'add', 'Never touch payments code', '--scope', 'payments/**')
+        listing = self.ai('rules')
+        self.assertIn('[payments/**] Never touch payments code', listing)
+        self.assertIn('Invalid rule index.', self.ai('rules', 'remove', '5', ok=False))
+        self.assertIn('Removed: Never touch payments code', self.ai('rules', 'remove', '1'))
+        self.assertIn('No repository-specific rules.', self.ai('rules'))
+
+    def test_handoff_writes_payload_within_budget(self):
+        self.plan()
+        output = self.ai('handoff', 'in progress work', '--next', 'run tests')
+        self.assertIn('Handoff:', output)
+        state = Path(self.ai('path').strip())
+        handoffs = list((state / 'handoffs').glob('handoff-*.json'))
+        self.assertEqual(len(handoffs), 1)
+        payload = json.loads(handoffs[0].read_text())
+        self.assertEqual(payload['task'], 'in progress work')
+        self.assertEqual(payload['next_action'], 'run tests')
+        self.assertEqual(payload['state'], 'in_progress')
+
+    def test_impact_falls_back_to_heuristic_without_crg(self):
+        (self.repo / 'app.txt').write_text('changed for impact\n')
+        output = self.ai('impact', '--base', 'HEAD')
+        self.assertIn('Change impact', output)
+        self.assertIn('CRG:         unavailable', output)
+        self.assertIn('final risk:', output)
+
+    def test_review_prepares_prompt_without_launching_codex(self):
+        (self.repo / 'app.txt').write_text('changed for review\n')
+        output = self.ai('review', '--base', 'HEAD', '--no-launch')
+        self.assertIn('Review context:', output)
+        self.assertIn('CRG:', output)
+        state = Path(self.ai('path').strip())
+        self.assertTrue((state / 'state/current-review.md').exists())
+
+    def test_docs_and_figma_and_crg_and_graph_doctor_without_external_tools(self):
+        docs = self.ai('docs', 'doctor')
+        self.assertIn('Context7:', docs)
+
+        figma = self.ai('figma', 'doctor')
+        self.assertIn('Recommended remote:', figma)
+
+        crg = self.ai('crg', 'doctor')
+        self.assertIn('Code Review Graph:', crg)
+
+        graph = self.ai('graph', 'doctor')
+        self.assertIn('Graphify:', graph)
+        self.assertIn('Graph storage:', graph)
+
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
