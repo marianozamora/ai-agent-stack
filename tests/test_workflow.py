@@ -891,10 +891,19 @@ if mode=='exit': sys.exit(2)
         self.assertIn('does not exist', output)
 
     def test_review_pr_without_gh_fails_with_an_actionable_message(self):
-        env = dict(self.env)
-        env['PATH'] = '/usr/bin:/bin'  # a PATH with no `gh` on it
-        result = subprocess.run([sys.executable, str(ROOT / 'ai_stack/cli.py'), 'review', '--pr', '1', '--no-launch'],
-                                cwd=self.repo, env=env, text=True, capture_output=True)
+        # A hardcoded PATH (e.g. '/usr/bin:/bin') isn't reliably gh-free: GitHub Actions'
+        # ubuntu-latest runners ship gh preinstalled at /usr/bin/gh - alongside git in the
+        # same directory - so excluding any directory containing gh would take git down
+        # with it, failing this subprocess for an unrelated reason before it ever reaches
+        # the gh check. Build an explicit allowlist directory instead: just a symlink to
+        # git (which git_root() needs to even get this far), nothing else reachable.
+        git_path = shutil.which('git')
+        self.assertIsNotNone(git_path, 'git must be on PATH for this test to mean anything')
+        with tempfile.TemporaryDirectory(prefix='gh-free-path-') as bin_dir:
+            (Path(bin_dir) / 'git').symlink_to(git_path)
+            env = dict(self.env, PATH=bin_dir)
+            result = subprocess.run([sys.executable, str(ROOT / 'ai_stack/cli.py'), 'review', '--pr', '1', '--no-launch'],
+                                    cwd=self.repo, env=env, text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('GitHub CLI (gh) missing', result.stdout + result.stderr)
 
