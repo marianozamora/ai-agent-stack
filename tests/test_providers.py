@@ -68,9 +68,24 @@ class ClaudeBuilderTests(unittest.TestCase):
         builder = providers.ClaudeBuilder()
         env = {'AI_TASK_ID': 'x'}
         with mock.patch.object(providers.shutil, 'which', return_value='/usr/local/bin/claude'), \
+                mock.patch.object(providers.sys.stdin, 'isatty', return_value=True), \
                 mock.patch.object(providers.os, 'execvpe') as execvpe:
             builder.launch('the prompt', Path('/repo'), env)
         execvpe.assert_called_once_with('/usr/local/bin/claude', ['/usr/local/bin/claude', 'the prompt'], env)
+
+    def test_launch_refuses_without_a_tty_instead_of_hanging(self):
+        # Regression: execvpe replaces this process with an interactive Claude session.
+        # Without a real terminal to talk to (a script, CI, a pipe), it used to hang
+        # silently forever instead of failing - this must refuse before ever exec'ing.
+        builder = providers.ClaudeBuilder()
+        with mock.patch.object(providers.shutil, 'which', return_value='/usr/local/bin/claude'), \
+                mock.patch.object(providers.sys.stdin, 'isatty', return_value=False), \
+                mock.patch.object(providers.os, 'execvpe') as execvpe:
+            with self.assertRaises(SystemExit) as caught:
+                builder.launch('the prompt', Path('/repo'), {})
+        execvpe.assert_not_called()
+        self.assertIn('interactive terminal', str(caught.exception))
+        self.assertIn('--plan-only', str(caught.exception))
 
 
 class CodexReviewerTests(unittest.TestCase):
