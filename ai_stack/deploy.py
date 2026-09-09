@@ -157,6 +157,10 @@ def _show(state):
 
 
 def _set(args,state):
+    # Human-only for the same reason ai lessons confirm/ai prompt promote are: a model
+    # running inside a gate (read-only by its own instructions) must never be able to
+    # declare or rewrite a command a human will later run with --execute, trusting it.
+    require_human(f'Declaring deploy target {args.target}')
     config=deploy_config(state)
     command=args.command[1:] if args.command[:1]==['--'] else args.command
     config['targets'][args.target]={'command':command,'timeout':args.timeout,'evidence':args.evidence,'description':args.description}
@@ -167,6 +171,9 @@ def _set(args,state):
 
 
 def _remove(args,state):
+    # Same human-only boundary as _set(): a model inside a gate must not be able to
+    # retire a deploy target either, e.g. to hide a tampered one behind a re-add.
+    require_human(f'Removing deploy target {args.target}')
     config=deploy_config(state)
     config['targets'].pop(args.target,None)
     save_json(state/'deploy.json',config)
