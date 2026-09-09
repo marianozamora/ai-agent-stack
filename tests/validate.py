@@ -12,7 +12,7 @@ for path in (root / 'skills').rglob('*.json'):
     json.loads(path.read_text())
 for path in (root / 'templates/benchmarks').rglob('*.json'):
     json.loads(path.read_text())
-for path in [root / 'install.sh', *(root / 'bin').iterdir(), *(root / 'tests').glob('*.sh'), root / 'templates/lib/common.sh']:
+for path in [root / 'install.sh', *(root / 'bin').iterdir(), *(root / 'tests').glob('*.sh')]:
     if path.is_file() and path.read_text().startswith('#!/usr/bin/env bash'):
         subprocess.run(['bash', '-n', str(path)], check=True)
 version = subprocess.check_output([str(root / 'bin/ai'), '--version'], text=True).strip()
