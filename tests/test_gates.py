@@ -365,5 +365,85 @@ class CmdValidateGuardTests(unittest.TestCase):
         self.assertIn('Unknown reviewer', verdict['findings'][0])
 
 
+class RunGateFingerprintReuseTests(unittest.TestCase):
+    """run_gate()/cmd_gate() accept a precomputed `before` fingerprint -- the
+    optimization cmd_pipeline relies on to avoid a third full evidence_fingerprint()
+    walk per gate (its own --resume freshness check, run_gate's `before`, run_gate's
+    `after`). Must never weaken the before/after tamper check itself."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        self.task = core.task_state(self.state)
+        self.plan = gates.current_plan(self.state)
+
+    def _args(self):
+        # 'checks' is always in GATES[:7], so it's required regardless of profile.
+        return argparse.Namespace(name='checks', timeout=30, adapter='exit-code', evidence='ok')
+
+    def _counting_fingerprint(self):
+        calls = []
+        real = gates.evidence_fingerprint
+
+        def counting(*a, **k):
+            calls.append(1)
+            return real(*a, **k)
+        return calls, counting
+
+    def test_precomputed_before_is_used_instead_of_recomputed(self):
+        before = gates.evidence_fingerprint(self.root, self.state, self.plan)
+        calls, counting = self._counting_fingerprint()
+        with mock.patch.object(gates, 'evidence_fingerprint', side_effect=counting):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                gates.run_gate(self._args(), self.root, self.state, self.plan, self.task, ['true'], before)
+        # Only the `after` measurement ran; `before` was supplied, not recomputed.
+        self.assertEqual(len(calls), 1)
+        self.assertIn('PASS', buf.getvalue())
+
+    def test_without_before_it_is_computed_twice(self):
+        calls, counting = self._counting_fingerprint()
+        with mock.patch.object(gates, 'evidence_fingerprint', side_effect=counting):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                gates.run_gate(self._args(), self.root, self.state, self.plan, self.task, ['true'])
+        self.assertEqual(len(calls), 2)
+        self.assertIn('PASS', buf.getvalue())
+
+    def test_precomputed_before_still_detects_mutation_during_the_gate(self):
+        # The optimization must not open a hole in the tamper check: a command that
+        # writes into the repo must still fail the gate even when `before` came from
+        # the caller instead of being recomputed inside run_gate.
+        before = gates.evidence_fingerprint(self.root, self.state, self.plan)
+        mutate = ['bash', '-c', 'echo mutated > scratch-during-gate.txt']
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            gates.run_gate(self._args(), self.root, self.state, self.plan, self.task, mutate, before)
+        out = buf.getvalue()
+        self.assertIn('FAIL', out)
+        self.assertIn('Repository or task changed during gate', out)
+        record = core.load_json(self.task / 'gates/checks.json', {})
+        self.assertFalse(record['passed'])
+
+    def test_cmd_pipeline_reuses_its_own_fingerprint_for_the_gate_before(self):
+        # End-to-end proof at the cmd_pipeline level (not just run_gate directly):
+        # the fingerprint cmd_pipeline computes for its --resume check is the exact
+        # value the gate it launches uses as `before`, with no separate recomputation.
+        config = {'version': 1, 'validators': {
+            'checks': {'command': ['true'], 'adapter': 'exit-code', 'evidence': 'ok', 'timeout': 30}}}
+        core.save_json(self.state / 'validators.json', config)
+        calls, counting = self._counting_fingerprint()
+        with mock.patch.object(gates, 'evidence_fingerprint', side_effect=counting), \
+                mock.patch.object(gates, 'required_gates', return_value=['checks']), \
+                mock.patch.object(gates, 'cmd_ready'):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                gates.cmd_pipeline(argparse.Namespace(dry_run=False, resume=False, allow_overrun=False,
+                                                       force_unlock=False))
+        # One computation for cmd_pipeline's own --resume check (reused as `before`),
+        # one for run_gate's `after` -- never a third, separate `before`.
+        self.assertEqual(len(calls), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

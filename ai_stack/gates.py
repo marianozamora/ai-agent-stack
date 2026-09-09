@@ -226,7 +226,12 @@ def cmd_pipeline(args):
                     for key in usage_total: usage_total[key]+=record.get('usage',{}).get(key,0)
                     continue
                 executed.append(name)
-                cmd_gate(argparse.Namespace(name=name,**item))
+                # Reuse the fingerprint just computed above as the gate's `before`:
+                # nothing between that computation and this call can mutate the repo
+                # (just load_json/dict lookups), so recomputing it inside cmd_gate/
+                # run_gate would walk and hash the entire worktree a second time for
+                # no different answer. `after` is still always computed fresh.
+                cmd_gate(argparse.Namespace(name=name,**item),fingerprint)
                 fresh=load_json(task/'gates'/(name+'.json'),{})
                 for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
                 # Check after the gate too, so the gate that actually crossed the budget
@@ -247,7 +252,12 @@ def cmd_pipeline(args):
                           +(f' (budget {budget})' if budget else ''))
 
 
-def cmd_gate(args):
+def cmd_gate(args,before=None):
+    # `before`: an evidence_fingerprint() the caller already computed against this
+    # same plan, with nothing able to mutate the repo since (see cmd_pipeline, the
+    # only caller that passes one). Argparse's own `func=cmd_gate` wiring always
+    # calls this with just `args`, so the default keeps `ai gate NAME -- CMD` and
+    # every other caller computing their own, exactly as before.
     root=git_root(); state=repo_state(root); plan=current_plan(state); task,_=require_open_task(state)
     command=args.command
     if command[:1]==['--']: command=command[1:]
@@ -256,11 +266,18 @@ def cmd_gate(args):
     # Re-entrant: `ai pipeline` already holds this task's lock and calls straight
     # into here, so the inner acquisition is a no-op that must not release it.
     with task_lock(task,'ai gate '+args.name,force=getattr(args,'force_unlock',False)):
-        return run_gate(args,root,state,plan,task,command)
+        return run_gate(args,root,state,plan,task,command,before)
 
 
-def run_gate(args,root,state,plan,task,command):
-    before=evidence_fingerprint(root,state,plan)
+def run_gate(args,root,state,plan,task,command,before=None):
+    # evidence_fingerprint() walks and hashes the entire worktree; a pipeline run
+    # otherwise computed it three times per gate (once for cmd_pipeline's own
+    # --resume freshness check, once here as `before`, once as `after`). `before`
+    # can safely be reused from that first computation because it describes a state
+    # the caller already observed with nothing able to mutate the repo in between --
+    # `after`, by contrast, is the measurement that proves *this* command didn't
+    # touch the repo, and must always be computed fresh right after it runs.
+    if before is None: before=evidence_fingerprint(root,state,plan)
     started=time.monotonic()
     directory=task/'gates'
     log=directory/(args.name+'-'+uuid.uuid4().hex+'.log')
