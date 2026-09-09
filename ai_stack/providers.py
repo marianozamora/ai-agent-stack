@@ -16,7 +16,7 @@ doctor` says so rather than degrading to one that mutates the repository, becaus
 a reviewer with write access could make its own verdict come true.
 """
 from __future__ import annotations
-import json, os, shutil, subprocess, tempfile
+import json, os, shutil, subprocess, sys, tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
@@ -45,6 +45,14 @@ class ClaudeBuilder:
     def launch(self,prompt:str,root:Path,env:dict)->None:
         path=shutil.which(self.executable)
         if not path: raise SystemExit(f'{self.name.capitalize()} CLI missing. Use ai plan to only prepare.')
+        # execvpe replaces this process with an interactive Claude session, which needs
+        # a real terminal to talk to. Without one (a script, CI, a pipe) this used to
+        # hang silently forever instead of failing - the builder started, found no TTY
+        # to read from, and just sat there with zero output until something killed it.
+        if not sys.stdin.isatty():
+            raise SystemExit(f'{self.name.capitalize()} needs an interactive terminal; '
+                             'this session has none (piped, scripted, or CI). '
+                             'Use ai plan / --plan-only to only prepare the prompt instead.')
         os.execvpe(path,[path,prompt],env)
 
 
