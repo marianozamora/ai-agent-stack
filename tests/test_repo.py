@@ -164,6 +164,22 @@ class RepoSandboxTests(unittest.TestCase):
         self.assertIn('my-custom-reviewer', out)
         self.assertNotIn('codex', out)
 
+    def test_cmd_doctor_reports_orphaned_state_under_a_different_repo_id(self):
+        # Simulates state left over from before repo_state()'s remote-normalization
+        # migration existed: a repo.json recorded for this exact root, but under an
+        # id that no longer matches the one this checkout resolves to today.
+        orphan_dir = self.cfg / 'repos' / 'deadbeefdeadbeef'
+        orphan_dir.mkdir(parents=True)
+        core.save_json(orphan_dir / 'repo.json',
+                       {'repo_id': 'deadbeefdeadbeef', 'last_root': str(self.repo.resolve())})
+        out = self._run(repo.cmd_doctor, argparse.Namespace())
+        self.assertIn('Orphaned state', out)
+        self.assertIn(str(orphan_dir), out)
+
+    def test_cmd_doctor_reports_no_orphaned_state_when_none_exists(self):
+        out = self._run(repo.cmd_doctor, argparse.Namespace())
+        self.assertNotIn('Orphaned state', out)
+
     def test_cmd_optimize_prints_audit_without_writes(self):
         out = self._run(repo.cmd_optimize, argparse.Namespace())
         self.assertIn('Prompt/context optimization audit', out)

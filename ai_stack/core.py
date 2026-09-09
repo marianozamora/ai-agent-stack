@@ -60,23 +60,102 @@ def temp_worktree(root:Path,ref:str):
             run(["git","worktree","remove","--force",str(path)],cwd=root,check=False)
 
 
+_SCP_LIKE_REMOTE = re.compile(r'^(?:[\w.-]+@)?([\w.-]+):(.+)$')
+_URL_REMOTE = re.compile(r'^([a-zA-Z][a-zA-Z0-9+.-]*)://(?:[^@/]+@)?([^/:]+)(?::(\d+))?(/.*)?$')
+_DEFAULT_PORTS = {'https':'443','http':'80','ssh':'22','git':'9418'}
+
+
+def _legacy_normalize_remote(remote:str)->str:
+    """The original remote_id() normalization: strip only a trailing `.git`.
+
+    Kept solely so repo_state() can detect and migrate state a prior release
+    keyed by it -- never used to compute a *new* id.
+    """
+    return re.sub(r"\.git$","",remote.strip())
+
+
+def normalize_remote(remote:str)->str:
+    """Collapse equivalent remote URLs to the same `host/path` string.
+
+    `git@github.com:x/y.git`, `git@github.com:x/y`, `https://github.com/x/y.git`
+    and `ssh://git@github.com:22/x/y` all normalize to `github.com/x/y`, so a
+    `git remote set-url` between protocols (routine: ssh<->https) or an
+    equivalent URL spelling never silently orphans a repository's recorded
+    rules/validators/lessons/tasks under a different id. Only the host is
+    lowercased -- a repository path can be case-sensitive on some hosts, and
+    lowercasing it would risk colliding two distinct repositories into one id.
+    A path with no scheme and no `user@host:` form (a local filesystem path,
+    the fallback when there is no `origin`) passes through unchanged.
+    """
+    s=re.sub(r"\.git$","",remote.strip())
+    m=_URL_REMOTE.match(s)
+    if m:
+        scheme,host,port,path=m.groups()
+        if port and port==_DEFAULT_PORTS.get(scheme.lower()): port=None
+        s=host.lower()+((':'+port) if port else '')+'/'+((path or '').lstrip('/'))
+        return s.rstrip('/')
+    m=_SCP_LIKE_REMOTE.match(s)
+    if m:
+        host,path=m.groups()
+        return (host.lower()+'/'+path.lstrip('/')).rstrip('/')
+    return s.rstrip('/') or s
+
+
 def remote_id(root:Path)->tuple[str,str]:
     try: remote=run(["git","remote","get-url","origin"],cwd=root)
     except Exception: remote=str(root.resolve())
-    normalized=re.sub(r"\.git$","",remote.strip())
+    normalized=normalize_remote(remote)
     rid=hashlib.sha256(normalized.encode()).hexdigest()[:16]
     return rid, normalized
+
+
+def _legacy_remote_id(root:Path)->tuple[str,str]:
+    try: remote=run(["git","remote","get-url","origin"],cwd=root)
+    except Exception: remote=str(root.resolve())
+    normalized=_legacy_normalize_remote(remote)
+    return hashlib.sha256(normalized.encode()).hexdigest()[:16], normalized
+
+
+def known_repo_states()->list[Path]:
+    """Every repo.json this installation has ever recorded, for cross-repository
+    checks like `ai doctor`'s orphaned-state detection. Reads CONFIG_ROOT fresh on
+    each call (not a module-level constant capture) so tests that patch it see the
+    effect. Order is not meaningful."""
+    d=CONFIG_ROOT/'repos'
+    return sorted(d.glob('*/repo.json')) if d.is_dir() else []
 
 
 def repo_state(root:Path|None=None, create=True)->Path:
     root=root or git_root(); rid,remote=remote_id(root)
     d=CONFIG_ROOT/"repos"/rid
+    migrated_from=None
     if create:
+        # A `git remote set-url` between ssh and https (routine) or an equivalent
+        # URL spelling used to hash to a different repo_id, silently orphaning
+        # every rule/validator/lesson/task recorded under the old one. If this
+        # repository's state still lives only under the id a prior release would
+        # have computed, move it forward once rather than starting empty.
+        legacy_rid,_=_legacy_remote_id(root)
+        legacy_dir=CONFIG_ROOT/"repos"/legacy_rid
+        if legacy_rid!=rid and legacy_dir.is_dir():
+            if not d.is_dir():
+                legacy_dir.rename(d); migrated_from=legacy_rid
+                print(f'notice: migrated repository state from {legacy_rid} to {rid} '
+                     '(remote URL normalization). Run `ai doctor` if anything looks missing.',
+                     file=sys.stderr)
+            else:
+                print(f'notice: repository state exists under both {legacy_rid} (legacy) and '
+                     f'{rid} (current) for this remote; not merged automatically.\n'
+                     f'  legacy:  {legacy_dir}\n  current: {d}',file=sys.stderr)
         for sub in ["contracts","state","graphify","docs-cache","code-review-graph","review","task-cache","handoffs","skill-state"]: (d/sub).mkdir(parents=True,exist_ok=True)
         # Merge, never clobber: repo.json now carries durable per-repo settings
         # (default_base) that a plain rewrite on every repo_state() call would discard.
         meta=load_json(d/"repo.json",{})
         if not isinstance(meta,dict): meta={}
+        if migrated_from:
+            history:list[Any]=meta['migrated_from'] if isinstance(meta.get('migrated_from'),list) else []
+            if migrated_from not in history: history=[*history,migrated_from]
+            meta['migrated_from']=history
         meta.update({"version":1,"repo_id":rid,"remote":remote,"last_root":str(root),"updated_at":int(time.time())})
         (d/"repo.json").write_text(json.dumps(meta,indent=2,sort_keys=True)+"\n")
         if not (d/"rules.json").exists(): (d/"rules.json").write_text("[]\n")

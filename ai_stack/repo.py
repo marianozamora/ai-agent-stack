@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, shutil, time
 from typing import Any
-from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
+from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, known_repo_states, load_json, profile_repo, remote_id, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
 from providers import builder as get_builder, reviewer as get_reviewer
@@ -172,6 +172,22 @@ def cmd_doctor(args):
         corrupt=[name for name in state_files if json_file_health(state/name)=='corrupt']
         print('State files:', 'PASS' if not corrupt else f'CORRUPT ({len(corrupt)})')
         for name in corrupt: print('  corrupt:',state/name)
+        # A repository moved its remote (ssh<->https, or an equivalent URL spelling)
+        # before repo_state()'s migration existed, or has state left over under a
+        # repo_id that no longer resolves for this root at all -- surface it rather
+        # than let rules/validators/lessons/tasks sit invisibly unused.
+        active_rid,_=remote_id(root)
+        here=str(root.resolve())
+        orphaned=[]
+        for meta_path in known_repo_states():
+            meta=load_json(meta_path,{})
+            if not isinstance(meta,dict): continue
+            if meta.get('last_root')==here and meta.get('repo_id') and meta.get('repo_id')!=active_rid:
+                orphaned.append(meta_path.parent)
+        if orphaned:
+            print(f'Orphaned state: {len(orphaned)} director{"y" if len(orphaned)==1 else "ies"} '
+                  'recorded for this repository under a different id (see `ai path`/remote URL history)')
+            for d in orphaned: print('  ',d)
         metrics_file=state/'metrics.jsonl'
         if metrics_file.exists():
             row_count=sum(1 for _ in metrics_file.open())
