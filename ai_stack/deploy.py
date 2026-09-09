@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 from core import git_root, load_json, profile_repo, repo_state, require_human, run, safe_head, save_json, task_state
 from metrics import record_metric
-from validators import run_codex_json
+from providers import reviewer as get_reviewer
 from workflow import execute
 
 
@@ -115,8 +115,10 @@ def _plan(args,root,state):
     if existing and not args.refresh and existing.get('analyzed_commit')==current_commit:
         print(f"Deploy runbook up to date (commit {current_commit[:12]}); use --refresh to force.")
         print('Runbook:',runbook_path); print('Markdown:',state/'deploy-runbook.md'); return
-    executable=shutil.which('codex')
-    if not executable: raise SystemExit('Codex CLI missing. Install/authenticate Codex to generate a deploy runbook.')
+    active_reviewer=get_reviewer(state)
+    if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
+        label=active_reviewer.name.capitalize()
+        raise SystemExit(f'{label} CLI missing. Install/authenticate {label} to generate a deploy runbook.')
     deep=load_json(state/'project-deep-profile.json',{})
     prompt=f'''Read this repository read-only and produce a deploy runbook for the **dev** environment only.
 Do not modify files, run any command that writes, or invent commands/credentials that are
@@ -130,7 +132,8 @@ Project profile: {json.dumps(profile)}
 Deployment notes from a prior deep profile, if any: {json.dumps(deep.get('deployment','')) if deep else '"none"'}
 '''
     try:
-        runbook=run_codex_json(executable,root,state/'review','deploy-runbook',prompt,RUNBOOK_SCHEMA,check_runbook,timeout=args.timeout)
+        runbook=active_reviewer.verdict(root,state/'review','deploy-runbook',prompt,RUNBOOK_SCHEMA,
+                                        check_runbook,args.timeout)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     runbook={k:runbook[k] for k in RUNBOOK_SCHEMA['required']}

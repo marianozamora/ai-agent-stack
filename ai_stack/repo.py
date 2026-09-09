@@ -4,7 +4,7 @@ from typing import Any
 from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
-from providers import reviewer as get_reviewer
+from providers import builder as get_builder, reviewer as get_reviewer
 from skills import enabled_skills, skill_registry
 from tasks import running_tasks
 
@@ -147,7 +147,18 @@ def cmd_status(args):
 def cmd_doctor(args):
     print('AI Agent Stack',VERSION)
     print('Skills Engine:',len(skill_registry().get('skills',{})),'skills installed')
-    for name in ['git','python3','node','claude','codex','rtk','codegraph','graphify','code-review-graph','ctx7','gh']:
+    # The builder/reviewer binaries to probe come from this repository's actual
+    # configuration (`ai providers set`), not a hard-coded claude/codex pair --
+    # otherwise doctor would keep reporting on the defaults even once a different
+    # provider is configured. Falls back to the defaults outside a git repo, where
+    # there is no repo.json yet to read a configuration from.
+    builder_binary,reviewer_binary='claude','codex'
+    try:
+        probe_root=git_root(); probe_state=repo_state(probe_root)
+        builder_binary=get_builder(probe_state).executable
+        reviewer_binary=get_reviewer(probe_state).probe_binary or reviewer_binary
+    except (SystemExit,ValueError): pass
+    for name in ['git','python3','node',builder_binary,reviewer_binary,'rtk','codegraph','graphify','code-review-graph','ctx7','gh']:
         print(('✓' if shutil.which(name) else '·'),f'{name:10}', 'installed' if shutil.which(name) else 'missing')
     try:
         root=git_root(); state=repo_state(root); bad=contamination(root)

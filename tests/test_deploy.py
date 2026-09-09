@@ -409,24 +409,58 @@ class PlanCachingTests(unittest.TestCase):
             deploy.cmd_deploy(argparse.Namespace(deploy_cmd='plan', refresh=refresh, timeout=600))
         return buf.getvalue()
 
+    def _fake_reviewer(self, verdict_return=None, probe_binary='codex', name='codex'):
+        # `deploy._plan` now goes through providers.reviewer(state) like every other
+        # gate/profile caller, instead of hard-coding Codex -- a fake Reviewer stands
+        # in for CodexReviewer here the same way test_repo.py's --deep tests do.
+        reviewer = mock.Mock()
+        reviewer.probe_binary = probe_binary
+        reviewer.name = name
+        reviewer.verdict = mock.Mock(return_value=verdict_return or self._runbook_value())
+        return reviewer
+
     def test_caches_by_commit_and_refresh_forces_regeneration(self):
-        with mock.patch.object(deploy, 'shutil') as shutil_mock, \
-                mock.patch.object(deploy, 'run_codex_json', return_value=self._runbook_value()) as codex_mock:
-            shutil_mock.which.return_value = '/usr/bin/codex'
+        fake = self._fake_reviewer()
+        with mock.patch.object(deploy, 'get_reviewer', return_value=fake), \
+                mock.patch.object(deploy.shutil, 'which', return_value='/usr/bin/codex'):
             self._plan()
-            self.assertEqual(codex_mock.call_count, 1)
+            self.assertEqual(fake.verdict.call_count, 1)
             out = self._plan()  # no --refresh: cached, no second call
             self.assertIn('up to date', out)
-            self.assertEqual(codex_mock.call_count, 1)
+            self.assertEqual(fake.verdict.call_count, 1)
             self._plan(refresh=True)
-            self.assertEqual(codex_mock.call_count, 2)
+            self.assertEqual(fake.verdict.call_count, 2)
 
     def test_missing_codex_raises_systemexit(self):
-        with mock.patch.object(deploy, 'shutil') as shutil_mock:
-            shutil_mock.which.return_value = None
+        fake = self._fake_reviewer()
+        with mock.patch.object(deploy, 'get_reviewer', return_value=fake), \
+                mock.patch.object(deploy.shutil, 'which', return_value=None):
             with self.assertRaises(SystemExit) as ctx:
                 self._plan()
         self.assertIn('Codex CLI missing', str(ctx.exception))
+
+    def test_plan_uses_a_configured_reviewer_without_touching_codex(self):
+        # The same proof the provider-abstraction CHANGELOG entry gives for gates:
+        # a real run reaches its outcome through a configured CommandReviewer with
+        # `codex` never invoked, so `ai deploy plan` has no hidden dependency on the
+        # default reviewer -- this used to import run_codex_json directly.
+        script = self.state / 'fake-reviewer.sh'
+        runbook = self._runbook_value()
+        runbook['summary'] = 'a fake dev runbook'
+        script.write_text('#!/bin/bash\ncat <<\'JSON\'\n' + json.dumps(runbook) + '\nJSON\n')
+        script.chmod(0o755)
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'reviewer': 'command', 'reviewer_command': [str(script)]}
+        core.save_json(self.state / 'repo.json', meta)
+        with mock.patch.object(deploy, 'shutil') as shutil_mock:
+            # Prove nothing here ever asks for `codex`: only the fake script's own
+            # (absolute) path may be probed.
+            shutil_mock.which.side_effect = (
+                lambda name: None if name == 'codex' else '/usr/bin/true')
+            out = self._plan()
+        self.assertIn('Runbook:', out)
+        runbook_path = self.state / 'deploy-runbook.json'
+        self.assertEqual(json.loads(runbook_path.read_text())['summary'], 'a fake dev runbook')
 
 
 class DeploySetParserTests(unittest.TestCase):

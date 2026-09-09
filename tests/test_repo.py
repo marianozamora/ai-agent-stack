@@ -152,6 +152,18 @@ class RepoSandboxTests(unittest.TestCase):
         self.assertIn('Zero-footprint:', out)
         self.assertIn('State files:', out)
 
+    def test_cmd_doctor_reports_the_configured_reviewer_not_a_hard_coded_codex(self):
+        # Previously the tool row was a fixed ['claude','codex',...] list, so doctor
+        # kept reporting on the defaults even once a different reviewer was
+        # configured via `ai providers set`. It must now name the binary the
+        # configured reviewer actually probes.
+        meta = core.load_json(self.cfg_repo_state() / 'repo.json', {})
+        meta['providers'] = {'reviewer': 'command', 'reviewer_command': ['my-custom-reviewer']}
+        core.save_json(self.cfg_repo_state() / 'repo.json', meta)
+        out = self._run(repo.cmd_doctor, argparse.Namespace())
+        self.assertIn('my-custom-reviewer', out)
+        self.assertNotIn('codex', out)
+
     def test_cmd_optimize_prints_audit_without_writes(self):
         out = self._run(repo.cmd_optimize, argparse.Namespace())
         self.assertIn('Prompt/context optimization audit', out)
