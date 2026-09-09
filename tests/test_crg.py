@@ -147,6 +147,23 @@ class ResolveCommitTargetTests(unittest.TestCase):
                 crg.resolve_commit_target(root, 'deadbeef1234')
             self.assertIn('does not exist', str(caught.exception))
 
+    def test_commit_range_fails_closed_instead_of_crashing(self):
+        # Regression: `git rev-parse --verify --quiet "A..B^{commit}"` doesn't reject a
+        # range outright - it expands to two lines ("B" then "^A"), which used to be
+        # passed straight to `git worktree add` as a garbage multi-line ref, crashing
+        # with an unhandled traceback instead of a clean refusal.
+        with tempfile.TemporaryDirectory() as d:
+            root = _build_repo(Path(d))
+            first = _head(root)
+            (root / 'app.py').write_text('two\n')
+            subprocess.run(['git', 'commit', '-am', 'second'], cwd=root, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            second = _head(root)
+            with self.assertRaises(SystemExit) as caught:
+                crg.resolve_commit_target(root, f'{first}..{second}')
+            self.assertIn('not a single commit', str(caught.exception))
+            self.assertIn('--base', str(caught.exception))
+
 
 class ResolvePrTargetTests(unittest.TestCase):
     """`ai review --pr <n>`'s target resolution, with git/gh calls mocked."""

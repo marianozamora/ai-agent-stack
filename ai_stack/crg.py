@@ -9,6 +9,15 @@ def resolve_commit_target(root:Path,sha:str)->tuple[str,str]:
     """Full commit sha and its diff base: the parent, or the empty tree for a root commit."""
     full=run(["git","rev-parse","--verify","--quiet",sha+"^{commit}"],cwd=root,check=False)
     if not full: raise SystemExit(f'FAILED: commit {sha!r} does not exist in this repository.')
+    # A range or multi-revision expression (e.g. "A..B") is not a single commit, but
+    # `git rev-parse --verify` doesn't reject it outright: it expands to multiple lines
+    # ("B" then "^A"), which `full` would otherwise pass along as a garbage multi-line
+    # ref to `git worktree add`, crashing with an unhandled traceback instead of this
+    # clean refusal. --commit only ever reviews one commit; a range needs --base instead.
+    if '\n' in full or ' ' in full:
+        raise SystemExit(f'FAILED: {sha!r} is not a single commit (ranges and multi-revision '
+                         "expressions are not supported). Pass one commit sha with --commit, "
+                         'or use --base <ref> to review a range as one diff.')
     parent=run(["git","rev-parse","--verify","--quiet",full+"^"],cwd=root,check=False)
     return full,(parent or EMPTY_TREE)
 
