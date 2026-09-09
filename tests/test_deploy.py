@@ -254,6 +254,24 @@ class SetRemoveTests(unittest.TestCase):
         config = json.loads((self.state / 'deploy.json').read_text())
         self.assertNotIn('dev', config['targets'])
 
+    def test_set_refuses_inside_a_gate(self):
+        # A model running inside a gate (read-only by its own instructions) must never
+        # be able to declare or rewrite a command a human later runs with --execute,
+        # trusting it - same boundary as ai lessons confirm / ai prompt promote.
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}):
+            with self.assertRaises(SystemExit):
+                self._cmd(deploy_cmd='set', target='dev', evidence='ok', timeout=60,
+                          description='', command=['echo', 'hi'])
+        self.assertNotIn('dev', deploy.deploy_config(self.state)['targets'])
+
+    def test_remove_refuses_inside_a_gate(self):
+        self._cmd(deploy_cmd='set', target='dev', evidence='ok', timeout=60, description='', command=['echo'])
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}):
+            with self.assertRaises(SystemExit):
+                self._cmd(deploy_cmd='remove', target='dev')
+        # The gate-context attempt must not have retired the target either.
+        self.assertIn('dev', deploy.deploy_config(self.state)['targets'])
+
 
 class RunTests(unittest.TestCase):
     def setUp(self):
