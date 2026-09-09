@@ -1,9 +1,0 @@
-version: 1
-loading: lazy
-routing_input: registry_metadata_only
-full_prompt_loaded_only_when_selected: true
-selection_caps:
-  fast: 1
-  standard: 2
-  strict: 3
-principle: fewer relevant skills beat a larger always-loaded prompt

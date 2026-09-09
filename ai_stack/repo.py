@@ -1,10 +1,10 @@
 from __future__ import annotations
 import json, shutil, time
 from typing import Any
-from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, load_json, profile_repo, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
+from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, known_repo_states, load_json, profile_repo, remote_id, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
-from providers import reviewer as get_reviewer
+from providers import builder as get_builder, reviewer as get_reviewer
 from skills import enabled_skills, skill_registry
 from tasks import running_tasks
 
@@ -147,7 +147,18 @@ def cmd_status(args):
 def cmd_doctor(args):
     print('AI Agent Stack',VERSION)
     print('Skills Engine:',len(skill_registry().get('skills',{})),'skills installed')
-    for name in ['git','python3','node','claude','codex','rtk','codegraph','graphify','code-review-graph','ctx7','gh']:
+    # The builder/reviewer binaries to probe come from this repository's actual
+    # configuration (`ai providers set`), not a hard-coded claude/codex pair --
+    # otherwise doctor would keep reporting on the defaults even once a different
+    # provider is configured. Falls back to the defaults outside a git repo, where
+    # there is no repo.json yet to read a configuration from.
+    builder_binary,reviewer_binary='claude','codex'
+    try:
+        probe_root=git_root(); probe_state=repo_state(probe_root)
+        builder_binary=get_builder(probe_state).executable
+        reviewer_binary=get_reviewer(probe_state).probe_binary or reviewer_binary
+    except (SystemExit,ValueError): pass
+    for name in ['git','python3','node',builder_binary,reviewer_binary,'rtk','codegraph','graphify','code-review-graph','ctx7','gh']:
         print(('✓' if shutil.which(name) else '·'),f'{name:10}', 'installed' if shutil.which(name) else 'missing')
     try:
         root=git_root(); state=repo_state(root); bad=contamination(root)
@@ -161,6 +172,22 @@ def cmd_doctor(args):
         corrupt=[name for name in state_files if json_file_health(state/name)=='corrupt']
         print('State files:', 'PASS' if not corrupt else f'CORRUPT ({len(corrupt)})')
         for name in corrupt: print('  corrupt:',state/name)
+        # A repository moved its remote (ssh<->https, or an equivalent URL spelling)
+        # before repo_state()'s migration existed, or has state left over under a
+        # repo_id that no longer resolves for this root at all -- surface it rather
+        # than let rules/validators/lessons/tasks sit invisibly unused.
+        active_rid,_=remote_id(root)
+        here=str(root.resolve())
+        orphaned=[]
+        for meta_path in known_repo_states():
+            meta=load_json(meta_path,{})
+            if not isinstance(meta,dict): continue
+            if meta.get('last_root')==here and meta.get('repo_id') and meta.get('repo_id')!=active_rid:
+                orphaned.append(meta_path.parent)
+        if orphaned:
+            print(f'Orphaned state: {len(orphaned)} director{"y" if len(orphaned)==1 else "ies"} '
+                  'recorded for this repository under a different id (see `ai path`/remote URL history)')
+            for d in orphaned: print('  ',d)
         metrics_file=state/'metrics.jsonl'
         if metrics_file.exists():
             row_count=sum(1 for _ in metrics_file.open())

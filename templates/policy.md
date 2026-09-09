@@ -150,7 +150,7 @@ A PR is ready only when:
 
 ## Provenance hygiene
 - Cleanup removes accidental Claude/Codex/ChatGPT/AI-generated residue from changed deliverables.
-- `ai-provenance-scan` checks added code/docs, commit messages in the PR range, and generated PR artifacts.
+- The `provenance` gate (`ai gate provenance`) checks added code/docs, commit messages in the PR range, and generated PR artifacts.
 - Never silently rewrite existing git history. If a commit message fails, return `NEEDS_ATTENTION` with the commit hash.
 - Legitimate product references must use a narrow `$AI_REPO_STATE/provenance.allow` regex rather than globally disabling the gate.
 

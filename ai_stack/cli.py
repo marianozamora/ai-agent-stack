@@ -175,9 +175,24 @@ def main():
     # itself (the commit's parent, or the PR's own base branch), not from --base,
     # and it runs against a disposable worktree cmd_review builds, not this root.
     adhoc_review=args.cmd=='review' and (getattr(args,'commit',None) or getattr(args,'pr',None))
-    if hasattr(args,'base') and args.cmd!='init' and not adhoc_review:
-        root=git_root(); args.base=core.resolve_base(root,args.base,repo_state(root))
-    args.func(args)
+    try:
+        if hasattr(args,'base') and args.cmd!='init' and not adhoc_review:
+            root=git_root(); args.base=core.resolve_base(root,args.base,repo_state(root))
+        args.func(args)
+    except SystemExit:
+        raise  # the stack's own PR_READY/FAILED/NEEDS_HUMAN protocol; never wrap it
+    except KeyboardInterrupt:
+        print('Interrupted.',file=sys.stderr); raise SystemExit(130) from None
+    except (RuntimeError,OSError) as exc:
+        # core.run() raises RuntimeError for any failing git invocation (a mid-rebase
+        # repo, a stale index.lock, permissions); left unhandled that surfaced as a
+        # Python traceback and exit 1 -- indistinguishable from a legitimate FAILED
+        # gate to anything scripting against this CLI. Exit code 3 names this as an
+        # unexpected environment failure, distinct from 1 (FAILED/gate failure) and
+        # 2 (argparse usage error). Deliberately not `except Exception`: a KeyError
+        # from a stale plan schema should stay a visible traceback, not be relabeled
+        # as an environment problem it isn't.
+        print(f'NEEDS_HUMAN: {exc}',file=sys.stderr); raise SystemExit(3) from None
 
 
 if __name__=='__main__':

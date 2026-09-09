@@ -79,6 +79,54 @@ class MainNoCommandTests(unittest.TestCase):
         self.assertIn('usage', out.getvalue())
 
 
+class MainErrorHandlingTests(unittest.TestCase):
+    """main()'s top-level handler: git/OS failures become NEEDS_HUMAN, never a
+    bare traceback; the stack's own SystemExit protocol is never wrapped."""
+
+    def _run_with_func(self, func):
+        # A command with no --base (doctor) so main() never needs a real git repo
+        # to reach args.func(args).
+        ns = argparse.Namespace(cmd='doctor', func=func, task_id=None)
+        with patch.object(sys, 'argv', ['ai', 'doctor']), \
+             patch.object(cli, 'parser') as mock_parser:
+            mock_parser.return_value.parse_args.return_value = ns
+            return cli.main()
+
+    def test_runtime_error_becomes_needs_human_exit_3(self):
+        def boom(args):
+            raise RuntimeError('git exploded')
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stderr(err):
+            self._run_with_func(boom)
+        self.assertEqual(ctx.exception.code, 3)
+        self.assertIn('NEEDS_HUMAN', err.getvalue())
+        self.assertIn('git exploded', err.getvalue())
+
+    def test_os_error_becomes_needs_human_exit_3(self):
+        def boom(args):
+            raise OSError('disk exploded')
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stderr(err):
+            self._run_with_func(boom)
+        self.assertEqual(ctx.exception.code, 3)
+        self.assertIn('NEEDS_HUMAN', err.getvalue())
+
+    def test_system_exit_passes_through_unwrapped(self):
+        def fail(args):
+            raise SystemExit('FAILED: something real')
+        with self.assertRaises(SystemExit) as ctx:
+            self._run_with_func(fail)
+        self.assertEqual(str(ctx.exception), 'FAILED: something real')
+
+    def test_key_error_is_not_swallowed(self):
+        # Deliberately not caught: a stale plan schema should stay a visible
+        # traceback, not be relabeled as an environment problem it isn't.
+        def boom(args):
+            raise KeyError('risk')
+        with self.assertRaises(KeyError):
+            self._run_with_func(boom)
+
+
 class CmdPathTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='cli-test-')

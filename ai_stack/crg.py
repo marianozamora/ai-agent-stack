@@ -3,6 +3,7 @@ import contextlib, json, os, re, shutil, subprocess, time
 from pathlib import Path
 from core import (EMPTY_TREE, base_error, classify, collect_scope, context_caps, enforce_budget,
                   git_root, repo_state, resolve_base, run, save_json, task_state, temp_worktree, verify_ref)
+from providers import reviewer as get_reviewer
 
 
 def resolve_commit_target(root:Path,sha:str)->tuple[str,str]:
@@ -195,10 +196,25 @@ def cmd_review(args):
         print('Review context: ',review_path,f'({label})' if label else '')
         print('CRG:            ','ready' if impact else ('installed but graph unavailable' if crg_cmd() else 'missing'))
         if not args.launch:return
-        codex=shutil.which('codex')
-        if not codex: raise SystemExit('Codex CLI missing. Review prompt was prepared; rerun with Codex installed.')
+        active_reviewer=get_reviewer(state)
+        # A launched review streams a reviewer directly against review_root -- the
+        # caller's own checkout for a plain `ai review`, or a disposable worktree for
+        # --commit/--pr. Either way this is a live launch, not a schema-checked
+        # verdict() call, so it can only ever use a reviewer proven read-only: a
+        # reviewer that could write here could make its own review come true, and for
+        # --commit/--pr it could do so inside a worktree that is destroyed on exit
+        # without a trace.
+        if not active_reviewer.read_only:
+            raise SystemExit(f'{active_reviewer.name.capitalize()} reviewer has no guaranteed read-only '
+                             'sandbox; ai review launches it directly against the checkout (or a disposable '
+                             'worktree for --commit/--pr) and cannot risk it mutating what it reviews. '
+                             'Configure a read-only reviewer, or use --no-launch to only prepare the prompt.')
+        if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
+            label=active_reviewer.name.capitalize()
+            raise SystemExit(f'{label} CLI missing. Review prompt was prepared; rerun with {label} installed.')
         # Codex exec supports a read-only sandbox. The CRG external-data environment
         # is inherited so the reviewer can query the graph without touching the repo.
+        codex=active_reviewer.executable
         env=crg_env(state)
         p=subprocess.run([codex,'exec','-s','read-only','-C',str(review_root),prompt],cwd=review_root,env=env)
         raise SystemExit(p.returncode)

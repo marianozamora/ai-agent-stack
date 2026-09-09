@@ -1,10 +1,46 @@
-import subprocess, sys, tempfile, unittest
+import argparse, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
+from unittest import mock
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'ai_stack'))
+import core  # noqa: E402
 import crg  # noqa: E402
+
+
+def _sandbox(tc):
+    """Isolated git repo + redirected external state, mirroring tests/test_gates.py::_sandbox."""
+    tmp = tempfile.TemporaryDirectory(prefix='crg-test-')
+    tc.addCleanup(tmp.cleanup)
+    home = Path(tmp.name)
+    repo = home / 'repo'
+    repo.mkdir()
+    cfg = home / 'config' / 'ai-agent-stack'
+
+    env = {k: v for k, v in os.environ.items() if k not in ('AI_GATE', 'AI_TASK_DIR')}
+    env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'), AI_TASK_ID='review-task')
+
+    for args in (('init', '-q'), ('config', 'user.name', 'T'), ('config', 'user.email', 't@e.com')):
+        subprocess.run(['git', *args], cwd=repo, check=True, capture_output=True)
+    (repo / 'app.txt').write_text('initial\n')
+    subprocess.run(['git', 'add', '.'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(['git', 'commit', '-qm', 'init'], cwd=repo, check=True, capture_output=True)
+
+    envp = mock.patch.dict(os.environ, env, clear=True)
+    envp.start()
+    tc.addCleanup(envp.stop)
+    cfgp = mock.patch.object(core, 'CONFIG_ROOT', cfg)
+    cfgp.start()
+    tc.addCleanup(cfgp.stop)
+
+    old_cwd = os.getcwd()
+    os.chdir(repo)
+    tc.addCleanup(os.chdir, old_cwd)
+
+    root = core.git_root()
+    state = core.repo_state(root)
+    return root, state
 
 
 class ParseCrgRiskTests(unittest.TestCase):
@@ -257,6 +293,56 @@ class ResolvePrTargetTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 crg.resolve_pr_target(Path('.'), 5)
         self.assertIn("PR #5's base branch", str(caught.exception))
+
+
+class CmdReviewLaunchReviewerTests(unittest.TestCase):
+    """cmd_review's launch path now goes through providers.reviewer(state) instead of
+    hard-coding Codex -- it must refuse any reviewer that isn't proven read-only,
+    since a launched review streams a reviewer directly against review_root (the
+    caller's own checkout, or a disposable worktree for --commit/--pr)."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+
+    def _args(self, **overrides):
+        base = dict(commit=None, pr=None, base='HEAD', refresh=False, build=False,
+                    profile='standard', launch=True)
+        base.update(overrides)
+        return argparse.Namespace(**base)
+
+    def _configure_command_reviewer(self, command):
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'reviewer': 'command', 'reviewer_command': command}
+        core.save_json(self.state / 'repo.json', meta)
+
+    def test_refuses_a_reviewer_without_a_readonly_guarantee(self):
+        # CommandReviewer.read_only is always False: the stack cannot prove an
+        # arbitrary command's sandboxing, so a launched review must refuse it
+        # before ever invoking it, not just report it as unavailable.
+        self._configure_command_reviewer(['/bin/echo'])
+        with self.assertRaises(SystemExit) as caught:
+            crg.cmd_review(self._args())
+        message = str(caught.exception)
+        self.assertIn('read-only', message)
+        self.assertIn('sandbox', message)
+
+    def test_missing_codex_reports_the_configured_reviewer_by_name(self):
+        # Default provider config (no repo.json override) resolves to CodexReviewer,
+        # which is read_only=True -- the refusal above must not fire for it, and a
+        # missing binary must still be reported by the reviewer's own name.
+        with mock.patch.object(crg.shutil, 'which', return_value=None):
+            with self.assertRaises(SystemExit) as caught:
+                crg.cmd_review(self._args())
+        self.assertIn('Codex CLI missing', str(caught.exception))
+
+    def test_no_launch_never_reaches_the_reviewer_check(self):
+        # --no-launch (launch=False) must return after preparing the prompt,
+        # regardless of what reviewer is configured or installed.
+        self._configure_command_reviewer(['/bin/echo'])
+        buf = []
+        with mock.patch('builtins.print', side_effect=lambda *a, **k: buf.append(a)):
+            crg.cmd_review(self._args(launch=False))
+        self.assertTrue(any('Review context:' in str(a[0]) for a in buf if a))
 
 
 if __name__ == '__main__':
