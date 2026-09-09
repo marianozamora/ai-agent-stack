@@ -38,8 +38,15 @@ def resolve_pr_target(root:Path,number:int)->tuple[str,str,str]:
     run(["git","fetch","origin",f"pull/{number}/head:refs/remotes/origin/pr/{number}"],cwd=root)
     head=run(["git","rev-parse","--verify",f"refs/remotes/origin/pr/{number}"],cwd=root)
     run(["git","fetch","origin",base_name],cwd=root,check=False)  # best-effort refresh
-    base=f'origin/{base_name}'
-    if not verify_ref(root,base): raise SystemExit(base_error(root,base,source=f"PR #{number}'s base branch"))
+    base_ref=f'origin/{base_name}'
+    if not verify_ref(root,base_ref): raise SystemExit(base_error(root,base_ref,source=f"PR #{number}'s base branch"))
+    # Diff against the merge-base, never the base branch's live tip: once a PR merges
+    # (or the base branch simply keeps moving while it's open), the tip drifts away from
+    # where the PR forked, and diffing the PR's frozen head against today's tip shows
+    # everything the base branch picked up since - not what the PR itself introduced.
+    # This is the same "three-dot diff" GitHub's own PR view uses; falls back to the
+    # live tip only if merge-base can't find a common ancestor (e.g. unrelated histories).
+    base=run(["git","merge-base",head,base_ref],cwd=root,check=False) or base_ref
     return head,base,f"PR #{number} ({info.get('headRefName','?')} -> {base_name})"
 
 

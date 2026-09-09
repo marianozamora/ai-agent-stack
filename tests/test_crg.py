@@ -198,6 +198,44 @@ class ResolvePrTargetTests(unittest.TestCase):
         # The PR's head must be fetched by number, never by trusting a local branch.
         self.assertTrue(any(c[:3] == ['git', 'fetch', 'origin'] and 'pull/5/head' in c[3] for c in calls))
 
+    def test_uses_merge_base_not_the_live_base_tip(self):
+        # Regression: an already-merged (or simply stale) PR's head diffed against
+        # today's origin/<base> tip shows everything the base branch picked up since,
+        # not what the PR introduced. The merge-base must be used instead.
+        def fake_run(cmd, cwd=None, check=True, capture=True, env=None):
+            if cmd[1:3] == ['pr', 'view']:
+                return '{"baseRefName": "main", "headRefName": "feature-x"}'
+            if cmd[:2] == ['git', 'rev-parse']:
+                return 'abc123headsha'
+            if cmd[:2] == ['git', 'merge-base']:
+                return 'deadfork00000000'
+            return ''
+
+        with patch('crg.shutil.which', return_value='/usr/bin/gh'), \
+                patch('crg.run', side_effect=fake_run), \
+                patch('crg.verify_ref', return_value=True):
+            head, base, label = crg.resolve_pr_target(Path('.'), 5)
+        self.assertEqual(base, 'deadfork00000000')
+        self.assertNotEqual(base, 'origin/main')
+
+    def test_falls_back_to_live_tip_when_merge_base_finds_no_ancestor(self):
+        # Unrelated-history edge case: merge-base finds nothing (empty output) - degrade
+        # to the old behavior instead of crashing or reviewing against a blank base.
+        def fake_run(cmd, cwd=None, check=True, capture=True, env=None):
+            if cmd[1:3] == ['pr', 'view']:
+                return '{"baseRefName": "main", "headRefName": "feature-x"}'
+            if cmd[:2] == ['git', 'rev-parse']:
+                return 'abc123headsha'
+            if cmd[:2] == ['git', 'merge-base']:
+                return ''
+            return ''
+
+        with patch('crg.shutil.which', return_value='/usr/bin/gh'), \
+                patch('crg.run', side_effect=fake_run), \
+                patch('crg.verify_ref', return_value=True):
+            head, base, label = crg.resolve_pr_target(Path('.'), 5)
+        self.assertEqual(base, 'origin/main')
+
     def test_gh_output_missing_base_branch_fails_clearly(self):
         with patch('crg.shutil.which', return_value='/usr/bin/gh'), \
                 patch('crg.run', return_value='{}'):
