@@ -11,5 +11,5 @@
                 "usage": {"input_tokens": 30000, "output_tokens": 20000}}
   },
   "expect": {"risk": "LOW", "readiness": "NEEDS_HUMAN",
-             "pipeline_message_contains": "usage budget exceeded"}
+             "pipeline_message_contains": "BUDGET_EXCEEDED"}
 }
