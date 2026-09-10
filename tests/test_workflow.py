@@ -53,22 +53,38 @@ class WorkflowTests(unittest.TestCase):
         self.ai('plan', 'small change', '--profile', 'fast', '--base', 'HEAD', *args)
 
     def prompt_variant(self, variant, text):
-        """Create one prompt variant in the source tree for the duration of a test.
+        """Create one prompt variant inside this test's own copy of the stack assets.
 
         templates/prompts/ ships empty -- variant 'a' comes from INSTRUCTIONS[] -- so a
-        test that exercises variants has to write one, and STACK_ROOT is the only place
-        the CLI looks. That makes this the single piece of shared, cross-test state in
-        this file, and the reason it is funnelled through one helper: two tests writing
-        the *same* variant name clobber each other's content under xdist, which is
-        exactly the race that kept this file off the parallel runners. Every caller must
-        own a distinct variant name. The slot directory is deliberately never removed --
-        a concurrent test may still need it, and an empty directory is invisible to git.
+        test that exercises variants has to write one. It used to write straight into
+        the source tree this suite runs from, because STACK_ROOT was the only place the
+        CLI looked: that made the shipped assets shared mutable state, so two tests
+        picking the same variant name clobbered each other, the suite could not run
+        against a read-only install, and a hard kill left artifacts in the working copy.
+
+        AI_STACK_HOME now points the CLI at a per-test copy instead. The assets are
+        ~270K across ~60 files, cheap enough that sharing one copy between tests would
+        buy nothing and reintroduce exactly the coupling this removes. Variant names are
+        private per test again, so callers are free to reuse them.
         """
-        slot_dir = ROOT / 'templates/prompts/validator.cleanup'
+        if not hasattr(self, '_stack_home'):
+            self._stack_home = Path(self.temp.name) / 'stack-home'
+            self._stack_home.mkdir()
+            shutil.copytree(ROOT / 'templates', self._stack_home / 'templates')
+            shutil.copytree(ROOT / 'skills', self._stack_home / 'skills')
+            shutil.copy2(ROOT / 'VERSION', self._stack_home / 'VERSION')
+            # copytree preserves modes, so a read-only source tree -- the very case this
+            # indirection exists to support -- would yield a read-only copy that the
+            # variant write below could not touch. The copy exists to be written to.
+            for entry in self._stack_home.rglob('*'):
+                entry.chmod(entry.stat().st_mode | 0o200)
+            # self.ai() passes self.env to every CLI subprocess, so setting it here is
+            # what actually redirects the assets for the rest of this test.
+            self.env['AI_STACK_HOME'] = str(self._stack_home)
+        slot_dir = self._stack_home / 'templates/prompts/validator.cleanup'
         slot_dir.mkdir(parents=True, exist_ok=True)
         path = slot_dir / f'{variant}.md'
         path.write_text(text)
-        self.addCleanup(path.unlink, missing_ok=True)
         return path
 
     def pass_gates(self):
@@ -492,22 +508,19 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.ai('prompt', 'experiment', 'stop')
 
     def test_prompt_rollback_restores_previous_promotion(self):
-        # Variant 'c', not 'b': the experiment test owns 'b', and both used to write
-        # the same file in the shared source tree -- whichever ran second won, and the
-        # other's assertions read the wrong text.
-        self.prompt_variant('c', 'Rollback test variant c.\n')
+        self.prompt_variant('b', 'Rollback test variant b.\n')
 
-        self.ai('prompt', 'promote', 'cleanup', 'c', '--confirm')
+        self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm')
         self.ai('prompt', 'promote', 'cleanup', 'a', '--confirm')
         history = json.loads(self.ai('prompt', 'history', '--json'))
         self.assertEqual([h['action'] for h in history], ['promote', 'promote'])
-        self.assertEqual(history[-1]['previous']['variant'], 'c')
+        self.assertEqual(history[-1]['previous']['variant'], 'b')
 
         self.ai('prompt', 'rollback', 'cleanup', '--confirm')
-        self.assertIn('promoted=c', self.ai('prompt', 'list'))
+        self.assertIn('promoted=b', self.ai('prompt', 'list'))
         history = json.loads(self.ai('prompt', 'history', '--json'))
         self.assertEqual(history[-1]['action'], 'rollback')
-        self.assertEqual(history[-1]['variant'], 'c')
+        self.assertEqual(history[-1]['variant'], 'b')
 
         self.ai('prompt', 'reset', 'cleanup')
 
