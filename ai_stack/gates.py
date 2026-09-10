@@ -2,20 +2,28 @@ from __future__ import annotations
 import argparse, hashlib, json, os, re, shutil, sys, tempfile, time, uuid
 from pathlib import Path
 from detect import proposal, render
-from core import contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
+from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
-from metrics import gate_attempt_number, record_metric
+from metrics import consecutive_gate_failures, gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
-from workflow import execute, finding_signature, normalize_finding, usage_from_verdict, validate_config
+from workflow import contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
-from providers import reviewer as get_reviewer
+from providers import builder as get_builder, reviewer as get_reviewer
 from validators import INSTRUCTIONS, SCHEMA, check_verdict, intact_record
 
 
 def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
     digest=hashlib.sha256()
+    # The stack version and the active providers belong here for the same reason the
+    # contracts and validator config do: they change what a gate was actually told and
+    # who judged it. Swapping the reviewer via `ai providers`, or upgrading the stack
+    # (which reships the bundled validator instructions), otherwise leaves a prior
+    # review/security/ponytail PASS looking fresh to `ai pipeline --resume` even though
+    # a different model under different instructions produced it.
     for value in (safe_head(root), run(['git','rev-parse','--verify',plan['scope']['base']],cwd=root),
-                  run(['git','ls-files','--stage'],cwd=root), run(['git','diff','--binary','HEAD'],cwd=root), json.dumps(plan,sort_keys=True)):
+                  run(['git','ls-files','--stage'],cwd=root), run(['git','diff','--binary','HEAD'],cwd=root),
+                  json.dumps(plan,sort_keys=True), VERSION,
+                  get_builder(state).name, get_reviewer(state).name):
         digest.update(value.encode()); digest.update(b'\0')
     # Tracked paths are already pinned above, exactly and completely: HEAD names every
     # committed blob, `ls-files --stage` carries each tracked path's name, mode and blob
@@ -101,6 +109,16 @@ def cmd_validators(args):
     if args.action!='show': print('Saved:',state/'validators.json')
 
 
+class ContractViolation(Exception):
+    """A must_not_change path constraint the diff demonstrably breaks.
+
+    Separate from the ValueError path because the outcome differs: a missing or
+    unreadable contract is NEEDS_HUMAN (the stack cannot tell), while a path the
+    contract forbids and the diff touches is a plain FAIL (the stack just did).
+    """
+    def __init__(self,violations): super().__init__('must_not_change violated'); self.violations=violations
+
+
 def cmd_validate(args):
     try:
         if os.environ.get('AI_GATE')!=args.name:
@@ -109,6 +127,15 @@ def cmd_validate(args):
         required=required_gates(root,plan)
         if args.name not in required:
             raise ValueError('This validator is not applicable to the current task.')
+        # Decided before prerequisites, the reviewer probe, or anything else that costs
+        # something: a must_not_change entry naming a path the diff touches is a fact
+        # git already shows. No upstream gate evidence would change it, no reviewer CLI
+        # is needed to see it, and no tokens should be spent being told about it.
+        if args.name=='contract' and (task/'contracts/current-pr.yml').is_file():
+            violations=violated_path_constraints(
+                contract_list_field((task/'contracts/current-pr.yml').read_text(),'must_not_change'),
+                collect_scope(root,plan['scope']['base'])['files'])
+            if violations: raise ContractViolation(violations)
         fingerprint=evidence_fingerprint(root,state,plan)
         dependencies=[] if args.name=='cleanup' else ['checks','regression']
         if args.name in ('summary','provenance'):
@@ -120,6 +147,12 @@ def cmd_validate(args):
                 raise ValueError(f'Missing or stale prerequisite: {name}')
             records[name]={'command':record['command'],'verdict':record.get('verdict'),
                            'log':record['log'],'exit_code':record['exit_code']}
+        contract=task/'contracts/current-pr.yml'
+        design=task/'contracts/current-design.yml'
+        if not contract.is_file(): raise ValueError('PR contract is missing.')
+        if args.name=='design' and not design.is_file(): raise ValueError('Design contract is missing.')
+        if args.name=='contract' and re.search(r'^acceptance:\s*\[\s*\]\s*$',contract.read_text(),re.M):
+            raise ValueError('PR contract has no acceptance criteria; populate it before validation.')
         active_reviewer=get_reviewer(state)
         # This check stays here (not inside the reviewer) so a caller can name the
         # exact binary it is missing before ever constructing a prompt for it, and
@@ -127,12 +160,6 @@ def cmd_validate(args):
         if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
             label=active_reviewer.name.capitalize()
             raise ValueError(f'{label} CLI missing. Install/authenticate {label} or configure a custom validator.')
-        contract=task/'contracts/current-pr.yml'
-        design=task/'contracts/current-design.yml'
-        if not contract.is_file(): raise ValueError('PR contract is missing.')
-        if args.name=='design' and not design.is_file(): raise ValueError('Design contract is missing.')
-        if args.name=='contract' and re.search(r'^acceptance:\s*\[\s*\]\s*$',contract.read_text(),re.M):
-            raise ValueError('PR contract has no acceptance criteria; populate it before validation.')
         slot=prompt_slot(args.name)
         assignment=load_json(task/'state/prompt-assignment.json',{}).get(slot,{'variant':'a'})
         try: instruction=variant_text(args.name,slot,assignment['variant'])
@@ -176,18 +203,28 @@ Fresh gate evidence (read referenced logs as needed):
                 temporary=Path(output.name)
                 output.write(summary.rstrip()+'\n')
             temporary.replace(target)
+    except ContractViolation as exc:
+        verdict={'status':'FAIL',
+                 'evidence':[f"{v['constraint']} is declared in must_not_change and the diff touches "
+                             f"{', '.join(v['files'][:5])}" for v in exc.violations],
+                 'findings':[f"must_not_change forbids {v['constraint']}; changed: {', '.join(v['files'][:5])}"
+                             for v in exc.violations],
+                 'summary_markdown':''}
     except (OSError,ValueError,RuntimeError) as exc:
         verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':''}
     print(json.dumps(verdict))
     if verdict['status']!='PASS': raise SystemExit(1)
 
 
-def budget_message(overrun,budget,required,blocked)->str:
+def budget_message(overrun,required,blocked)->str:
     """Explain a budget stop: what crossed it, what it cost, and what never ran."""
     remaining=required[required.index(blocked):]
-    crossed=overrun['gate'] or blocked
+    gate=overrun['gate'] or blocked
+    spent,limit=overrun['spent'],overrun['budget']
+    measure=(f'${spent:.4f} >= ${limit:.2f} reported cost' if overrun['dimension']=='cost_usd'
+             else f'{spent} >= {limit} reported tokens')
     return ("BUDGET_EXCEEDED: this profile's usage budget was reached.\n"
-            f"  crossed at:  {crossed} ({overrun['tokens']} >= {budget} reported tokens)\n"
+            f"  crossed at:  {gate} ({measure})\n"
             f"  not run:     {', '.join(remaining)}\n"
             '  continue anyway with `ai pipeline --allow-overrun`, or use a larger profile.')
 
@@ -207,23 +244,34 @@ def cmd_pipeline(args):
     if budget and card['projected_usage_tokens']>budget:
         print(f"Note: projected usage from prior runs ({card['projected_usage_tokens']} tokens, n-backed) "
               f"exceeds this profile's budget ({budget}); consider a stricter profile. Continuing.")
+    cost_budget=plan['caps'].get('usage_cost_usd')
     task=task_state(state)
     started=time.monotonic(); status='FAILED'; executed=[]; skipped=[]
-    overrun:dict={'gate':None,'tokens':0}
-    usage_total={'input_tokens':0,'output_tokens':0}
+    overrun:dict={'gate':None,'tokens':0,'dimension':None,'spent':0,'budget':None}
+    usage_total={'input_tokens':0,'output_tokens':0,'cost_usd':0.0}
     allow_overrun=getattr(args,'allow_overrun',False)
     def spend(): return usage_total['input_tokens']+usage_total['output_tokens']
+    def crossed():
+        """Which budget this spend has reached, if any. Tokens first: it is the one
+        every provider reports, so it names the overrun whenever both are crossed."""
+        if allow_overrun: return None
+        if budget and spend()>=budget:
+            return {'dimension':'tokens','spent':spend(),'budget':budget,'tokens':spend()}
+        cost=usage_total['cost_usd']
+        if cost_budget and cost>=cost_budget:
+            return {'dimension':'cost_usd','spent':round(cost,4),'budget':cost_budget,'tokens':spend()}
+        return None
     try:
         with task_lock(task,'ai pipeline',force=getattr(args,'force_unlock',False)):
             for name in required:
                 if validator_config(state)['validators']!=config:
                     raise SystemExit('NEEDS_HUMAN: validator configuration changed; rerun pipeline.')
-                if budget and not allow_overrun and spend()>=budget:
+                if (reached:=crossed()):
                     # Crossing the budget is its own outcome, not a failed gate: every
                     # gate that ran may have passed, and the rest simply never ran.
-                    overrun={'gate':overrun['gate'] or name,'tokens':spend()}
+                    overrun={'gate':overrun['gate'] or name,**reached}
                     status='BUDGET_EXCEEDED'
-                    raise SystemExit(budget_message(overrun,budget,required,name))
+                    raise SystemExit(budget_message(overrun,required,name))
                 fingerprint=evidence_fingerprint(root,state,current_plan(state))
                 record=load_json(task/'gates'/(name+'.json'),{})
                 item=config[name]
@@ -239,25 +287,28 @@ def cmd_pipeline(args):
                 # (just load_json/dict lookups), so recomputing it inside cmd_gate/
                 # run_gate would walk and hash the entire worktree a second time for
                 # no different answer. `after` is still always computed fresh.
-                cmd_gate(argparse.Namespace(name=name,**item),fingerprint)
+                cmd_gate(argparse.Namespace(name=name,allow_overrun=allow_overrun,**item),fingerprint)
                 fresh=load_json(task/'gates'/(name+'.json'),{})
                 for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
                 # Check after the gate too, so the gate that actually crossed the budget
                 # is the one named, not the innocent one that would have come next.
-                if budget and not allow_overrun and spend()>=budget:
-                    overrun={'gate':name,'tokens':spend()}
+                if (reached:=crossed()): overrun={'gate':name,**reached}
             cmd_ready(args)
             status='PR_READY'
     finally:
         record_metric(state,'pipeline',status=status,executed=executed,skipped=skipped,
                       duration_seconds=round(time.monotonic()-started,3),usage=usage_total,
-                      usage_budget=budget,overrun_gate=overrun['gate'],overrun_tokens=overrun['tokens'])
+                      usage_budget=budget,usage_cost_budget=cost_budget,overrun_gate=overrun['gate'],
+                      overrun_tokens=overrun['tokens'],overrun_dimension=overrun['dimension'])
         save_json(task/'state/pipeline-run.json',{'status':status,'executed':executed,'skipped':skipped,
-            'usage':usage_total,'usage_budget':budget,'overrun_gate':overrun['gate'],
+            'usage':usage_total,'usage_budget':budget,'usage_cost_budget':cost_budget,
+            'overrun_gate':overrun['gate'],'overrun_dimension':overrun['dimension'],
             'remaining':[name for name in required if name not in executed and name not in skipped],
             'finished_at':time.time()})
         if spend(): print(f"Usage: {usage_total['input_tokens']} input / {usage_total['output_tokens']} output tokens"
-                          +(f' (budget {budget})' if budget else ''))
+                          +(f' (budget {budget})' if budget else '')
+                          +(f"; ${usage_total['cost_usd']:.4f}"
+                            +(f' (budget ${cost_budget:.2f})' if cost_budget else '') if usage_total['cost_usd'] else ''))
 
 
 def cmd_gate(args,before=None):
@@ -285,6 +336,21 @@ def run_gate(args,root,state,plan,task,command,before=None):
     # the caller already observed with nothing able to mutate the repo in between --
     # `after`, by contrast, is the measurement that proves *this* command didn't
     # touch the repo, and must always be computed fresh right after it runs.
+    # The profile's retry cap was only ever advice rendered into the builder's prompt,
+    # so nothing stopped a gate re-running against the same unresolved failure. Enforce
+    # it here, before the command runs and spends anything: a streak past the cap is a
+    # gate that is not converging, and a human deciding what to do next is cheaper than
+    # another attempt. Checked before `before`, so a refusal costs no worktree hash.
+    retries=plan['caps'].get('retries')
+    if retries is not None and not getattr(args,'allow_overrun',False):
+        failures=consecutive_gate_failures(state,task.name,args.name)
+        if failures>retries:
+            raise SystemExit(
+                f"NEEDS_HUMAN: {args.name} has failed {failures} time(s) in a row, past this "
+                f"profile's retry budget ({retries}).\n"
+                '  The gate is not converging; read its last log before spending another attempt.\n'
+                f"  Override with `ai gate {args.name} --allow-overrun -- COMMAND` "
+                'or `ai pipeline --allow-overrun`.')
     if before is None: before=evidence_fingerprint(root,state,plan)
     started=time.monotonic()
     directory=task/'gates'

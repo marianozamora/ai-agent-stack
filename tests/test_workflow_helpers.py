@@ -100,6 +100,31 @@ class HelpersTests(unittest.TestCase):
         # per-task successful-run totals: t_a -> 72_000, t_b -> 52_000; median -> 62_000
         self.assertEqual(stats[0]['median_usage_tokens'], 62_000)
 
+    def test_path_constraints_keeps_paths_and_globs_but_not_prose(self):
+        entries = ['src/auth/**', 'backend/', 'schema.sql', 'Makefile',
+                   'the public API', 'existing page content above the footer', '  ']
+        self.assertEqual(workflow.path_constraints(entries),
+                         ['src/auth/**', 'backend/', 'schema.sql'])
+
+    def test_violated_path_constraints_matches_files_dirs_and_globs(self):
+        files = ['src/auth/token.py', 'src/ui/footer.tsx', 'backend/app/main.py', 'schema.sql']
+        violations = workflow.violated_path_constraints(
+            ['src/auth/**', 'backend/', 'schema.sql', 'docs/'], files)
+        self.assertEqual([v['constraint'] for v in violations],
+                         ['src/auth/**', 'backend/', 'schema.sql'])
+        self.assertEqual(violations[0]['files'], ['src/auth/token.py'])
+        self.assertEqual(violations[1]['files'], ['backend/app/main.py'])
+
+        # Prose constraints and untouched paths raise nothing.
+        self.assertEqual(workflow.violated_path_constraints(['the public API', 'docs/'], files), [])
+
+    def test_contract_list_field_reads_flow_and_block_shapes(self):
+        self.assertEqual(workflow.contract_list_field('must_not_change: ["a/b", "c"]\n', 'must_not_change'),
+                         ['a/b', 'c'])
+        block = 'must_not_change:\n  - "src/auth/**"\n  - backend/\nrisk_notes: []\n'
+        self.assertEqual(workflow.contract_list_field(block, 'must_not_change'), ['src/auth/**', 'backend/'])
+        self.assertEqual(workflow.contract_list_field('objective: "x"\n', 'must_not_change'), [])
+
     def test_analyze_ticket_text_extracts_acceptance_figma_and_blockers(self):
         text = (
             "Implement the retry handler.\n\n"

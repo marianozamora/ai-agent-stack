@@ -20,6 +20,7 @@ any validator is told, so producing one must never invalidate in-flight task evi
 from __future__ import annotations
 import json, re, time
 from core import git_root, load_json, repo_state, save_json, task_state
+from workflow import contract_list_field
 
 
 # Two tiers, because the cost of being wrong is not symmetric. A BLOCKING phrase makes a
@@ -42,32 +43,9 @@ SOFT_TERMS = (
 MIN_CRITERION_CHARS = 12
 
 
-def _list_field(text:str, field:str)->list[str]:
-    """Read one contract list field in either shape a human or the stack may leave it in.
-
-    ensure_contract() writes flow style (`acceptance: ["a", "b"]`, a json.dumps list), but
-    a human editing the YAML by hand naturally writes a block list underneath. Reading only
-    the shape the stack writes would silently report a hand-written contract as empty —
-    the exact failure this command exists to catch, inverted.
-    """
-    flow=re.search(rf'(?m)^{re.escape(field)}:[ \t]*(\[.*\])[ \t]*$', text)
-    if flow:
-        try:
-            value=json.loads(flow.group(1))
-        except ValueError:
-            return []
-        return [str(x).strip() for x in value if str(x).strip()]
-    header=re.search(rf'(?m)^{re.escape(field)}:[ \t]*$', text)
-    if not header: return []
-    items=[]
-    for line in text[header.end():].splitlines():
-        if not line.strip(): continue
-        m=re.match(r'^[ \t]+-[ \t]+(.+?)[ \t]*$', line)
-        if not m: break
-        item=m.group(1).strip()
-        if item[:1] in ('"',"'") and item[-1:]==item[:1] and len(item)>1: item=item[1:-1]
-        if item: items.append(item)
-    return items
+# Shared with the contract gate's deterministic must_not_change check, so both read a
+# contract list field exactly the same way.
+_list_field = contract_list_field
 
 
 def _objective(text:str)->str:

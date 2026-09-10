@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -102,6 +103,25 @@ class EvidenceFingerprintTests(unittest.TestCase):
         base = self.fp()
         (self.root / 'app.txt').write_text('edited in working tree\n')
         self.assertNotEqual(base, self.fp())
+
+    def test_stack_version_change_changes_fingerprint(self):
+        # A stack upgrade reships the bundled validator instructions, so evidence a
+        # prior version's prompts produced must not still read as fresh.
+        base = self.fp()
+        with mock.patch.object(gates, 'VERSION', gates.VERSION + '-next'):
+            self.assertNotEqual(base, self.fp())
+        self.assertEqual(base, self.fp())
+
+    def test_switching_reviewer_provider_changes_fingerprint(self):
+        # Same diff, different model judging it: a review/security/ponytail PASS from
+        # the old reviewer must not survive `ai providers` pointing somewhere else.
+        base = self.fp()
+        other = types.SimpleNamespace(name='some-other-reviewer')
+        with mock.patch.object(gates, 'get_reviewer', return_value=other):
+            self.assertNotEqual(base, self.fp())
+        other_builder = types.SimpleNamespace(name='some-other-builder')
+        with mock.patch.object(gates, 'get_builder', return_value=other_builder):
+            self.assertNotEqual(base, self.fp())
 
     def test_new_untracked_file_changes_fingerprint(self):
         base = self.fp()
@@ -541,6 +561,102 @@ class RunGateFingerprintReuseTests(unittest.TestCase):
         # One computation for cmd_pipeline's own --resume check (reused as `before`),
         # one for run_gate's `after` -- never a third, separate `before`.
         self.assertEqual(len(calls), 2)
+
+
+class RetryBudgetTests(unittest.TestCase):
+    """run_gate() enforces the profile's retry cap, which used to be advice rendered
+    into the builder's prompt and nothing else -- so a gate could thrash indefinitely
+    against one unresolved failure, spending a full model call every attempt."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        self.task = core.task_state(self.state)
+        self.plan = gates.current_plan(self.state)
+        # fast profile: retries == 1, so attempt 1 and one retry may run.
+        self.assertEqual(self.plan['caps']['retries'], 1)
+
+    def _run(self, command, allow_overrun=False):
+        """Run one gate attempt. A failing gate exits 1, which is the outcome under
+        test here, so only the retry-cap refusal (its own SystemExit) propagates."""
+        args = argparse.Namespace(name='checks', timeout=30, adapter='exit-code', evidence='ok',
+                                  allow_overrun=allow_overrun)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                gates.run_gate(args, self.root, self.state, self.plan, self.task, command)
+        except SystemExit as exc:
+            if exc.code != 1: raise
+        return buf.getvalue()
+
+    def test_a_failing_gate_is_stopped_once_past_the_retry_budget(self):
+        self.assertIn('FAIL', self._run(['false']))
+        self.assertIn('FAIL', self._run(['false']))
+        with self.assertRaises(SystemExit) as ctx:
+            self._run(['false'])
+        message = str(ctx.exception)
+        self.assertIn('NEEDS_HUMAN', message)
+        self.assertIn('failed 2 time(s) in a row', message)
+        self.assertIn('--allow-overrun', message)
+
+    def test_allow_overrun_runs_the_blocked_attempt_anyway(self):
+        self._run(['false'])
+        self._run(['false'])
+        self.assertIn('PASS', self._run(['true'], allow_overrun=True))
+
+    def test_a_pass_resets_the_streak(self):
+        self._run(['false'])
+        self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 1)
+        self._run(['true'])
+        self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 0)
+        # Back to a full budget: two more failures are allowed before the cap bites.
+        self._run(['false'])
+        self.assertIn('FAIL', self._run(['false']))
+
+
+class ContractPathConstraintTests(unittest.TestCase):
+    """The contract gate decides a path-shaped must_not_change entry itself, without
+    spending a model call to be told what the diff plainly says."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        for module in (crg, providers):
+            p = mock.patch.object(module.shutil, 'which', return_value=None)
+            p.start()
+            self.addCleanup(p.stop)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        self.task = core.task_state(self.state)
+
+    def _contract(self, must_not_change):
+        path = self.task / 'contracts/current-pr.yml'
+        path.write_text('objective: "small change"\n'
+                        'acceptance: ["it does the thing"]\n'
+                        f'must_not_change: {json.dumps(must_not_change)}\n'
+                        'risk_notes: []\ndesign:\n  enabled: false\n')
+
+    def _validate(self):
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {'AI_GATE': 'contract'}), \
+                contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            gates.cmd_validate(argparse.Namespace(name='contract'))
+        return json.loads(buf.getvalue().strip().splitlines()[-1])
+
+    def test_touching_a_forbidden_path_fails_without_a_model_call(self):
+        (self.root / 'app.txt').write_text('changed\n')
+        self._contract(['app.txt'])
+        verdict = self._validate()
+        # The sandbox has no reviewer CLI, so reaching the reviewer at all would have
+        # produced NEEDS_HUMAN. A FAIL proves the deterministic check decided it first.
+        self.assertEqual(verdict['status'], 'FAIL')
+        self.assertIn('app.txt', verdict['findings'][0])
+
+    def test_prose_constraints_and_untouched_paths_reach_the_validator(self):
+        (self.root / 'app.txt').write_text('changed\n')
+        self._contract(['the public API', 'docs/'])
+        # Nothing deterministic fires, so cmd_validate proceeds far enough to hit the
+        # missing-reviewer guard -- i.e. it did NOT short-circuit to a FAIL.
+        verdict = self._validate()
+        self.assertEqual(verdict['status'], 'NEEDS_HUMAN')
 
 
 if __name__ == '__main__':
