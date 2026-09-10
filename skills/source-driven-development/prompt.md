@@ -1,0 +1,5 @@
+Ground decisions about external frameworks, libraries, SDKs and tools in primary documentation for the version this repository actually targets. Establish that version from manifests, lockfiles or runtime evidence before consulting docs. Use Context7 or the vendor's official documentation only for claims that affect the implementation; search snippets, tutorials and remembered APIs are discovery hints, not evidence.
+
+Keep verified facts distinct from inference. Record the relevant source and version in the task evidence without copying large documentation sections. Confirm that referenced APIs, flags and defaults exist in the targeted version, then verify the resulting behavior with repository tests or runtime evidence.
+
+Do not fetch documentation when the repository and its tests already establish the behavior. If authoritative material is unavailable or contradictory, state the uncertainty and choose a reversible fallback; return NEEDS_HUMAN when the unresolved claim affects the contract, security or an irreversible migration.

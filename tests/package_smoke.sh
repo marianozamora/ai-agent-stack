@@ -16,6 +16,7 @@ mkdir "$TMP/repo"
 git -C "$TMP/repo" init -q
 (cd "$TMP/repo" && HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/config" "$TMP/venv/bin/ai" init >/dev/null)
 (cd "$TMP/repo" && HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/config" "$TMP/venv/bin/ai" skill list >/dev/null)
+(cd "$TMP/repo" && HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/config" "$TMP/venv/bin/ai" skill upstream --json >/dev/null)
 (cd "$TMP/repo" && HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/config" "$TMP/venv/bin/ai" benchmark --json >/dev/null)
 
 printf '%s\n' 'package smoke: PASS'

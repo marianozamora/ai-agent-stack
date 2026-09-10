@@ -609,11 +609,11 @@ usage: ai deploy run [-h] [--execute] [target]
 
 ## `ai skill`
 
-Inspect, select, or create skills.
+Inspect, select, create, or audit skill sources.
 
 ```text
 usage: ai skill [-h] [--task-id TASK_ID]
-                {list,explain,enable,disable,dry-run,create} ...
+                {list,explain,enable,disable,dry-run,upstream,create} ...
 ```
 
 ### `ai skill list`
@@ -654,6 +654,14 @@ usage: ai skill disable [-h] name
 
 ```text
 usage: ai skill dry-run [-h] [--profile {fast,standard,strict}] name
+```
+
+### `ai skill upstream`
+
+
+
+```text
+usage: ai skill upstream [-h] [--check] [--json]
 ```
 
 ### `ai skill create`

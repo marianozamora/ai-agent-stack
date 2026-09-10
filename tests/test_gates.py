@@ -179,6 +179,104 @@ class EvidenceFingerprintTests(unittest.TestCase):
         self.assertNotEqual(with_link, self.fp())
 
 
+class EvidenceFingerprintTrackedContentTests(unittest.TestCase):
+    """Guards the tracked-content shortcut in evidence_fingerprint().
+
+    The function no longer re-reads tracked files: HEAD, `ls-files --stage` and
+    `diff --binary HEAD` already pin their content exactly, so hashing them again
+    only made the walk O(repo). That is only safe while every way of mutating a
+    tracked file still moves the digest through one of those three, so each case
+    below mutates a tracked path a different way and asserts the fingerprint moves.
+    Delete these and the shortcut silently becomes a hole in the tamper detector.
+    """
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        self.plan = {'scope': {'base': 'HEAD'}, 'profile': 'fast'}
+        core.task_state(self.state)
+
+    def fp(self):
+        return gates.evidence_fingerprint(self.root, self.state, self.plan)
+
+    def test_same_size_same_mtime_content_swap_still_moves_fingerprint(self):
+        # The adversarial case the whole function exists for: a gate that edits a
+        # tracked file and restores its stat metadata to hide the edit. Equal byte
+        # length and a restored mtime defeat any stat-only shortcut, so this is the
+        # case that proves the digest is still content-derived and not stat-derived.
+        target = self.root / 'app.txt'
+        original = target.read_bytes()
+        before = self.fp()
+        stat = target.stat()
+        swapped = bytes(original[:-1].upper()) + b'\n'
+        self.assertEqual(len(swapped), len(original))
+        self.assertNotEqual(swapped, original)
+        target.write_bytes(swapped)
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        self.assertEqual(target.stat().st_mtime_ns, stat.st_mtime_ns)
+        self.assertNotEqual(before, self.fp())
+
+    def test_touching_mtime_alone_does_not_move_fingerprint(self):
+        # The converse guard: evidence stays fresh across a no-op rebuild that only
+        # restats files. A digest that moved here would make every gate look stale.
+        before = self.fp()
+        os.utime(self.root / 'app.txt', (100000, 100000))
+        self.assertEqual(before, self.fp())
+
+    def test_tracked_mode_change_moves_fingerprint(self):
+        before = self.fp()
+        os.chmod(self.root / 'app.txt', 0o755)
+        self.assertNotEqual(before, self.fp())
+
+    def test_tracked_deletion_moves_fingerprint(self):
+        before = self.fp()
+        (self.root / 'app.txt').unlink()
+        self.assertNotEqual(before, self.fp())
+
+    def test_staging_a_tracked_edit_moves_fingerprint(self):
+        before = self.fp()
+        (self.root / 'app.txt').write_text('staged edit\n')
+        _git(self.root, 'add', 'app.txt')
+        self.assertNotEqual(before, self.fp())
+
+    def test_tracked_rename_moves_fingerprint(self):
+        before = self.fp()
+        _git(self.root, 'mv', 'app.txt', 'renamed.txt')
+        self.assertNotEqual(before, self.fp())
+
+    def test_tracked_binary_edit_moves_fingerprint(self):
+        (self.root / 'blob.bin').write_bytes(b'\x00\x01\x02')
+        _git(self.root, 'add', 'blob.bin')
+        _git(self.root, 'commit', '-qm', 'add blob')
+        before = self.fp()
+        (self.root / 'blob.bin').write_bytes(b'\xff\xfe\xfd')
+        self.assertNotEqual(before, self.fp())
+
+    def test_repointing_a_tracked_symlink_moves_fingerprint(self):
+        link = self.root / 'tracked-link'
+        try:
+            link.symlink_to('app.txt')
+        except (OSError, NotImplementedError) as exc:  # pragma: no cover - platform dependent
+            self.skipTest(f'symlinks unavailable on this platform: {exc}')
+        (self.root / 'other.txt').write_text('other\n')
+        _git(self.root, 'add', '-A')
+        _git(self.root, 'commit', '-qm', 'add tracked symlink')
+        before = self.fp()
+        link.unlink()
+        link.symlink_to('other.txt')
+        self.assertNotEqual(before, self.fp())
+
+    def test_untracked_content_is_still_read_in_full(self):
+        # Untracked files are the one gap no git diff describes, so they must still
+        # be hashed byte for byte -- same length, same mtime, different bytes.
+        stray = self.root / 'stray.txt'
+        stray.write_text('aaaa\n')
+        before = self.fp()
+        stat = stray.stat()
+        stray.write_text('bbbb\n')
+        os.utime(stray, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        self.assertNotEqual(before, self.fp())
+
+
 class ValidatorConfigTests(unittest.TestCase):
     """validator_config(state) -- pure: only reads state/'validators.json'."""
 

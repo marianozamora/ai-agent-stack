@@ -545,6 +545,8 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         for profile, tokens in (('fast', 40000), ('standard', 120000), ('strict', 250000)):
             self.assertEqual(by_id['ui-copy'][profile]['usage_tokens'], tokens)
         self.assertEqual(by_id['onboarding-design']['standard']['task_type'], 'design')
+        self.assertEqual(by_id['sdk-docs']['fast']['skills'], ['source-driven-development'])
+        self.assertEqual(by_id['service-observability']['fast']['skills'], ['observability-and-instrumentation'])
 
     def configure_pipeline(self, failing=None):
         for name in ('cleanup','checks','regression','contract','provenance','ponytail','summary'):

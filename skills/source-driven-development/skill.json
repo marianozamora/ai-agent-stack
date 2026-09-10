@@ -1,0 +1,16 @@
+{
+  "name": "source-driven-development",
+  "version": 1,
+  "category": "evidence",
+  "cost": "low",
+  "priority": 85,
+  "task_types": ["bug", "feature", "architecture", "design"],
+  "triggers": ["official documentation", "official docs", "framework", "library", "sdk", "dependency version", "api version"],
+  "requires_trigger": true,
+  "stages": ["identify version", "consult primary source", "separate evidence from inference", "verify behavior"],
+  "provenance": {
+    "source": "addyosmani-agent-skills",
+    "path": "skills/source-driven-development/SKILL.md",
+    "adaptation": "curated"
+  }
+}

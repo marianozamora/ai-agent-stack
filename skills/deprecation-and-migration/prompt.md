@@ -1,0 +1,5 @@
+Treat every observable legacy behavior as a potential contract until evidence shows otherwise. Inventory callers, stored data, operational dependencies and documented consumers; add characterization tests at the seam that will change. Define the target state, compatibility window and whether adoption is advisory or compulsory before implementation.
+
+Introduce the replacement before removing the old path. Prefer bounded, reversible slices with explicit fallback, rollout signals and ownership. Data migrations must address forward and backward compatibility, partial completion, retry safety and restoration. Avoid mixing unrelated cleanup into the migration.
+
+Remove the legacy path only after repository evidence shows callers migrated or explicitly exempted, rollback is understood, tests cover both transition and final states, and documentation names the supported interface. If consumers or recovery behavior cannot be established, stop at a compatible intermediate state and return NEEDS_HUMAN.

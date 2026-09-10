@@ -1,0 +1,16 @@
+{
+  "name": "deprecation-and-migration",
+  "version": 1,
+  "category": "migration",
+  "cost": "medium",
+  "priority": 95,
+  "task_types": ["architecture"],
+  "triggers": ["deprecat", "migration", "migrate", "sunset", "legacy replacement"],
+  "requires_trigger": true,
+  "stages": ["inventory contracts", "choose compatibility policy", "migrate incrementally", "verify rollback", "remove when proven"],
+  "provenance": {
+    "source": "addyosmani-agent-skills",
+    "path": "skills/deprecation-and-migration/SKILL.md",
+    "adaptation": "curated"
+  }
+}
