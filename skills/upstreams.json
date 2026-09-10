@@ -25,6 +25,41 @@
           "prompt_sha256": "27b1c49431bc959ba9ea2575d34a90d9799c2f272a633e53a7dd885b0de0fbb4"
         }
       }
+    },
+    "mattpocock-skills": {
+      "repository": "https://github.com/mattpocock/skills.git",
+      "ref": "main",
+      "commit": "3cca18b368ae95cdbdebbff572ccafa662551015",
+      "license": "MIT",
+      "license_file": "UPSTREAM_LICENSES.md",
+      "integration": "curated adaptations; upstream prompts are not loaded at runtime",
+      "skills": {
+        "resolving-merge-conflicts": {
+          "path": "skills/engineering/resolving-merge-conflicts/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "7a2a07f48761ce49c191d324fc25916e9d4b6a297cc20c3d581d26f08e3f748c"
+        },
+        "research": {
+          "path": "skills/engineering/research/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "08ffacf03d1319b06b682a31f22e0b1eb9f9078348cf49c0863876a752e23228"
+        },
+        "grilling": {
+          "path": "skills/productivity/grilling/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "965e1e326679adf98429f307e3d6c38cc99ee9548ad1e58fbb7c1f0610ea02bb"
+        },
+        "wizard": {
+          "path": "skills/engineering/wizard/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "2b1e19cbfb2aef45cd30c627f1c37f4d4daa4cea4e661c01efb71f56982698c9"
+        },
+        "git-guardrails-claude-code": {
+          "path": "skills/misc/git-guardrails-claude-code/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "27ee07ee1057ac6b97eab6183f27f366399c3250af8b61df02e590efa2b4fc9b"
+        }
+      }
     }
   }
 }
