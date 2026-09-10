@@ -12,6 +12,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'ai_stack'))
+import capabilities  # noqa: E402
 import core  # noqa: E402
 import crg  # noqa: E402
 import repo  # noqa: E402
@@ -179,6 +180,15 @@ class RepoSandboxTests(unittest.TestCase):
     def test_cmd_doctor_reports_no_orphaned_state_when_none_exists(self):
         out = self._run(repo.cmd_doctor, argparse.Namespace())
         self.assertNotIn('Orphaned state', out)
+
+    def test_cmd_doctor_probes_every_registered_capability_binary(self):
+        # Regression guard for the capability registry rewiring: doctor's probe list
+        # used to hardcode ['rtk','codegraph','graphify','code-review-graph','ctx7']
+        # directly, with rtk/codegraph never actually detectable anywhere else in the
+        # codebase. It now reads the same CAPABILITIES registry build_prompt does.
+        out = self._run(repo.cmd_doctor, argparse.Namespace())
+        for meta in capabilities.CAPABILITIES.values():
+            self.assertIn(meta['binary'], out)
 
     def test_cmd_optimize_prints_audit_without_writes(self):
         out = self._run(repo.cmd_optimize, argparse.Namespace())

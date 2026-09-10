@@ -142,5 +142,46 @@ class RepoScopedCreateTests(CascadeTests):
         self.assertNotIn('origin', written['skills']['custom-skill'])
 
 
+class SelectableFalseTests(CascadeTests):
+    """A skill marked selectable:false (tool-routing being the one bundled example)
+    must never be returned by select_skills(), in either its scoring or its
+    explicit-request path -- it is loaded some other way entirely (capabilities.py,
+    for tool-routing), and must never be able to consume one of a profile's scarce
+    skill slots (a `fast` profile has exactly one)."""
+
+    def test_a_non_selectable_skill_never_wins_the_scoring_competition(self):
+        # Priority 1000 and a triggering keyword would normally guarantee first
+        # place; selectable:false must override even an otherwise-dominant score.
+        write_skill(self.repo_root(), 'silent-tool', 'never injected via select_skills',
+                    meta={"enabled": True, "category": "quality", "cost": "low", "priority": 1000,
+                          "task_types": ["feature"], "triggers": ["widget"], "selectable": False})
+        selected = skills.select_skills(self.state, 'build the widget now', 'standard')
+        self.assertNotIn('silent-tool', selected)
+
+    def test_a_non_selectable_skill_is_rejected_even_when_requested_explicitly(self):
+        write_skill(self.repo_root(), 'silent-tool', 'never injected via select_skills',
+                    meta={"enabled": True, "category": "quality", "cost": "low",
+                          "task_types": [], "triggers": [], "selectable": False})
+        with self.assertRaises(SystemExit):
+            skills.select_skills(self.state, 'anything', 'standard', explicit=['silent-tool'])
+
+    def test_it_still_appears_in_ai_skill_list(self):
+        # Not selectable is not the same as not visible: `ai skill list`,
+        # `ai skill explain`, `ai skill enable/disable` are all unaffected.
+        write_skill(self.repo_root(), 'silent-tool', 'body',
+                    meta={"enabled": True, "category": "quality", "cost": "low",
+                          "task_types": [], "triggers": [], "selectable": False})
+        self.assertIn('silent-tool', skills.enabled_skills(self.state))
+
+    def test_omitting_the_field_defaults_to_selectable(self):
+        # Every other bundled skill has no `selectable` key at all -- confirms the
+        # default doesn't accidentally flip and silence them too.
+        write_skill(self.repo_root(), 'ordinary-tool', 'body',
+                    meta={"enabled": True, "category": "quality", "cost": "low", "priority": 90,
+                          "task_types": ["feature"], "triggers": ["widget"]})
+        selected = skills.select_skills(self.state, 'build the widget now', 'standard')
+        self.assertIn('ordinary-tool', selected)
+
+
 if __name__ == '__main__':
     unittest.main()

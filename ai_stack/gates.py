@@ -30,7 +30,7 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
     task=task_state(state)
     # Any file that changes what a gate/validator is told (config, curated context, prompt
     # choice) belongs in this list, alongside the PR/design contracts it already covers.
-    for path in [state/'rules.json',state/'skill-overrides.json',state/'validators.json',state/'prompt-overrides.json',
+    for path in [state/'rules.json',state/'skill-overrides.json',state/'capability-overrides.json',state/'validators.json',state/'prompt-overrides.json',
                  task/'state/lessons.json',task/'state/prompt-assignment.json',task/'state/ticket.json',
                  *sorted((task/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())

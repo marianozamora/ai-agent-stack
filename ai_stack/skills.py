@@ -69,6 +69,11 @@ def enabled_skills(state:Path)->dict:
 
 def select_skills(state:Path,task:str,profile:str,figma:str|None=None, explicit:list[str]|None=None)->list[str]:
     caps=context_caps(profile); registry=enabled_skills(state); explicit=explicit or []
+    # A skill marked selectable:false (tool-routing) never competes for one of the
+    # profile's skill slots -- it is loaded separately, only when at least one
+    # capability is actually detected (capabilities.py), so it must never be able to
+    # displace tdd/diagnosing-bugs out of a `fast` profile's single slot.
+    registry={name:meta for name,meta in registry.items() if meta.get('selectable',True)}
     if explicit:
         unknown=[x for x in explicit if x not in registry]
         if unknown: raise SystemExit('Unknown skill(s): '+', '.join(unknown))

@@ -11,8 +11,8 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 - [ ] Richer risk signals for new, renamed and binary files.
 - [x] Per-task pipeline locking and explicit post-gate budget-overrun status.
 - [x] Driver interfaces for model providers (builder/reviewer, `ai providers`).
-- [ ] Driver interfaces for external tools (Context7, Graphify, CodeGraph, RTK).
-- [ ] Capability/plugin interfaces. (Per-repository skills now cascade over the bundled ones; providers already have driver interfaces. What remains is a general capability contract, not skills specifically.)
+- [x] Driver interfaces for external tools (Context7, Graphify, CodeGraph, RTK) — `ai_stack/capabilities.py`, `ai capabilities`.
+- [x] Capability/plugin interfaces. (Per-repository skills already cascade over the bundled ones; providers already had driver interfaces; the capability registry above closes the remaining tool-side gap.)
 - [ ] Multi-repository workspace orchestration.
 - [x] Instrumentation for a real-usage validation campaign (`ai metrics label`, `ai metrics --campaign`).
 - [ ] Actually run the validation campaign (20–30 real tasks, human-labeled) using the tools above and act on its recommendations.

@@ -670,6 +670,38 @@ usage: ai skill create [-h] --category CATEGORY
                        name
 ```
 
+## `ai capabilities`
+
+Inspect or enable/disable external context tools (Code Review Graph, Graphify, CodeGraph, Context7, RTK).
+
+```text
+usage: ai capabilities [-h] [--task-id TASK_ID] {list,enable,disable} ...
+```
+
+### `ai capabilities list`
+
+
+
+```text
+usage: ai capabilities list [-h]
+```
+
+### `ai capabilities enable`
+
+
+
+```text
+usage: ai capabilities enable [-h] name
+```
+
+### `ai capabilities disable`
+
+
+
+```text
+usage: ai capabilities disable [-h] name
+```
+
 ## `ai clarify`
 
 Check the PR contract for unverifiable acceptance criteria before implementing.
