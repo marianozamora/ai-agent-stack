@@ -555,6 +555,29 @@ def classify_task(task:str,figma:str|None=None)->str:
     return 'feature'
 
 
+AUTO_FAST_TASK_TYPES={'feature','bug','prototype'}
+
+
+def resolve_profile(explicit:str|None,scope:dict,task:str,figma:str|None=None)->tuple[str,str|None]:
+    """Pick a context/budget profile when the operator did not name one.
+
+    An explicit `--profile` always wins. Otherwise `fast` is chosen only for a
+    small, low-risk change of a routine kind (a footer, a copy tweak, a
+    contained bug fix); anything touching a high/medium-risk path, crossing a
+    security boundary, exceeding the LOW size thresholds, or of an architectural
+    kind falls back to `standard`, the safe default. The second tuple element is
+    the downgrade reason, non-None only when the downgrade fired, so callers can
+    show why the profile was not `standard`.
+    """
+    if explicit is not None: return explicit,None
+    risk=classify(scope,'standard')
+    small=scope['file_count']<6 and scope['changed_lines']<160
+    if (small and risk['risk']=='LOW' and not risk['security']
+            and classify_task(task,figma) in AUTO_FAST_TASK_TYPES):
+        return 'fast','small low-risk change'
+    return 'standard',None
+
+
 def context_caps(profile:str)->dict:
     return {
       'fast': {

@@ -54,6 +54,21 @@ class CoreHelpersTests(unittest.TestCase):
         strict_floor = core.classify({'files': ['a.py'], 'file_count': 1, 'changed_lines': 1}, 'strict')
         self.assertEqual(strict_floor['risk'], 'MEDIUM')
 
+    def test_resolve_profile_auto_downgrades_only_small_low_risk_routine_changes(self):
+        small_feature = {'files': ['src/ui/footer.tsx'], 'file_count': 1, 'changed_lines': 20}
+        self.assertEqual(core.resolve_profile(None, small_feature, 'agrega un footer'), ('fast', 'small low-risk change'))
+        self.assertEqual(core.resolve_profile(None, small_feature, 'fix broken footer link'), ('fast', 'small low-risk change'))
+
+        # Explicit choice always wins, downgrade or not.
+        self.assertEqual(core.resolve_profile('standard', small_feature, 'agrega un footer'), ('standard', None))
+        self.assertEqual(core.resolve_profile('strict', small_feature, 'agrega un footer'), ('strict', None))
+
+        # High/medium-risk path, security boundary, big diff, or architectural intent -> standard.
+        self.assertEqual(core.resolve_profile(None, {'files': ['src/auth/token.py'], 'file_count': 1, 'changed_lines': 5}, 'tweak')[0], 'standard')
+        self.assertEqual(core.resolve_profile(None, {'files': ['a.py'] * 7, 'file_count': 7, 'changed_lines': 5}, 'small change')[0], 'standard')
+        self.assertEqual(core.resolve_profile(None, small_feature, 'refactor the footer component')[0], 'standard')
+        self.assertEqual(core.resolve_profile(None, small_feature, 'redesign footer', 'https://figma.com/x')[0], 'standard')
+
     def test_context_caps_scale_with_profile(self):
         fast, standard, strict = (core.context_caps(p) for p in ('fast', 'standard', 'strict'))
         self.assertLess(fast['skills'], standard['skills'])

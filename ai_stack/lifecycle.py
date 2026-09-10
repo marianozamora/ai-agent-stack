@@ -2,7 +2,7 @@ from __future__ import annotations
 import hashlib, json, re, sys, textwrap, time, uuid
 from pathlib import Path
 from capabilities import capability_block, detect as detect_capabilities, render_budget_lines
-from core import classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, safe_head, save_json, shasum, task_state
+from core import classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, resolve_profile, safe_head, save_json, shasum, task_state
 from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
 from metrics import record_metric
@@ -180,6 +180,7 @@ def cmd_planrun(args,launch:bool):
         m=re.search(r'https?://\S*figma\.com/\S+',args.task or '')
         figma=m.group(0) if m else None
     if args.no_figma: figma=None
+    args.profile,profile_auto=resolve_profile(args.profile,collect_scope(root,args.base),args.task or '',figma)
     ticket_analysis=None
     if getattr(args,'ticket_file',None):
         ticket_analysis=analyze_ticket_text(Path(args.ticket_file).read_text())
@@ -192,7 +193,7 @@ def cmd_planrun(args,launch:bool):
         save_json(task/'state/ticket.json',ticket_snapshot(ticket_analysis))
     print('AI plan')
     print('  repo state: ',state)
-    print('  profile:    ',args.profile)
+    print('  profile:    ',args.profile+(f'  (auto — {profile_auto}; pass --profile to override)' if profile_auto else ''))
     print('  risk:       ',plan.get('risk',{}).get('risk'))
     print('  files:      ',plan.get('scope',{}).get('file_count'))
     print('  figma:      ',figma or 'off')
