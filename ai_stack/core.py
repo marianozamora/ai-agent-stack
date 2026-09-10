@@ -101,19 +101,54 @@ def normalize_remote(remote:str)->str:
     return s.rstrip('/') or s
 
 
-def remote_id(root:Path)->tuple[str,str]:
+_ORIGIN_URL_CACHE:dict[str,str] = {}
+_REMOTE_ID_CACHE:dict[str,tuple[str,str]] = {}
+# Both keyed by resolved root, never a single global slot: several temp repos
+# can share one test process, and each must keep its own origin/id.
+
+
+def _origin_url(root:Path)->str:
+    """Raw `git remote get-url origin` output (or the filesystem-path fallback
+    when there is no origin), cached per-root. remote_id() and _legacy_remote_id()
+    both start from this same value, and repo_state() calls both of them on
+    every invocation -- reading it twice per call for something that can't
+    change mid-process was paying the ~16ms spawn twice for nothing.
+    """
+    key=str(root.resolve())
+    cached=_ORIGIN_URL_CACHE.get(key)
+    if cached is not None: return cached
     try: remote=run(["git","remote","get-url","origin"],cwd=root)
     except Exception: remote=str(root.resolve())
-    normalized=normalize_remote(remote)
+    _ORIGIN_URL_CACHE[key]=remote
+    return remote
+
+
+def remote_id(root:Path)->tuple[str,str]:
+    # repo_state() calls this on every command (`ai doctor` alone calls it 5x);
+    # the remote doesn't change under a running process, so re-deriving it each
+    # time bought nothing but repeated ~16ms `git remote get-url` spawns.
+    key=str(root.resolve())
+    cached=_REMOTE_ID_CACHE.get(key)
+    if cached is not None: return cached
+    normalized=normalize_remote(_origin_url(root))
     rid=hashlib.sha256(normalized.encode()).hexdigest()[:16]
-    return rid, normalized
+    result=(rid,normalized)
+    _REMOTE_ID_CACHE[key]=result
+    return result
 
 
 def _legacy_remote_id(root:Path)->tuple[str,str]:
-    try: remote=run(["git","remote","get-url","origin"],cwd=root)
-    except Exception: remote=str(root.resolve())
-    normalized=_legacy_normalize_remote(remote)
+    normalized=_legacy_normalize_remote(_origin_url(root))
     return hashlib.sha256(normalized.encode()).hexdigest()[:16], normalized
+
+
+def _clear_caches():
+    """Test-only escape hatch for a repo whose origin remote changes mid-process
+    (same root, new URL): without this, remote_id()/_legacy_remote_id() would
+    keep returning the stale cached values for that root. Production code never
+    needs to call it -- the remote a process started against doesn't change out
+    from under it."""
+    _ORIGIN_URL_CACHE.clear(); _REMOTE_ID_CACHE.clear()
 
 
 def known_repo_states()->list[Path]:
@@ -344,16 +379,44 @@ def origin_head(root:Path)->str:
     return ref if verify_ref(root,ref) else ''
 
 
+def _base_candidate_order(root:Path,requested:str|None=None)->list[str]:
+    """Ref names to try for a diff base, best guess first (unverified -- callers
+    still need verify_ref() on each). The one place this order is written down,
+    so base_suggestions() (needs every verified ref, for error messages) and
+    first_base() (stops at the first verified ref, the hot path resolve_base()
+    actually uses) can't drift into disagreeing rankings.
+    """
+    out:list[str]=[]
+    # A local name that only exists on the remote is by far the most common near-miss.
+    if requested and '/' not in requested: out.append('origin/'+requested)
+    out.append(origin_head(root))
+    for name in BASE_CANDIDATES: out.append('origin/'+name); out.append(name)
+    return out
+
+
 def base_suggestions(root:Path,requested:str|None=None)->list[str]:
     """Refs this repository actually has, best guess first."""
     out:list[str]=[]
-    def add(ref:str):
+    for ref in _base_candidate_order(root,requested):
         if ref and ref not in out and verify_ref(root,ref): out.append(ref)
-    # A local name that only exists on the remote is by far the most common near-miss.
-    if requested and '/' not in requested: add('origin/'+requested)
-    add(origin_head(root))
-    for name in BASE_CANDIDATES: add('origin/'+name); add(name)
     return out
+
+
+def first_base(root:Path,requested:str|None=None)->str:
+    """Like base_suggestions() but stops at the first verified ref.
+
+    resolve_base() only ever uses suggestions[0], so building the full list (up
+    to 9 `git rev-parse --verify` spawns, ~16ms each on macOS) just to take its
+    head wasted most of that work on every invocation. Behavior stays identical
+    to base_suggestions(root,requested)[0] -- same order, same dedup -- because
+    both draw from _base_candidate_order().
+    """
+    seen:set[str]=set()
+    for ref in _base_candidate_order(root,requested):
+        if ref and ref not in seen:
+            seen.add(ref)
+            if verify_ref(root,ref): return ref
+    return ''
 
 
 def task_base(state:Path,root:Path)->str:
@@ -396,8 +459,8 @@ def resolve_base(root:Path,base:str|None,state:Path|None=None)->str:
         if candidate:
             if verify_ref(root,candidate): return candidate
             raise SystemExit(base_error(root,candidate,source=f'{source} ({candidate})'))
-    detected=base_suggestions(root)
-    if detected: return detected[0]
+    detected=first_base(root)
+    if detected: return detected
     raise SystemExit('FAILED: no base ref could be detected (looked for origin/HEAD, '
                      +', '.join(BASE_CANDIDATES)+').\nPass an existing branch, tag or commit with --base.')
 
