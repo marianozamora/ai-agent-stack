@@ -54,6 +54,19 @@ class CoreHelpersTests(unittest.TestCase):
         strict_floor = core.classify({'files': ['a.py'], 'file_count': 1, 'changed_lines': 1}, 'strict')
         self.assertEqual(strict_floor['risk'], 'MEDIUM')
 
+    def test_classify_elevates_a_rename_set_that_a_line_diff_cannot_describe(self):
+        base = {'files': ['b.py', 'c.py'], 'file_count': 2, 'changed_lines': 0}
+        self.assertEqual(core.classify(base, 'standard')['risk'], 'LOW')
+        # One or two renames is a tidy-up; RENAME_ELEVATION_MIN of them is a
+        # reorganisation the review gate must not be skipped over.
+        few = {**base, 'renamed_files': ['a.py => b.py'] * (core.RENAME_ELEVATION_MIN - 1)}
+        self.assertEqual(core.classify(few, 'standard')['risk'], 'LOW')
+        many = {**base, 'renamed_files': [f'x{i} => y{i}'
+                                          for i in range(core.RENAME_ELEVATION_MIN)]}
+        result = core.classify(many, 'standard')
+        self.assertEqual(result['risk'], 'MEDIUM')
+        self.assertIn('rename', result['reason'])
+
     def test_resolve_profile_auto_downgrades_only_small_low_risk_routine_changes(self):
         small_feature = {'files': ['src/ui/footer.tsx'], 'file_count': 1, 'changed_lines': 20}
         self.assertEqual(core.resolve_profile(None, small_feature, 'agrega un footer'), ('fast', 'small low-risk change'))

@@ -93,7 +93,11 @@ def confidence_card(root:Path,state:Path,base:str,profile:str,*,scope:dict|None=
     """
     if scope is None: scope=collect_scope(root,base)
     if risk is None: risk=classify(scope,profile)
-    plan=load_json(task_state(state)/'state/current-plan.json',{})
+    # The plan only enriches task_type here; `ai confidence` is legitimately run
+    # before `ai start`, so a missing active task degrades to no plan context, not
+    # an error.
+    try: plan=load_json(task_state(state)/'state/current-plan.json',{})
+    except SystemExit: plan={}
     task_type=plan.get('task_type') if plan.get('scope',{}).get('base')==base and plan.get('profile')==profile else None
     rows,_=load_metric_rows(state,event='gate')
     stats=outcome_stats(rows,profile=profile,risk=risk['risk'],task_type=task_type)

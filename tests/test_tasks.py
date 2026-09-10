@@ -162,7 +162,7 @@ class TaskLifecycleTests(unittest.TestCase):
         self.assertEqual(tasks.read_task(self.state, self.repo, 'PROJ-1')['title'], 'first ticket')
         self.assertEqual(tasks.read_task(self.state, self.repo, 'PROJ-1')['status'], 'active')
 
-    def test_identity_precedence_puts_the_active_task_above_the_branch(self):
+    def test_identity_precedence_is_ai_task_id_then_active_task(self):
         self.start('PROJ-1')
         self.assertEqual(core.task_identity(self.state, self.repo), 'PROJ-1')
         # AI_TASK_ID (set by `ai gate`) still wins, so a gate stays pinned to the task
@@ -170,10 +170,13 @@ class TaskLifecycleTests(unittest.TestCase):
         with patch.dict(os.environ, {'AI_TASK_ID': 'GATE-TASK'}):
             self.assertEqual(core.task_identity(self.state, self.repo), 'GATE-TASK')
 
-    def test_branch_fallback_still_works_and_warns_once(self):
-        core._BRANCH_FALLBACK_WARNED = False
-        self.addCleanup(setattr, core, '_BRANCH_FALLBACK_WARNED', False)
-        self.assertEqual(core.task_identity(self.state, self.repo), 'master')
+    def test_no_active_task_is_refused_with_no_branch_fallback(self):
+        # The deprecated branch-derived identity is gone: a command that needs a task
+        # directory now stops instead of silently reusing another ticket's contract.
+        with self.assertRaises(SystemExit) as caught:
+            core.task_identity(self.state, self.repo)
+        self.assertIn('no active task', str(caught.exception))
+        self.assertIn('ai start', str(caught.exception))
 
     def test_task_json_keeps_lifecycle_fields_across_task_state_calls(self):
         self.start('PROJ-1', title='keeps this')

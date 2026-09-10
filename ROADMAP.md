@@ -6,9 +6,9 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 
 - [x] Short path for the normal case (`ai start` / `ai work` / `ai finish`).
 - [x] Explicit task lifecycle (`start`, `switch`, `close`, `current`, `tasks`) that prevents contract reuse across unrelated work.
-- [ ] Remove the deprecated branch-derived task identity fallback.
+- [x] Remove the deprecated branch-derived task identity fallback.
 - [x] Fail-closed base resolution.
-- [ ] Richer risk signals for new, renamed and binary files.
+- [x] Richer risk signals for new, renamed and binary files.
 - [x] Per-task pipeline locking and explicit post-gate budget-overrun status.
 - [x] Driver interfaces for model providers (builder/reviewer, `ai providers`).
 - [x] Driver interfaces for external tools (Context7, Graphify, CodeGraph, RTK) — `ai_stack/capabilities.py`, `ai capabilities`.
@@ -19,7 +19,8 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 
 ## Measurement follow-ups
 
-- [ ] Validate the SQLite metrics index against larger real-project histories and add repair diagnostics to `ai doctor`.
+- [x] Add repair diagnostics for the SQLite metrics index to `ai doctor` (`metric_index_health()` — reconciles the index against `metrics.jsonl`, rebuilds a stale or corrupt one).
+- [ ] Validate that index against larger real-project histories once a campaign produces them.
 - [ ] Add an explicitly opt-in live benchmark mode; synthetic benchmark runs remain the default.
 - [ ] Decide retention policy from real usage before introducing automatic pruning.
 

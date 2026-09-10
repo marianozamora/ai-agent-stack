@@ -281,7 +281,6 @@ def save_json(p:Path,obj:Any):
 
 TASK_ID_PATTERN = r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}'
 _TASK_SCAFFOLD_DONE:set[tuple[str,str]] = set()
-_BRANCH_FALLBACK_WARNED = False
 
 
 def active_task_id(state:Path,root:Path)->str:
@@ -304,21 +303,17 @@ def set_active_task(state:Path,root:Path,identity:str|None):
 
 
 def task_identity(state:Path,root:Path)->str:
-    """--task-id > AI_TASK_ID (set by ai gate) > the active task > the branch.
+    """--task-id > AI_TASK_ID (set by `ai gate`) > the active task.
 
-    The branch fallback is what let two unrelated tickets worked on one branch share
-    a contract and its stale acceptance criteria. It is kept for one release so
-    existing checkouts keep working, but it warns once per process and is deprecated.
+    There is deliberately no branch fallback. Deriving identity from the current
+    branch is what let two unrelated tickets worked on one branch share a contract
+    and its stale acceptance criteria; it was deprecated with a warning for one
+    release and is now gone. `ai start <id>` makes the choice explicit.
     """
-    global _BRANCH_FALLBACK_WARNED
     identity=TASK_ID or os.environ.get('AI_TASK_ID') or active_task_id(state,root)
     if identity: return identity
-    branch=run(['git','symbolic-ref','--short','HEAD'],cwd=root,check=False) or safe_head(root)
-    if branch and not _BRANCH_FALLBACK_WARNED:
-        _BRANCH_FALLBACK_WARNED=True
-        print(f'warning: no active task; using the branch {branch!r} as the task identity. '
-              'Run `ai start <id>` to make it explicit (this fallback is deprecated).',file=sys.stderr)
-    return branch
+    raise SystemExit('NEEDS_HUMAN: no active task in this checkout. Run `ai start <id>` to begin '
+                     'one, or pass --task-id (or set AI_TASK_ID) for a one-off command.')
 
 
 def task_state(state:Path)->Path:
@@ -557,6 +552,9 @@ def collect_scope(root:Path,base:str)->dict:
             "binary_files":sorted(set(binary)),"renamed_files":sorted(set(renamed))}
 
 
+RENAME_ELEVATION_MIN = 3
+
+
 def classify(scope:dict, profile:str)->dict:
     paths='\n'.join(scope['files']).lower(); risk='LOW'; reason='small/local change'; security=False
     high=re.compile(r'(^|/)(auth|authentication|authorization|rbac|iam|payment|payments|billing|migration|migrations|schema|database|db|crypto|secrets?|permissions?|infra|terraform|k8s|kubernetes)(/|$)|\.sql$|\.tf$',re.M)
@@ -569,6 +567,12 @@ def classify(scope:dict, profile:str)->dict:
     # A binary carries no reviewable diff: the review gate would be reading a size, not
     # a change. That is the opposite of a reason to skip review, so it never scores LOW.
     if scope.get('binary_files') and risk=='LOW': risk,reason='MEDIUM','binary content cannot be reviewed as a diff'
+    # A pure rename scores zero lines, so a set of them below the file-count threshold
+    # lands LOW and skips review -- yet moving a module breaks every importer, and the
+    # line diff a reviewer would read says nothing about that. Elevate once there are
+    # enough of them to be a reorganisation rather than a single tidy-up.
+    if len(scope.get('renamed_files') or [])>=RENAME_ELEVATION_MIN and risk=='LOW':
+        risk,reason='MEDIUM','file reorganisation (renames) is not a reviewable line diff'
     if profile=='strict' and risk=='LOW': risk,reason='MEDIUM','strict profile minimum'
     return {"risk":risk,"reason":reason,"security":security}
 

@@ -19,6 +19,7 @@ HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" XDG_DATA_HOME="$HOME_DIR/.l
 AI="$HOME_DIR/.local/bin/ai"
 E=(HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" XDG_DATA_HOME="$HOME_DIR/.local/share")
 env "${E[@]}" "$AI" init >/dev/null
+env "${E[@]}" "$AI" start smoke-1 --base HEAD >/dev/null
 OUT="$(env "${E[@]}" "$AI" skill list --task 'login regression returns 403' --profile standard)"
 grep -q 'Recommended: diagnosing-bugs, tdd' <<<"$OUT"
 OUT="$(env "${E[@]}" "$AI" plan 'login regression returns 403' --profile fast --base HEAD)"
