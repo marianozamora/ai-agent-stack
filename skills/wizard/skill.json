@@ -1,0 +1,16 @@
+{
+  "name": "wizard",
+  "version": 1,
+  "category": "operations",
+  "cost": "medium",
+  "priority": 70,
+  "task_types": [],
+  "triggers": ["provision", "credentials", "ci secrets", "manual setup", "cutover", "one-off migration", "third-party dashboard", "wizard"],
+  "requires_trigger": true,
+  "stages": ["scope procedure", "map each stage's journey", "author the wizard", "verify and hand off"],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/engineering/wizard/SKILL.md",
+    "adaptation": "curated"
+  }
+}
