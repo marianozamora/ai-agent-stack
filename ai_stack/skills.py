@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, re
 from pathlib import Path
-from core import STACK_ROOT, classify_task, context_caps, git_root, load_json, repo_state, save_json
+from core import STACK_ROOT, classify_task, context_caps, git_root, load_json, repo_state, run, save_json, shasum
 
 
 TASK_TYPES=['bug','feature','architecture','design','prototype','planning']
@@ -15,6 +15,16 @@ def skill_root()->Path:
 def skill_registry()->dict:
     p=skill_root()/'registry.json'
     return load_json(p,{"skills":{}})
+
+
+def upstream_registry()->dict:
+    path=skill_root()/'upstreams.json'
+    if not path.is_file(): return {"version":1,"sources":{}}
+    try: data=json.loads(path.read_text())
+    except (OSError,ValueError) as exc: raise RuntimeError('Invalid upstream skill manifest') from exc
+    if data.get('version')!=1 or not isinstance(data.get('sources'),dict):
+        raise RuntimeError('Invalid upstream skill manifest')
+    return data
 
 
 def skill_overrides(state:Path)->dict:
@@ -42,18 +52,63 @@ def select_skills(state:Path,task:str,profile:str,figma:str|None=None, explicit:
     tl=(task or '').lower()
     for name,meta in registry.items():
         if not meta['enabled']: continue
+        matched_triggers=[trigger for trigger in meta.get('triggers',[]) if trigger.lower() in tl]
+        if meta.get('requires_trigger') and not matched_triggers: continue
         score=0
         if kind in meta.get('task_types',[]): score+=5
         if kind=='bug' and meta.get('category')=='debugging': score+=3
         if kind=='prototype' and name=='prototype': score+=3
         if kind=='architecture' and name=='wayfinder': score+=3
         if kind=='planning' and name=='to-tickets': score+=3
-        for trig in meta.get('triggers',[]):
-            if trig.lower() in tl: score+=2
+        score+=2*len(matched_triggers)
         if meta.get('always_consider') and kind in ('feature','bug','design'): score+=1
         if score: scores.append((score, int(meta.get('priority',0)), name))
     scores.sort(reverse=True)
     return [name for _,_,name in scores[:caps['skills']]]
+
+
+def upstream_status(check:bool=False)->list[dict]:
+    manifest=upstream_registry(); registry=skill_registry().get('skills',{}); rows=[]
+    for source_name,source in manifest.get('sources',{}).items():
+        repository=source.get('repository',''); ref=source.get('ref','main'); pinned=source.get('commit','')
+        if not repository or not re.fullmatch(r'[0-9a-f]{40,64}',pinned):
+            raise RuntimeError(f'Invalid upstream manifest entry: {source_name}')
+        local_skills=source.get('skills',{})
+        for local_name,mapping in local_skills.items():
+            provenance=registry.get(local_name,{}).get('provenance',{})
+            if (provenance.get('source')!=source_name or provenance.get('path')!=mapping.get('path')
+                    or provenance.get('adaptation')!=mapping.get('adaptation')):
+                raise RuntimeError(f'Upstream provenance mismatch for skill: {local_name}')
+            expected_hash=mapping.get('prompt_sha256',''); prompt_path=skill_root()/local_name/'prompt.md'
+            descriptor=load_json(prompt_path.parent/'skill.json',{}).get('provenance',{})
+            if descriptor!=provenance:
+                raise RuntimeError(f'Skill descriptor provenance mismatch: {local_name}')
+            if not re.fullmatch(r'[0-9a-f]{64}',expected_hash) or not prompt_path.is_file():
+                raise RuntimeError(f'Invalid curated prompt manifest for skill: {local_name}')
+            if shasum(prompt_path.read_text())!=expected_hash:
+                raise RuntimeError(f'Curated prompt changed without updating provenance: {local_name}')
+        current=None; status='PINNED'
+        if check:
+            output=run(['git','ls-remote',repository,f'refs/heads/{ref}'])
+            first=output.splitlines()[0].split()[0] if output else ''
+            if not re.fullmatch(r'[0-9a-f]{40,64}',first):
+                raise RuntimeError(f'Upstream ref not found: {source_name} {ref}')
+            current=first; status='CURRENT' if current==pinned else 'UPDATE_AVAILABLE'
+        rows.append({'source':source_name,'repository':repository,'ref':ref,'license':source.get('license'),
+                     'pinned_commit':pinned,'current_commit':current,'status':status,
+                     'skills':sorted(local_skills)})
+    return rows
+
+
+def cmd_skill_upstream(args):
+    rows=upstream_status(getattr(args,'check',False))
+    if getattr(args,'json',False): print(json.dumps({'version':1,'sources':rows},indent=2)); return
+    print('Upstream skill sources')
+    if not rows: print('(none)'); return
+    for row in rows:
+        current=f" current={row['current_commit'][:12]}" if row['current_commit'] else ''
+        print(f"{row['source']}: {row['status']} pinned={row['pinned_commit'][:12]}{current} "
+              f"ref={row['ref']} skills={','.join(row['skills'])}")
 
 
 def load_skill_context(names:list[str], max_chars:int)->str:
@@ -72,6 +127,7 @@ def load_skill_context(names:list[str], max_chars:int)->str:
 
 
 def cmd_skill(args):
+    if args.skill_cmd=='upstream': return cmd_skill_upstream(args)
     root=git_root(); state=repo_state(root); registry=enabled_skills(state)
     if args.skill_cmd in (None,'list'):
         print('Skills')
