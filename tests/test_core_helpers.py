@@ -273,3 +273,50 @@ class ProcessCacheTests(unittest.TestCase):
         self.assertFalse(core._TASK_SCAFFOLD_DONE)
         self.assertFalse(core._REMOTE_ID_CACHE)
         self.assertFalse(core._ORIGIN_URL_CACHE)
+
+class StackRootOverrideTests(unittest.TestCase):
+    """Covers AI_STACK_HOME, the override that says where shipped assets live.
+
+    resolve_stack_root() is a pure function on purpose: STACK_ROOT is computed at
+    import time, so the alternative would be reimport gymnastics in every test.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='stack-home-')
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.source = self.base / 'source'
+        self.bundled = self.base / 'bundled'
+        for d in (self.source, self.bundled):
+            d.mkdir()
+            (d / 'VERSION').write_text('0.0.0\n')
+
+    def test_no_override_prefers_source_when_it_has_a_version(self):
+        self.assertEqual(core.resolve_stack_root(None, self.source, self.bundled), self.source)
+
+    def test_no_override_falls_back_to_bundled_without_a_version(self):
+        (self.source / 'VERSION').unlink()
+        self.assertEqual(core.resolve_stack_root(None, self.source, self.bundled), self.bundled)
+
+    def test_override_wins_over_both(self):
+        other = self.base / 'elsewhere'
+        other.mkdir()
+        (other / 'VERSION').write_text('9.9.9\n')
+        self.assertEqual(core.resolve_stack_root(str(other), self.source, self.bundled), other.resolve())
+
+    def test_override_without_version_fails_closed(self):
+        # The point of failing here: a typo'd path that quietly fell back to the source
+        # tree would hide which prompts and skills a run actually loaded.
+        empty = self.base / 'not-an-install'
+        empty.mkdir()
+        with self.assertRaises(SystemExit) as ctx:
+            core.resolve_stack_root(str(empty), self.source, self.bundled)
+        self.assertIn('AI_STACK_HOME', str(ctx.exception))
+        self.assertIn('VERSION', str(ctx.exception))
+
+    def test_empty_override_is_treated_as_unset(self):
+        self.assertEqual(core.resolve_stack_root('', self.source, self.bundled), self.source)
+
+    def test_override_expands_user_and_resolves(self):
+        nested = self.base / 'a' / '..' / 'source'
+        self.assertEqual(core.resolve_stack_root(str(nested), self.source, self.bundled), self.source.resolve())

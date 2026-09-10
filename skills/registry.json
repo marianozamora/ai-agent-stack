@@ -194,10 +194,28 @@
       "category": "evidence",
       "cost": "low",
       "priority": 85,
-      "task_types": ["bug", "feature", "architecture", "design"],
-      "triggers": ["official documentation", "official docs", "framework", "library", "sdk", "dependency version", "api version"],
+      "task_types": [
+        "bug",
+        "feature",
+        "architecture",
+        "design"
+      ],
+      "triggers": [
+        "official documentation",
+        "official docs",
+        "framework",
+        "library",
+        "sdk",
+        "dependency version",
+        "api version"
+      ],
       "requires_trigger": true,
-      "stages": ["identify version", "consult primary source", "separate evidence from inference", "verify behavior"],
+      "stages": [
+        "identify version",
+        "consult primary source",
+        "separate evidence from inference",
+        "verify behavior"
+      ],
       "provenance": {
         "source": "addyosmani-agent-skills",
         "path": "skills/source-driven-development/SKILL.md",
@@ -209,10 +227,24 @@
       "category": "migration",
       "cost": "medium",
       "priority": 95,
-      "task_types": ["architecture"],
-      "triggers": ["deprecat", "migration", "migrate", "sunset", "legacy replacement"],
+      "task_types": [
+        "architecture"
+      ],
+      "triggers": [
+        "deprecat",
+        "migration",
+        "migrate",
+        "sunset",
+        "legacy replacement"
+      ],
       "requires_trigger": true,
-      "stages": ["inventory contracts", "choose compatibility policy", "migrate incrementally", "verify rollback", "remove when proven"],
+      "stages": [
+        "inventory contracts",
+        "choose compatibility policy",
+        "migrate incrementally",
+        "verify rollback",
+        "remove when proven"
+      ],
       "provenance": {
         "source": "addyosmani-agent-skills",
         "path": "skills/deprecation-and-migration/SKILL.md",
@@ -224,13 +256,187 @@
       "category": "reliability",
       "cost": "low",
       "priority": 80,
-      "task_types": ["feature", "architecture", "design"],
-      "triggers": ["observability", "telemetry", "opentelemetry", "tracing", "structured logging", "metrics", "slo", "alerting"],
+      "task_types": [
+        "feature",
+        "architecture",
+        "design"
+      ],
+      "triggers": [
+        "observability",
+        "telemetry",
+        "opentelemetry",
+        "tracing",
+        "structured logging",
+        "metrics",
+        "slo",
+        "alerting"
+      ],
       "requires_trigger": true,
-      "stages": ["state diagnostic question", "choose signal", "instrument boundary", "verify emission", "define response"],
+      "stages": [
+        "state diagnostic question",
+        "choose signal",
+        "instrument boundary",
+        "verify emission",
+        "define response"
+      ],
       "provenance": {
         "source": "addyosmani-agent-skills",
         "path": "skills/observability-and-instrumentation/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "resolving-merge-conflicts": {
+      "enabled": true,
+      "category": "version-control",
+      "cost": "medium",
+      "priority": 90,
+      "task_types": [
+        "feature",
+        "bug"
+      ],
+      "triggers": [
+        "merge conflict",
+        "rebase conflict",
+        "resolve conflict",
+        "conflicting files",
+        "rebasing"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "survey state",
+        "find primary sources",
+        "resolve hunks",
+        "run checks",
+        "finish merge"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/engineering/resolving-merge-conflicts/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "research": {
+      "enabled": true,
+      "category": "evidence",
+      "cost": "low",
+      "priority": 60,
+      "task_types": [
+        "feature",
+        "architecture",
+        "planning"
+      ],
+      "triggers": [
+        "research this",
+        "investigate",
+        "look into",
+        "background agent",
+        "primary sources",
+        "gather docs"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "scope question",
+        "dispatch background agent",
+        "verify primary sources",
+        "write findings",
+        "cite sources"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/engineering/research/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "grilling": {
+      "enabled": true,
+      "category": "elicitation",
+      "cost": "medium",
+      "priority": 55,
+      "task_types": [
+        "feature",
+        "planning",
+        "design"
+      ],
+      "triggers": [
+        "grill me",
+        "grill this",
+        "grill-me",
+        "stress-test this plan",
+        "stress test this decision",
+        "pressure-test"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "map design tree",
+        "ask frontier round",
+        "wait for answers",
+        "recompute frontier",
+        "confirm shared understanding"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/productivity/grilling/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "wizard": {
+      "enabled": true,
+      "category": "operations",
+      "cost": "medium",
+      "priority": 70,
+      "task_types": [
+        "feature"
+      ],
+      "triggers": [
+        "provision",
+        "credentials",
+        "ci secrets",
+        "manual setup",
+        "cutover",
+        "one-off migration",
+        "third-party dashboard",
+        "wizard"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "scope procedure",
+        "map each stage's journey",
+        "author the wizard",
+        "verify and hand off"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/engineering/wizard/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "git-guardrails-claude-code": {
+      "enabled": true,
+      "category": "safety",
+      "cost": "low",
+      "priority": 65,
+      "task_types": [
+        "feature"
+      ],
+      "triggers": [
+        "git guardrails",
+        "block git push",
+        "prevent force push",
+        "git safety hook",
+        "block dangerous git",
+        "pretooluse hook for git"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "ask scope",
+        "copy hook script",
+        "register hook in settings",
+        "confirm customization",
+        "verify block"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/misc/git-guardrails-claude-code/SKILL.md",
         "adaptation": "curated"
       }
     }

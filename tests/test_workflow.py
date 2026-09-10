@@ -52,6 +52,25 @@ class WorkflowTests(unittest.TestCase):
     def plan(self, *args):
         self.ai('plan', 'small change', '--profile', 'fast', '--base', 'HEAD', *args)
 
+    def prompt_variant(self, variant, text):
+        """Create one prompt variant in the source tree for the duration of a test.
+
+        templates/prompts/ ships empty -- variant 'a' comes from INSTRUCTIONS[] -- so a
+        test that exercises variants has to write one, and STACK_ROOT is the only place
+        the CLI looks. That makes this the single piece of shared, cross-test state in
+        this file, and the reason it is funnelled through one helper: two tests writing
+        the *same* variant name clobber each other's content under xdist, which is
+        exactly the race that kept this file off the parallel runners. Every caller must
+        own a distinct variant name. The slot directory is deliberately never removed --
+        a concurrent test may still need it, and an empty directory is invisible to git.
+        """
+        slot_dir = ROOT / 'templates/prompts/validator.cleanup'
+        slot_dir.mkdir(parents=True, exist_ok=True)
+        path = slot_dir / f'{variant}.md'
+        path.write_text(text)
+        self.addCleanup(path.unlink, missing_ok=True)
+        return path
+
     def pass_gates(self):
         for gate in ('checks', 'regression', 'cleanup', 'provenance', 'ponytail', 'summary', 'contract'):
             self.ai('gate', gate, '--', sys.executable, '-c', 'import json; print(json.dumps({"status":"PASS","evidence":["verified fixture"]}))')
@@ -371,17 +390,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
             self.assertIn(gate, output)
 
     def test_prompt_experiment_report_and_promote(self):
-        slot_dir = ROOT / 'templates/prompts/validator.cleanup'
-        created_dir = not slot_dir.exists()
-        slot_dir.mkdir(parents=True, exist_ok=True)
-        variant_b = slot_dir / 'b.md'
-        variant_b.write_text('Alternate cleanup instructions for testing.\n')
-        def cleanup_files():
-            variant_b.unlink(missing_ok=True)
-            if created_dir:
-                try: slot_dir.rmdir()
-                except OSError: pass
-        self.addCleanup(cleanup_files)
+        variant_b = self.prompt_variant('b', 'Alternate cleanup instructions for testing.\n')
 
         listing = self.ai('prompt', 'list')
         self.assertIn('validator.cleanup', listing)
@@ -483,29 +492,22 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.ai('prompt', 'experiment', 'stop')
 
     def test_prompt_rollback_restores_previous_promotion(self):
-        slot_dir = ROOT / 'templates/prompts/validator.cleanup'
-        created_dir = not slot_dir.exists()
-        slot_dir.mkdir(parents=True, exist_ok=True)
-        variant_b = slot_dir / 'b.md'
-        variant_b.write_text('Rollback test variant b.\n')
-        def cleanup_files():
-            variant_b.unlink(missing_ok=True)
-            if created_dir:
-                try: slot_dir.rmdir()
-                except OSError: pass
-        self.addCleanup(cleanup_files)
+        # Variant 'c', not 'b': the experiment test owns 'b', and both used to write
+        # the same file in the shared source tree -- whichever ran second won, and the
+        # other's assertions read the wrong text.
+        self.prompt_variant('c', 'Rollback test variant c.\n')
 
-        self.ai('prompt', 'promote', 'cleanup', 'b', '--confirm')
+        self.ai('prompt', 'promote', 'cleanup', 'c', '--confirm')
         self.ai('prompt', 'promote', 'cleanup', 'a', '--confirm')
         history = json.loads(self.ai('prompt', 'history', '--json'))
         self.assertEqual([h['action'] for h in history], ['promote', 'promote'])
-        self.assertEqual(history[-1]['previous']['variant'], 'b')
+        self.assertEqual(history[-1]['previous']['variant'], 'c')
 
         self.ai('prompt', 'rollback', 'cleanup', '--confirm')
-        self.assertIn('promoted=b', self.ai('prompt', 'list'))
+        self.assertIn('promoted=c', self.ai('prompt', 'list'))
         history = json.loads(self.ai('prompt', 'history', '--json'))
         self.assertEqual(history[-1]['action'], 'rollback')
-        self.assertEqual(history[-1]['variant'], 'b')
+        self.assertEqual(history[-1]['variant'], 'c')
 
         self.ai('prompt', 'reset', 'cleanup')
 

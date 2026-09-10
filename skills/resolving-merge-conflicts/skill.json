@@ -1,0 +1,16 @@
+{
+  "name": "resolving-merge-conflicts",
+  "version": 1,
+  "category": "version-control",
+  "cost": "medium",
+  "priority": 90,
+  "task_types": [],
+  "triggers": ["merge conflict", "rebase conflict", "resolve conflict", "conflicting files", "rebasing"],
+  "requires_trigger": true,
+  "stages": ["survey state", "find primary sources", "resolve hunks", "run checks", "finish merge"],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/engineering/resolving-merge-conflicts/SKILL.md",
+    "adaptation": "curated"
+  }
+}

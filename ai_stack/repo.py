@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, re, shutil, time
+import json, os, re, shutil, time
 from pathlib import Path
 from typing import Any
 from capabilities import CAPABILITIES
@@ -169,6 +169,9 @@ def cmd_doctor(args):
     try:
         root=git_root(); state=repo_state(root); bad=contamination(root)
         print('\nRepository:',root); print('External state:',state)
+        # An AI_STACK_HOME override decides which prompts and skills a run loads, so it
+        # must never be invisible: doctor names the effective root whenever it is set.
+        if os.environ.get('AI_STACK_HOME'): print('Stack assets:',STACK_ROOT,'(AI_STACK_HOME)')
         print('Base:', base_report(root,state))
         print('Zero-footprint:', 'PASS' if not bad else 'FAIL')
         for x in bad: print('  tracked:',x)
