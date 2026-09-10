@@ -93,7 +93,7 @@ flowchart LR
     D -->|failed| G["FAILED"]
 ```
 
-Every gate result is bound to a fingerprint of the repository, index, base, plan, contracts, rules and validator configuration. A relevant change invalidates prior evidence. Resume only reuses evidence whose fingerprint and artifact hashes still match.
+Every gate result is bound to a fingerprint of the repository, index, base, plan, contracts, rules, validator configuration, stack version and the active builder/reviewer providers. A relevant change — including a stack upgrade or an `ai providers set` — invalidates prior evidence. Resume only reuses evidence whose fingerprint and artifact hashes still match.
 
 The default gate order is:
 
@@ -106,13 +106,13 @@ Review, security and design are included according to profile, risk and task inp
 
 ## Profiles
 
-| Profile | Skills | Raw files | Review files | Findings | Usage budget |
-|---|---:|---:|---:|---:|---:|
-| `fast` | 1 | 4 | 5 | 3 | 40,000 tokens |
-| `standard` | 2 | 8 | 10 | 3 | 120,000 tokens |
-| `strict` | 3 | 12 | 15 | 5 | 250,000 tokens |
+| Profile | Skills | Raw files | Review files | Findings | Retries | Token budget | Cost budget |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `fast` | 1 | 4 | 5 | 3 | 1 | 40,000 tokens | $0.50 |
+| `standard` | 2 | 8 | 10 | 3 | 2 | 120,000 tokens | $1.50 |
+| `strict` | 3 | 12 | 15 | 5 | 2 | 250,000 tokens | $3.00 |
 
-Strict means stronger evidence and review, not unlimited context or agent debate.
+Strict means stronger evidence and review, not unlimited context or agent debate. `retries` is enforced per gate — a gate that keeps failing against the same issue stops with `NEEDS_HUMAN` instead of spending another model call. The token and cost budgets are both checked by `ai pipeline`; the cost budget binds only where a provider actually reports `cost_usd`. `--allow-overrun` continues past any of the three.
 
 ## Skills
 
@@ -171,10 +171,11 @@ Optional integrations include Context7, Graphify, CodeGraph, Code Review Graph, 
 
 ## Guarantees and limits
 
-- Gate evidence is reproducible and invalidated when its inputs change.
+- Gate evidence is reproducible and invalidated when its inputs change — including the stack version and which provider judged it.
 - Semantic validators run through a configured reviewer (Codex by default) read-only and require structured verdicts; see `ai providers` to inspect or swap the builder/reviewer.
+- A path- or glob-shaped `must_not_change` entry is checked against the diff deterministically by the `contract` gate; a violation is a `FAIL` with no model call. Prose constraints still go to the reviewer.
 - Learned lessons require human confirmation and cannot relax required gates.
-- Token/context limits are profile-bound; missing usage remains unreported rather than estimated.
+- Token, cost and retry limits are profile-bound and enforced; missing usage remains unreported rather than estimated, and an unreported cost never trips the cost budget.
 - `PR_READY` means the configured evidence is fresh. It is not permission to merge or deploy without the repository's normal human and CI controls.
 
 ## Development

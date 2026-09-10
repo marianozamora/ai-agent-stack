@@ -29,9 +29,9 @@ one task on a different branch than the rest without a flag on every command.
 ## How a task moves through the stack
 
 Every gate's PASS is bound to a fingerprint of the repo, index, base, plan,
-rules and validator config; any change invalidates it. `ai ready` never
-launches a model — it only recomputes that fingerprint against what was
-actually recorded.
+rules, validator config, the stack version and the active builder/reviewer
+providers; any change invalidates it. `ai ready` never launches a model — it
+only recomputes that fingerprint against what was actually recorded.
 
 ```mermaid
 flowchart LR
@@ -53,11 +53,17 @@ flowchart LR
 Strict means stronger evidence and review, not unlimited agent debate. Every
 number below is enforced, not advisory.
 
-| Profile | Skills | Raw files | Review files | Findings | Context7 queries | Review rounds | Usage budget |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `fast` | 1 | 4 | 5 | 3 | 1 | 0 | 40,000 tok |
-| `standard` | 2 | 8 | 10 | 3 | 3 | 1 | 120,000 tok |
-| `strict` | 3 | 12 | 15 | 5 | 5 | 1 | 250,000 tok |
+| Profile | Skills | Raw files | Review files | Findings | Context7 queries | Review rounds | Retries | Token budget | Cost budget |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `fast` | 1 | 4 | 5 | 3 | 1 | 0 | 1 | 40,000 tok | $0.50 |
+| `standard` | 2 | 8 | 10 | 3 | 3 | 1 | 2 | 120,000 tok | $1.50 |
+| `strict` | 3 | 12 | 15 | 5 | 5 | 1 | 2 | 250,000 tok | $3.00 |
+
+`retries` is a per-gate streak cap: once a gate has failed that many times in
+a row without passing, `ai gate`/`ai pipeline` stop with `NEEDS_HUMAN` rather
+than spend another model call. `ai pipeline` enforces both the token and cost
+budgets, checked before and after each gate; the cost budget only bites where
+the provider reports `cost_usd`. `--allow-overrun` continues past any of them.
 
 ## Commands
 

@@ -36,16 +36,80 @@ same-directory `from <module> import <name>`, matching the existing
   `load_json`/`save_json`), the risk/routing policy (`classify`,
   `context_caps`, `required_gates`), and the mutable `TASK_ID` — the module
   everything else depends on, imported by nothing else in the graph.
-- `metrics.py`, `skills.py`, `crg.py`, `tools.py` — self-contained domains
-  (usage log, skill router, Code Review Graph, Context7/Graphify/Figma
-  wrappers), each depending only on `core`.
+- `workflow.py` — reusable configuration validation, process execution, usage
+  normalisation and the pure metric-aggregation helpers; a second foundation
+  layer alongside `core`, imported by `metrics`, `gates`, `lifecycle`,
+  `learning`, `prompts`, `clarify` and `deploy` but importing none of them.
+- `skills.py`, `crg.py`, `tools.py` — self-contained domains (skill router,
+  Code Review Graph, Context7/Graphify/Figma wrappers), each depending only on
+  `core`; `metrics.py` depends on `core` and `workflow`.
 - `prompts.py`, `learning.py` — the v0.8 "Learning" surface (`ai prompt`,
-  `ai lessons`/`ai failures`/`ai confidence`), each depending on `core` and
-  `metrics`.
-- `repo.py`, `benchmark.py` — depend additionally on `skills`/`crg`.
+  `ai lessons`/`ai failures`/`ai confidence`), each depending on `core`,
+  `metrics` and `workflow`.
+- `repo.py`, `benchmark.py` — depend additionally on `skills`/`crg`/`detect`.
 - `lifecycle.py` (`ai plan`/`ai run`/`ai ticket`/`ai handoff`) and `gates.py`
   (`ai gate`/`ai pipeline`/`ai ready`/validator config) sit at the top of the
-  graph, each depending on several of the modules above.
+  graph, each depending on several of the modules above; `tasks.py` sits
+  beside them and is mutually recursive with both.
+
+The import graph below is extracted by [Graphify](#graphify) from the current
+tree (`ai graph build`), then reduced to module-to-module edges. Every module
+imports `core`; those edges are collapsed into the one arrow from each layer.
+
+```mermaid
+flowchart TD
+    cli["cli.py<br/><small>parser() + main()</small>"]
+
+    subgraph top["Top of the graph — command handlers"]
+        direction LR
+        lifecycle["lifecycle.py"]
+        gates["gates.py"]
+        tasks["tasks.py"]
+        repo["repo.py"]
+        benchmark["benchmark.py"]
+        clarify["clarify.py"]
+        deploy["deploy.py"]
+    end
+
+    subgraph mid["Domain modules"]
+        direction LR
+        crg["crg.py"]
+        learning["learning.py"]
+        prompts["prompts.py"]
+        skills["skills.py"]
+        capabilities["capabilities.py"]
+        providers["providers.py"]
+        tools["tools.py"]
+        detect["detect.py"]
+        validators["validators.py"]
+    end
+
+    subgraph base["Shared libraries"]
+        direction LR
+        workflow["workflow.py"]
+        metrics["metrics.py"]
+    end
+
+    core["core.py<br/><small>git / JSON / state primitives · risk &amp; routing policy</small>"]
+
+    cli --> top
+    cli --> mid
+    lifecycle --> crg & learning & prompts & skills & capabilities & workflow & metrics
+    gates --> workflow & metrics & validators & tasks & prompts & detect & learning
+    tasks --> lifecycle & gates & metrics & workflow
+    repo --> detect & skills & crg & tasks
+    benchmark --> skills
+    clarify --> workflow
+    learning --> workflow & metrics
+    prompts --> workflow & metrics
+    capabilities --> skills
+    deploy --> workflow & metrics
+    metrics --> workflow
+
+    top --> core
+    mid --> core
+    base --> core
+```
 
 The boundary rule: a function lives with the domain that owns the external
 state it reads or writes (for example, `metrics.py` owns both the audited
@@ -197,13 +261,31 @@ key includes the checkout path and the explicit task ID (branch by default).
 
 `ai gate` executes a validator and records its command, exit code, output hash,
 structured verdict for semantic gates, and a fingerprint of the validated tree
-and task inputs. Gates that modify those inputs fail and must be rerun.
+and task inputs. That fingerprint (`evidence_fingerprint()` in `gates.py`) folds
+in `HEAD`, the verified base, `git ls-files --stage`, `git diff --binary HEAD`,
+the plan, `core.VERSION`, and the active builder/reviewer provider names — the
+last two because a stack upgrade reships the bundled validator `INSTRUCTIONS` and
+an `ai providers set` changes which model judged the change, so neither may leave
+a prior semantic PASS looking fresh to `ai pipeline --resume`. Gates that modify
+their own inputs fail and must be rerun.
+
+Before running a gate's command, `run_gate()` checks
+`metrics.consecutive_gate_failures()` — failed attempts in a row since this gate
+last passed for this task — against the profile's `retries` cap and exits
+`NEEDS_HUMAN` when the streak is past it. The check runs before the command and
+before `evidence_fingerprint()`, so a non-converging gate costs neither a model
+call nor a worktree hash on the attempt that trips it; a pass resets the streak,
+so a legitimately re-evidenced gate is never retired. `ai gate NAME
+--allow-overrun` / `ai pipeline --allow-overrun` run the blocked attempt anyway.
+
 `ai ready` evaluates required gates against the current fingerprint and emits a
 machine-readable readiness artifact plus a terminal status. It never invokes an
 LLM or treats a prior model statement as sufficient proof of readiness.
 
 Character budgets are enforced before writing generated prompts or handoffs.
-Model-internal tool/retry counts remain orchestration instructions. Installation
+Model-internal tool-call counts remain orchestration instructions; the profile's
+gate `retries` cap, by contrast, is enforced by `run_gate()` as described above.
+Installation
 uses validated release directories and an active symlink, with rollback when
 activation fails. Pull requests run fast unit, smoke, wheel/entry-point, lint
 and type guarantees; the Python 3.10/3.13 Linux/macOS subprocess matrix runs
@@ -238,11 +320,21 @@ are indexed incrementally; rewrites and pruning trigger an automatic rebuild.
 Task/gate counts and filtered learning reads therefore avoid reparsing the entire
 JSONL history. Metrics do not estimate missing usage or observe model-internal calls.
 
-Each profile's `context_caps` also carries a `usage_tokens` runtime budget.
-`ai pipeline` sums reported input/output tokens from executed and resumed gates
-as it runs and checks the budget both before and after each gate, stopping with
-an explicit `BUDGET_EXCEEDED` pipeline event (not `FAILED`) naming the gate that
-crossed it and what never ran; `ai pipeline --allow-overrun` continues anyway.
+Each profile's `context_caps` carries two runtime spend ceilings: `usage_tokens`
+and `usage_cost_usd` (`fast`: $0.50, `standard`: $1.50, `strict`: $3.00). The
+second exists because equal token counts cost an order of magnitude apart across
+the models `ai providers` can select, so a token budget alone stops meaning the
+same thing once the provider changes. `ai pipeline` sums reported input/output
+tokens *and* reported `cost_usd` from executed and resumed gates as it runs and
+checks both budgets before and after each gate, stopping with an explicit
+`BUDGET_EXCEEDED` pipeline event (not `FAILED`) naming the gate that crossed it,
+which budget it crossed (`overrun_dimension`), and what never ran; tokens are
+tested first, since every provider reports them, so they name the overrun
+whenever both are crossed. The cost ceiling binds only where a provider actually
+reports cost — `usage_from_verdict()` takes `cost_usd` only when given it, and an
+unreported cost can never trip a budget. `ai pipeline --allow-overrun` continues
+anyway; the pipeline metric and `state/pipeline-run.json` record
+`usage_cost_budget` and `overrun_dimension` alongside the existing token fields.
 `summarize()` aggregates per-pipeline usage separately from per-gate usage and
 counts runs that stopped on a budget (`BUDGET_EXCEEDED`, or a pre-existing
 `FAILED` row from before that status existed, inferred from reported usage), so
@@ -732,3 +824,30 @@ it is read by validators via `build_prompt()`'s by-path reference, so it is an
 input to what a gate's evidence means, and re-running `--ticket-file` with
 different content must invalidate stale evidence the same way re-planning
 already does for lessons and prompt-variant assignment.
+
+## Deterministic `must_not_change` path checks
+
+A `must_not_change` contract entry that names a path or a glob (`src/auth/**`,
+`config.py`) is a claim the diff can be checked against for free; prose like
+"existing behaviour of the export endpoint" is not, and stays the `contract`
+validator's job to read. `workflow.path_constraints()` keeps only the entries
+that look like a path — no whitespace, and containing a separator, a glob
+character, or a trailing file extension — and `workflow.violated_path_constraints()`
+cross-references those against `collect_scope()`'s file list, which the gate
+already computes.
+
+`cmd_validate()` runs that check for the `contract` gate right after its existing
+empty-acceptance check and before it builds any prompt. A hit raises
+`ContractViolation` (a distinct type from the `ValueError` path: an unreadable or
+missing contract is `NEEDS_HUMAN` because the stack cannot tell, whereas a
+forbidden path the diff demonstrably touches is a plain `FAIL`), which becomes a
+`FAIL` verdict carrying the constraint and the offending files. The reviewer is
+never invoked for that gate, so the tokens for a judgment the diff already
+settles are not spent — the same move-it-left, spend-nothing rationale as
+`ai clarify` running the contract gate's emptiness check before implementation.
+
+The reader used here, `workflow.contract_list_field()`, is the same function
+`ai clarify` uses (it moved out of `clarify.py` for this), so the
+pre-implementation check and the in-gate check parse a contract list field
+identically in either the flow (`must_not_change: ["a", "b"]`) or hand-written
+block-list YAML shape.
