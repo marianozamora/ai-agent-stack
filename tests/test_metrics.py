@@ -151,6 +151,20 @@ class AppendEventAndRecordLabelTests(unittest.TestCase):
             self.assertEqual(row['note'], 'reviewed by hand')
             self.assertIn('stack_version', row)
 
+    def test_record_task_label_writes_a_task_label_event(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            with patch.object(metrics, 'task_state', side_effect=AssertionError('must not be called')):
+                metrics.record_task_label(state, task_key='closed-task', label='incorrect',
+                                          note='reviewer found an unhandled path')
+            row = json.loads((state / 'metrics.jsonl').read_text().splitlines()[0])
+            self.assertEqual(row['event'], 'task_label')
+            self.assertEqual(row['task_key'], 'closed-task')
+            self.assertEqual(row['label'], 'incorrect')
+            self.assertEqual(row['note'], 'reviewer found an unhandled path')
+            self.assertNotIn('gate', row)
+            self.assertIn('stack_version', row)
+
 
 class CmdMetricsLabelTests(unittest.TestCase):
     def setUp(self):
@@ -169,7 +183,7 @@ class CmdMetricsLabelTests(unittest.TestCase):
 
     def _ns(self, **fields):
         defaults = dict(gate='checks', task_key='T1', attempt=None, true_positive=False,
-                        false_positive=False, note=None)
+                        false_positive=False, correct=False, incorrect=False, note=None)
         return argparse.Namespace(**{**defaults, **fields})
 
     def test_defaults_to_the_most_recent_attempt(self):
@@ -213,6 +227,43 @@ class CmdMetricsLabelTests(unittest.TestCase):
         # Nothing was appended by the refused call.
         rows = [json.loads(x) for x in (self.state / 'metrics.jsonl').read_text().splitlines()]
         self.assertEqual([r for r in rows if r['event'] == 'gate_label'], [])
+
+    def test_certification_label_records_a_task_label_event(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            metrics.cmd_metrics_label(self._ns(gate=None, incorrect=True,
+                                               note='not actually ready'), self.state)
+        self.assertIn('T1 certification -> incorrect', buf.getvalue())
+        rows = [json.loads(x) for x in (self.state / 'metrics.jsonl').read_text().splitlines()]
+        labels = [r for r in rows if r['event'] == 'task_label']
+        self.assertEqual(len(labels), 1)
+        self.assertEqual(labels[0]['label'], 'incorrect')
+        self.assertEqual(labels[0]['note'], 'not actually ready')
+
+    def test_certification_label_rejects_a_gate_argument(self):
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(gate='checks', incorrect=True), self.state)
+        self.assertIn('drop the gate argument', str(caught.exception))
+
+    def test_gate_verdict_without_a_gate_is_rejected(self):
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(gate=None, false_positive=True), self.state)
+        self.assertIn('name the gate', str(caught.exception))
+
+    def test_certification_label_on_an_unknown_task_key_is_a_clear_error(self):
+        with self.assertRaises(SystemExit) as caught:
+            metrics.cmd_metrics_label(self._ns(gate=None, task_key='ghost', correct=True), self.state)
+        self.assertIn("No recorded events for task 'ghost'", str(caught.exception))
+
+    def test_certification_label_needs_a_human_outside_a_gate(self):
+        os.environ['AI_GATE'] = 'checks'
+        try:
+            with self.assertRaises(SystemExit):
+                metrics.cmd_metrics_label(self._ns(gate=None, correct=True), self.state)
+        finally:
+            del os.environ['AI_GATE']
+        rows = [json.loads(x) for x in (self.state / 'metrics.jsonl').read_text().splitlines()]
+        self.assertEqual([r for r in rows if r['event'] == 'task_label'], [])
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 """Fail-closed base resolution: an unknown base must never degrade to HEAD."""
+import os
 import subprocess
 import sys
 import tempfile
@@ -96,6 +97,90 @@ class BaseResolutionTests(unittest.TestCase):
             root = build_repo(Path(d))
             self.assertFalse(core.verify_ref(root, ''))
             self.assertFalse(core.verify_ref(root, '--all'))
+
+
+class RiskSignalTests(unittest.TestCase):
+    """Covers the scope signals that decide whether the review gate is required.
+
+    classify() reads collect_scope()'s numbers, required_gates() drops the review
+    gate when the verdict is LOW, and `ai ready` then certifies PR_READY off that.
+    So a change that scores zero here is a change no reviewer ever sees -- which is
+    what made the two holes below worth closing: `git diff --numstat` prints `-` for
+    binaries, and does not describe untracked files at all, so both used to arrive
+    at classify() as a 0-line change.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='risk-signals-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = build_repo(Path(self.tmp.name))
+
+    def git(self, *argv):
+        subprocess.run(['git', *argv], cwd=self.root, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def scope(self):
+        return core.collect_scope(self.root, 'HEAD')
+
+    def test_replaced_binary_is_counted_and_never_scores_low(self):
+        (self.root / 'blob.bin').write_bytes(os.urandom(100_000))
+        self.git('add', '-A')
+        self.git('commit', '-m', 'add binary')
+        (self.root / 'blob.bin').write_bytes(os.urandom(200_000))
+        scope = self.scope()
+        self.assertEqual(scope['binary_files'], ['blob.bin'])
+        verdict = core.classify(scope, 'standard')
+        self.assertNotEqual(verdict['risk'], 'LOW')
+        self.assertIn('binary', verdict['reason'])
+
+    def test_new_untracked_file_contributes_its_lines(self):
+        (self.root / 'brand_new.py').write_text('value = 1\n' * 2000)
+        scope = self.scope()
+        self.assertEqual(scope['changed_lines'], 2000)
+        self.assertEqual(core.classify(scope, 'standard')['risk'], 'MEDIUM')
+
+    def test_new_untracked_binary_is_reported_as_binary_not_lines(self):
+        (self.root / 'asset.bin').write_bytes(b'\x00\x01\x02' * 1000)
+        scope = self.scope()
+        self.assertEqual(scope['binary_files'], ['asset.bin'])
+        self.assertEqual(scope['changed_lines'], 0)
+        self.assertNotEqual(core.classify(scope, 'standard')['risk'], 'LOW')
+
+    def test_a_small_new_file_still_scores_low(self):
+        # The counterweight: counting untracked lines must not turn every new file
+        # into a review-gated change, or the signal stops meaning anything.
+        (self.root / 'tiny.py').write_text('value = 2\n')
+        scope = self.scope()
+        self.assertEqual(scope['changed_lines'], 1)
+        self.assertEqual(core.classify(scope, 'standard')['risk'], 'LOW')
+
+    def test_untracked_file_without_trailing_newline_counts_its_last_line(self):
+        (self.root / 'nonewline.py').write_text('a\nb\nc')
+        self.assertEqual(self.scope()['changed_lines'], 3)
+
+    def test_pure_rename_is_reported_and_still_scores_low(self):
+        (self.root / 'old_name.py').write_text('value = 3\n' * 500)
+        self.git('add', '-A')
+        self.git('commit', '-m', 'add file to rename')
+        self.git('mv', 'old_name.py', 'new_name.py')
+        scope = self.scope()
+        self.assertEqual(len(scope['renamed_files']), 1)
+        self.assertIn('new_name.py', scope['renamed_files'][0])
+        # A rename moves no content, so it legitimately stays LOW; the signal exists
+        # so a large reorganisation is not indistinguishable from an empty diff.
+        self.assertEqual(scope['changed_lines'], 0)
+        self.assertEqual(core.classify(scope, 'standard')['risk'], 'LOW')
+
+    def test_framework_paths_are_excluded_from_the_signals(self):
+        for pattern in core.AI_PATTERNS[:1]:
+            target = self.root / pattern
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.suffix:
+                target.mkdir(parents=True, exist_ok=True)
+                target = target / 'noise.bin'
+            target.write_bytes(b'\x00' * 5000)
+        scope = self.scope()
+        self.assertEqual(scope['binary_files'], [])
 
 
 class TempWorktreeTests(unittest.TestCase):
