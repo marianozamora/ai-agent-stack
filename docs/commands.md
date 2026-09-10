@@ -143,7 +143,8 @@ usage: ai ready [-h] [--task-id TASK_ID]
 Run and record one evidence gate.
 
 ```text
-usage: ai gate [-h] [--timeout TIMEOUT] [--force-unlock] [--task-id TASK_ID]
+usage: ai gate [-h] [--timeout TIMEOUT] [--force-unlock] [--allow-overrun]
+               [--task-id TASK_ID]
                {checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}
                ...
 ```

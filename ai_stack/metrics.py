@@ -142,6 +142,27 @@ def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     connection.close(); return 1+count
 
 
+def consecutive_gate_failures(state:Path,task_key:str,gate:str)->int:
+    """How many attempts of this gate have failed in a row since its last pass.
+
+    The retry cap counts a streak, not lifetime attempts: a gate that passed, was
+    invalidated by a later repository change and is being re-evidenced starts from
+    zero again. The cap exists to stop a gate thrashing on one unresolved failure,
+    not to retire a gate that keeps being legitimately re-run.
+    """
+    connection=_sync_metric_index(state)
+    rows=connection.execute('SELECT payload FROM events WHERE event=? AND task_key=? AND gate_name=? '
+                            'ORDER BY ts DESC, id DESC',('gate',task_key,gate)).fetchall()
+    connection.close()
+    streak=0
+    for (payload,) in rows:
+        try: record=json.loads(payload)
+        except ValueError: break
+        if record.get('passed') is True: break
+        streak+=1
+    return streak
+
+
 def cmd_metrics(args):
     state=repo_state(git_root())
     if getattr(args,'metrics_cmd',None)=='prune':

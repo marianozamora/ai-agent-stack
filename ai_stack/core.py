@@ -607,18 +607,27 @@ def resolve_profile(explicit:str|None,scope:dict,task:str,figma:str|None=None)->
 
 
 def context_caps(profile:str)->dict:
+    # `usage_cost_usd` is a second ceiling on the same spend `usage_tokens` bounds:
+    # equal token counts cost an order of magnitude apart across the models `ai
+    # providers` can select, so a token budget alone stops meaning the same thing
+    # the moment the provider changes. It binds only where a provider actually
+    # reports cost -- usage_from_verdict() takes cost_usd only when given it, and
+    # an unreported cost can never trip a budget.
     return {
       'fast': {
         'raw_files':4,'review_files':5,'agent_calls':3,'reviews':0,'docs_queries':1,'graph_queries':2,
-        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1,'usage_tokens':40000
+        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1,
+        'usage_tokens':40000,'usage_cost_usd':0.50
       },
       'standard': {
         'raw_files':8,'review_files':10,'agent_calls':5,'reviews':1,'docs_queries':3,'graph_queries':4,
-        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2,'usage_tokens':120000
+        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2,
+        'usage_tokens':120000,'usage_cost_usd':1.50
       },
       'strict': {
         'raw_files':12,'review_files':15,'agent_calls':7,'reviews':1,'docs_queries':5,'graph_queries':6,
-        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2,'usage_tokens':250000
+        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2,
+        'usage_tokens':250000,'usage_cost_usd':3.00
       }
     }[profile]
 

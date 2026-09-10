@@ -105,12 +105,20 @@ class TaskLockTests(unittest.TestCase):
 class BudgetStatusTests(unittest.TestCase):
     def test_the_message_names_the_crossing_gate_and_what_never_ran(self):
         required = ['cleanup', 'checks', 'contract', 'ponytail', 'summary']
-        message = gates.budget_message({'gate': 'contract', 'tokens': 60000},
-                                       40000, required, 'ponytail')
+        message = gates.budget_message(
+            {'gate': 'contract', 'tokens': 60000, 'dimension': 'tokens', 'spent': 60000, 'budget': 40000},
+            required, 'ponytail')
         self.assertIn('crossed at:  contract (60000 >= 40000', message)
         self.assertIn('not run:     ponytail, summary', message)
         self.assertIn('--allow-overrun', message)
         self.assertNotIn('cleanup', message.split('not run:')[1])
+
+    def test_the_message_reports_a_cost_overrun_in_dollars(self):
+        message = gates.budget_message(
+            {'gate': 'review', 'tokens': 9000, 'dimension': 'cost_usd', 'spent': 1.7321, 'budget': 1.5},
+            ['review', 'summary'], 'summary')
+        self.assertIn('crossed at:  review ($1.7321 >= $1.50 reported cost)', message)
+        self.assertIn('not run:     summary', message)
 
     def test_an_explicit_budget_status_is_counted(self):
         rows = [{'event': 'pipeline', 'status': 'BUDGET_EXCEEDED',

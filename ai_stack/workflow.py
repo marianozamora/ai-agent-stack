@@ -1,6 +1,8 @@
 """Reusable validator configuration and task metric aggregation (stdlib only)."""
 import datetime
+import fnmatch
 import hashlib
+import json
 import math
 import os
 import re
@@ -70,6 +72,71 @@ def normalize_finding(text):
 
 def finding_signature(text):
     return hashlib.sha256(normalize_finding(text).encode()).hexdigest()[:12]
+
+
+def contract_list_field(text, field):
+    """Read one contract list field in either shape a human or the stack may leave it in.
+
+    ensure_contract() writes flow style (`acceptance: ["a", "b"]`, a json.dumps list), but
+    a human editing the YAML by hand naturally writes a block list underneath. Reading only
+    the shape the stack writes would silently report a hand-written contract as empty —
+    the exact failure the readers of this field exist to catch, inverted.
+    """
+    flow = re.search(rf'(?m)^{re.escape(field)}:[ \t]*(\[.*\])[ \t]*$', text)
+    if flow:
+        try:
+            value = json.loads(flow.group(1))
+        except ValueError:
+            return []
+        return [str(x).strip() for x in value if str(x).strip()]
+    header = re.search(rf'(?m)^{re.escape(field)}:[ \t]*$', text)
+    if not header: return []
+    items = []
+    for line in text[header.end():].splitlines():
+        if not line.strip(): continue
+        m = re.match(r'^[ \t]+-[ \t]+(.+?)[ \t]*$', line)
+        if not m: break
+        item = m.group(1).strip()
+        if item[:1] in ('"', "'") and item[-1:] == item[:1] and len(item) > 1: item = item[1:-1]
+        if item: items.append(item)
+    return items
+
+
+_PATH_CONSTRAINT = re.compile(r'^[\w./*?\[\]-]+$')
+
+
+def path_constraints(entries):
+    """The must_not_change entries that name a path or glob rather than prose.
+
+    `src/auth/**` is checkable against the diff for free; "existing page content
+    above the footer" is not, and stays the contract validator's job to read. An
+    entry qualifies only if it has no whitespace and looks like a path: a
+    separator, a glob character, or a trailing file extension.
+    """
+    out = []
+    for entry in entries:
+        candidate = entry.strip()
+        if not candidate or not _PATH_CONSTRAINT.match(candidate): continue
+        if ('/' in candidate or any(c in candidate for c in '*?[')
+                or re.search(r'\.\w{1,8}$', candidate)):
+            out.append(candidate.lstrip('./') or candidate)
+    return out
+
+
+def violated_path_constraints(entries, files):
+    """Every path-like must_not_change entry the change actually touches.
+
+    Deterministic and free: the contract already declares these paths off-limits
+    and `collect_scope` already lists what the diff touches, so a violation is a
+    fact the stack can state itself instead of spending a model call to be told.
+    """
+    violations = []
+    for constraint in path_constraints(entries):
+        prefix = constraint.rstrip('/')
+        hits = sorted({f for f in files
+                       if fnmatch.fnmatch(f, constraint) or f == prefix or f.startswith(prefix + '/')})
+        if hits: violations.append({'constraint': constraint, 'files': hits})
+    return violations
 
 
 def usage_from_verdict(verdict):
