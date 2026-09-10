@@ -17,7 +17,15 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
     for value in (safe_head(root), run(['git','rev-parse','--verify',plan['scope']['base']],cwd=root),
                   run(['git','ls-files','--stage'],cwd=root), run(['git','diff','--binary','HEAD'],cwd=root), json.dumps(plan,sort_keys=True)):
         digest.update(value.encode()); digest.update(b'\0')
-    names=run(['git','ls-files','-z','--cached','--others','--exclude-standard'],cwd=root).split('\0')
+    # Tracked paths are already pinned above, exactly and completely: HEAD names every
+    # committed blob, `ls-files --stage` carries each tracked path's name, mode and blob
+    # SHA, and `diff --binary HEAD` carries the full working-tree delta against them.
+    # So neither re-listing nor re-hashing them adds anything to the digest, while doing
+    # it made this function O(repo) on something that runs twice per gate. Untracked
+    # files are the real gap -- no diff describes them -- so they are still listed and
+    # read in full. The safety of this shortcut is pinned by the mutation battery in
+    # test_gates.py, including a same-size/same-mtime content swap.
+    names=run(['git','ls-files','-z','--others','--exclude-standard'],cwd=root).split('\0')
     for name in sorted(set(filter(None,names))):
         path=root/name
         digest.update(name.encode()); digest.update(b'\0')
