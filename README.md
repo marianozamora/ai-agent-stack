@@ -36,6 +36,35 @@ Use `ai plan` when another agent will consume the generated prompt, or `ai run` 
 
 See the generated [command reference](docs/commands.md) for every command and flag, and the [field guide](docs/field-guide.md) for the complete lifecycle diagrams.
 
+## Specifications as input
+
+The PR contract (`objective`, `acceptance`, `must_not_change`, `risk_notes`) is what every gate measures the change against, so where its acceptance criteria come from matters more than any other input.
+
+`ai start --ticket-file` fills an empty acceptance list from a document — a pasted ticket, or a [spec-kit](https://github.com/github/spec-kit) `spec.md`, whose "Acceptance Scenarios" and "Functional Requirements" sections are both read without a converter:
+
+```bash
+ai start 1450 --ticket-file .specify/specs/042-checkout/spec.md
+```
+
+It never overwrites a human-authored list, only fills a blank one. Spec-kit's `[NEEDS CLARIFICATION: ...]` markers are carried through rather than silently accepted.
+
+`ai clarify` then checks that contract before a model is launched:
+
+```bash
+ai clarify        # exits NEEDS_HUMAN on criteria nothing could verify
+```
+
+It is deterministic — no model, no network, no tokens — and it never edits the contract: a criterion an agent invented is exactly what the `contract` gate exists to reject. It moves that gate's failure left, from after the implementation to before it. Passing is a pattern check, not a sufficiency review.
+
+A project that already keeps its conventions in a document (`CONTRIBUTING.md`, `docs/conventions.md`, a spec-kit `.specify/memory/constitution.md`) can turn them into rules without retyping them:
+
+```bash
+ai rules import CONTRIBUTING.md            # proposes; writes nothing
+ai rules import CONTRIBUTING.md --confirm  # adds them to external state
+```
+
+The document is only read. The rules land in external state like every other rule, and a human still reviews the list.
+
 ## Deployment
 
 `ai deploy` is detection-only by default and never mutates anything. Documenting and running a deploy is opt-in and explicit:
@@ -84,6 +113,17 @@ Review, security and design are included according to profile, risk and task inp
 | `strict` | 3 | 12 | 15 | 5 | 250,000 tokens |
 
 Strict means stronger evidence and review, not unlimited context or agent debate.
+
+## Skills
+
+Skills resolve in a cascade, most specific first: a repository's own skills shadow the ones bundled with the stack.
+
+```bash
+ai skill list                       # [repo] marks a skill this repository added
+ai skill create house-style --repo --category quality --prompt '...'
+```
+
+A repo-scoped skill lives in that repository's external state, not in the checkout, and may deliberately reuse a bundled skill's name to replace it here without forking the stack. Shadowing replaces the whole definition rather than merging fields.
 
 ## State and privacy boundary
 

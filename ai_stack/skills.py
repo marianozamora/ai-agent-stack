@@ -9,12 +9,48 @@ COSTS=['tiny','low','medium','high']
 
 
 def skill_root()->Path:
+    """The skills bundled with the stack itself."""
     return STACK_ROOT/'skills'
 
 
-def skill_registry()->dict:
-    p=skill_root()/'registry.json'
-    return load_json(p,{"skills":{}})
+def repo_skill_root(state:Path)->Path:
+    """Skills belonging to one repository, in its external state.
+
+    Under the repo's external state, not in the checkout: a repository-specific skill is
+    still framework state, and the zero-footprint rule does not bend for it.
+    """
+    return state/'skills'
+
+
+def skill_roots(state:Path|None)->list[Path]:
+    """Lookup order, most specific first: the repo's own skills shadow the bundled ones.
+
+    `state=None` means "no repository in play" (e.g. `ai doctor` run outside a checkout)
+    and yields the bundled skills alone, rather than failing on a path that cannot exist.
+    """
+    return ([repo_skill_root(state)] if state is not None else [])+[skill_root()]
+
+
+def skill_registry(state:Path|None=None)->dict:
+    """The bundled registry, with any repo-local registry layered on top.
+
+    A repo entry with a name the stack also ships replaces it outright rather than merging
+    field-by-field: a half-overridden skill (repo triggers, bundled stages) is a definition
+    nobody wrote and nobody can predict.
+    """
+    merged={name:{**meta,'origin':'stack'}
+            for name,meta in load_json(skill_root()/'registry.json',{"skills":{}}).get('skills',{}).items()}
+    if state is not None:
+        for name,meta in load_json(repo_skill_root(state)/'registry.json',{"skills":{}}).get('skills',{}).items():
+            merged[name]={**meta,'origin':'repo'}
+    return {"version":1,"skills":merged}
+
+
+def resolve_skill_file(state:Path|None,name:str,filename:str)->Path|None:
+    for root in skill_roots(state):
+        candidate=root/name/filename
+        if candidate.is_file(): return candidate
+    return None
 
 
 def skill_overrides(state:Path)->dict:
@@ -22,7 +58,7 @@ def skill_overrides(state:Path)->dict:
 
 
 def enabled_skills(state:Path)->dict:
-    reg=skill_registry().get('skills',{})
+    reg=skill_registry(state).get('skills',{})
     overrides=skill_overrides(state)
     out={}
     for name,meta in reg.items():
@@ -56,12 +92,12 @@ def select_skills(state:Path,task:str,profile:str,figma:str|None=None, explicit:
     return [name for _,_,name in scores[:caps['skills']]]
 
 
-def load_skill_context(names:list[str], max_chars:int)->str:
+def load_skill_context(state:Path|None, names:list[str], max_chars:int)->str:
     if not names:return '(none)'
     chunks=[]; used=0
     for name in names:
-        p=skill_root()/name/'prompt.md'
-        if not p.exists(): continue
+        p=resolve_skill_file(state,name,'prompt.md')
+        if p is None: continue
         body=p.read_text().strip()
         remaining=max_chars-used
         if remaining<=0: break
@@ -77,7 +113,8 @@ def cmd_skill(args):
         print('Skills')
         for name,meta in registry.items():
             mark='✓' if meta['enabled'] else '·'
-            print(f"{mark} {name:20} {meta.get('category','')}  cost={meta.get('cost','?')}")
+            origin='' if meta.get('origin')=='stack' else '  [repo]'
+            print(f"{mark} {name:20} {meta.get('category','')}  cost={meta.get('cost','?')}{origin}")
         if getattr(args,'task',None):
             selected=select_skills(state,args.task,args.profile,None,None)
             print('\nRecommended:', ', '.join(selected) or 'none')
@@ -88,8 +125,8 @@ def cmd_skill(args):
     if args.skill_cmd=='explain':
         meta=registry[name]
         print(json.dumps({k:v for k,v in meta.items() if k!='enabled'},indent=2))
-        p=skill_root()/name/'README.md'
-        if p.exists(): print('\n'+p.read_text().strip())
+        p=resolve_skill_file(state,name,'README.md')
+        if p is not None: print('\n'+p.read_text().strip())
         return
     if args.skill_cmd in ('enable','disable'):
         o=skill_overrides(state); o[name]=(args.skill_cmd=='enable'); save_json(state/'skill-overrides.json',o)
@@ -119,10 +156,19 @@ def cmd_skill_create(args):
         raise SystemExit(f"Unknown task type(s): {', '.join(bad_types)}. Valid: {', '.join(TASK_TYPES)}")
     triggers=[t.strip() for t in (args.triggers or '').split(',') if t.strip()]
     stages=[s.strip() for s in (args.stages or '').split(',') if s.strip()]
-    registry=skill_registry()
+    repo_scoped=bool(getattr(args,'repo',False))
+    target_root=repo_skill_root(repo_state(git_root())) if repo_scoped else skill_root()
+    # The registry that gets written back is always the raw file, never the merged view:
+    # the merged view carries a synthesized `origin` and drops the file's own `policy`, so
+    # saving it would rewrite the bundled registry into something nobody authored.
+    registry=load_json(target_root/'registry.json',{"version":1,"skills":{}})
+    # Each scope owns its own namespace: the collision check is against the registry being
+    # written, not the merged view. Shadowing is the point of the cascade, in both
+    # directions -- a repo may deliberately override a bundled skill, and a bundled skill
+    # is still worth creating for every other repository even if one repo shadows the name.
     if name in registry.get('skills',{}):
         raise SystemExit(f'Skill already exists: {name}')
-    folder=skill_root()/name
+    folder=target_root/name
     if folder.exists():
         raise SystemExit(f'{folder} already exists.')
     meta={"enabled":True,"category":args.category,"cost":args.cost,"priority":args.priority,
@@ -134,7 +180,8 @@ def cmd_skill_create(args):
     (folder/'prompt.md').write_text(args.prompt.strip()+'\n')
     (folder/'README.md').write_text(f"# {name}\n\n{(args.description or '(no description provided)').strip()}\n")
     registry.setdefault('skills',{})[name]=meta
-    save_json(skill_root()/'registry.json',registry)
+    save_json(target_root/'registry.json',registry)
     print('Skill created:',name)
+    print('  scope:   ','repo (this repository only)' if repo_scoped else 'stack (every repository)')
     print('  folder:  ',folder)
-    print('  registry:',skill_root()/'registry.json','(updated, enabled by default)')
+    print('  registry:',target_root/'registry.json','(updated, enabled by default)')

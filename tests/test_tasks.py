@@ -5,6 +5,7 @@ previous task's acceptance criteria, which is exactly what the old branch-derive
 identity allowed when two tickets were worked on one branch.
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -64,6 +65,24 @@ class TaskLifecycleTests(unittest.TestCase):
     def set_acceptance(self, identity, text):
         path = self.contract(identity)
         path.write_text(path.read_text().replace('acceptance: []', f'acceptance: ["{text}"]'))
+
+    def test_ticket_file_snapshot_carries_clarification_markers(self):
+        """`ai start --ticket-file` is the primary path a spec reaches the contract by.
+
+        Its ticket.json used to be spelled out by hand alongside two other write sites, so
+        `clarifications_needed` reached only the two that were remembered -- and an
+        unresolved `[NEEDS CLARIFICATION]` marker never got to `ai clarify` at all. All
+        three now go through workflow.ticket_snapshot().
+        """
+        spec = self.repo / 'spec.md'
+        spec.write_text('### Acceptance Scenarios\n'
+                        '1. Given a cart, When checkout, Then an order exists.\n'
+                        '2. System MUST [NEEDS CLARIFICATION: which currencies?]\n')
+        self.start('PROJ-9', ticket_file=str(spec))
+        snapshot = json.loads((tasks.task_dir(self.state, self.repo, 'PROJ-9')
+                               / 'state' / 'ticket.json').read_text())
+        self.assertEqual(snapshot['clarifications_needed'], ['which currencies?'])
+        self.assertTrue(any('an order exists' in i for i in snapshot['acceptance_items']))
 
     def test_a_new_task_never_inherits_the_previous_contract(self):
         self.start('PROJ-1', title='first')

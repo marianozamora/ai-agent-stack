@@ -40,6 +40,9 @@ class ParserWiringTests(unittest.TestCase):
             ['metrics', '--json'],
             ['skill', 'list'],
             ['rules', 'add', 'r'],
+            ['rules', 'import', 'CONTRIBUTING.md'],
+            ['clarify'],
+            ['skill', 'create', 'x', '--category', 'q', '--prompt', 'p', '--repo'],
             ['path'],
         ]
         for argv in cases:

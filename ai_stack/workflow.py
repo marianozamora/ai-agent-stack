@@ -259,9 +259,17 @@ _WINDOW = re.compile(r'^(\d+)([dw])$')
 
 _FIGMA_URL = re.compile(r'https?://\S*figma\.com/\S+')
 _BLOCKER_MENTION = re.compile(r'(?im)^\s*(?:[-*]\s*)?(?:blocked by|blocker|depends on|dependency|waiting on)\s*[:\-]?\s*(.+)$')
-_ACCEPTANCE_HEADING = re.compile(r'(?im)^#{0,6}\s*acceptance\s*criteria\s*:?\s*$')
+_ACCEPTANCE_HEADING = re.compile(
+    r'(?im)^#{0,6}\s*(?:acceptance\s*(?:criteria|scenarios)|functional\s*requirements)\s*:?\s*$')
 _CHECKLIST_ITEM = re.compile(r'(?m)^\s*[-*]\s*\[[ xX]?\]\s*(.+)$')
 _PLAIN_BULLET = re.compile(r'(?m)^\s*[-*]\s+(.+)$')
+# Spec-kit numbers its acceptance scenarios ("1. **Given** ... **Then** ...") instead of
+# bulleting them, so a heading block is read for both shapes or its content is invisible.
+_NUMBERED_ITEM = re.compile(r'(?m)^\s*\d+[.)]\s+(.+)$')
+_LEADING_CHECKBOX = re.compile(r'^\[[ xX]?\]\s*')
+# Spec-kit's own unresolved-ambiguity marker, written into a spec by its /specify step and
+# meant to be answered before implementation. Captured verbatim: `ai clarify` blocks on it.
+_CLARIFICATION_MARKER = re.compile(r'(?i)\[NEEDS\s+CLARIFICATION:?\s*([^\]]*)\]')
 
 
 def analyze_ticket_text(text):
@@ -271,24 +279,57 @@ def analyze_ticket_text(text):
     matches, never an interpretation of whether the ticket is actually sufficient to
     start work. Blockers/dependencies are advisory-only for the same reason — there is
     no live source to verify whether a mentioned blocker is still actually open.
+
+    The heading and item shapes cover both a normal ticket ("## Acceptance Criteria"
+    plus bullets or checkboxes) and a spec-kit `spec.md` ("### Acceptance Scenarios"
+    plus numbered Given/When/Then lines, "### Functional Requirements" plus FR bullets),
+    so a spec-kit spec can be fed straight to `ai start --ticket-file` without a
+    converter. `[NEEDS CLARIFICATION: ...]` is spec-kit's marker for a question its
+    own spec step could not answer; it is reported rather than silently accepted.
     """
     figma = _FIGMA_URL.search(text)
     blockers = [m.group(1).strip() for m in _BLOCKER_MENTION.finditer(text)]
     acceptance_items = [m.group(1).strip() for m in _CHECKLIST_ITEM.finditer(text)]
-    heading = _ACCEPTANCE_HEADING.search(text)
-    if heading:
+    for heading in _ACCEPTANCE_HEADING.finditer(text):
         rest = text[heading.end():]
         next_heading = re.search(r'(?m)^#{1,6}\s', rest)
         block = rest[:next_heading.start()] if next_heading else rest
-        for m in _PLAIN_BULLET.finditer(block):
-            item = m.group(1).strip()
-            if item not in acceptance_items: acceptance_items.append(item)
+        for pattern in (_PLAIN_BULLET, _NUMBERED_ITEM):
+            for m in pattern.finditer(block):
+                # A checkbox line under the heading matches _PLAIN_BULLET as well, with the
+                # "[ ]" still attached -- without stripping it the same criterion lands twice,
+                # once from _CHECKLIST_ITEM and once with a literal "[ ]" prefix that no
+                # equality check would ever dedupe against it.
+                item = _LEADING_CHECKBOX.sub('', m.group(1)).strip()
+                if item and item not in acceptance_items: acceptance_items.append(item)
+    clarifications = [m.group(1).strip() or '(unlabelled)' for m in _CLARIFICATION_MARKER.finditer(text)]
     return {
         'figma_url': figma.group(0) if figma else None,
         'acceptance_items': acceptance_items,
         'blockers_mentioned': blockers,
+        'clarifications_needed': clarifications,
         'has_acceptance': bool(acceptance_items),
         'length': len(text),
+    }
+
+
+def ticket_snapshot(analysis, source='pasted'):
+    """The persisted form of one analyze_ticket_text() result.
+
+    Three commands write `state/ticket.json` -- `ai start --ticket-file`, `ai plan`/`ai run
+    --ticket-file`, and `ai ticket` -- and each used to spell the same dict out by hand. A
+    field added to the analysis then reached whichever of the three someone remembered to
+    edit: `clarifications_needed` was silently dropped by `ai start`, the primary path,
+    which meant the marker never reached `ai clarify` at all. One builder, one shape.
+    """
+    return {
+        'version': 1, 'fetched_at': time.time(), 'source': source,
+        'length': analysis['length'], 'figma_url': analysis['figma_url'],
+        'acceptance_items': analysis['acceptance_items'],
+        'blockers_mentioned': analysis['blockers_mentioned'],
+        'clarifications_needed': analysis['clarifications_needed'],
+        'has_acceptance': analysis['has_acceptance'],
+        'caveat': 'Deterministic regex read of pasted content; not a verified analysis of ticket sufficiency.',
     }
 
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
-import json, shutil, time
+import json, re, shutil, time
+from pathlib import Path
 from typing import Any
-from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, known_repo_states, load_json, profile_repo, remote_id, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
+from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, known_repo_states, load_json, profile_repo, remote_id, repo_state, require_human, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
 from providers import builder as get_builder, reviewer as get_reviewer
@@ -214,8 +215,56 @@ def cmd_optimize(args):
     print('Repository modified: NO')
 
 
+_RULE_ITEM=re.compile(r'(?m)^\s*(?:[-*]\s*(?:\[[ xX]?\]\s*)?|\d+[.)]\s+)(.+?)\s*$')
+MIN_RULE_CHARS=12
+
+
+def extract_rules(text:str)->list[str]:
+    """Bullet and numbered lines from a conventions document, in order, de-duplicated.
+
+    Deliberately dumb: headings, prose paragraphs and code fences are not rules, and a
+    document's bullet list is the one shape that reliably *is* one. Anything this misses a
+    human adds with `ai rules add`; anything it wrongly includes a human drops from the
+    proposal, which is why importing is a two-step confirm rather than a direct write.
+    """
+    body=re.sub(r'(?ms)^```.*?^```\s*$','',text)
+    items=[]
+    for match in _RULE_ITEM.finditer(body):
+        item=re.sub(r'\s+',' ',match.group(1)).strip().strip('*_`')
+        if len(item)>=MIN_RULE_CHARS and item not in items: items.append(item)
+    return items
+
+
+def cmd_rules_import(args,state:Path,rules:list[dict]):
+    """Turn a conventions/constitution document the repo already has into candidate rules.
+
+    Reads the checkout, never writes to it: a project that keeps its conventions in
+    CONTRIBUTING.md (or a spec-kit `.specify/memory/constitution.md`) should not have to
+    retype them as `ai rules add` calls, but the rules that actually reach a prompt still
+    land in external state, and still only after a human has seen the list.
+    """
+    require_human('Rule import')
+    source=Path(args.file)
+    if not source.is_file(): raise SystemExit(f'No such file: {source}')
+    existing={r['rule'] for r in rules}
+    candidates=[item for item in extract_rules(source.read_text()) if item not in existing]
+    print(f'Rule import candidate: {source} (scope {args.scope})')
+    if not candidates:
+        print('  nothing new to import (no bullet/numbered lines, or all of them are already rules).')
+        return
+    for item in candidates: print(f'  + {item}')
+    print(f'\n{len(candidates)} candidate rule(s). These are lines a regex matched, not conventions anyone verified.')
+    if not args.confirm: raise SystemExit('Re-run with --confirm to add them.')
+    now=int(time.time())
+    rules.extend({"rule":item,"scope":args.scope,"source":"imported","source_file":str(source),
+                  "confidence":0.5,"created_at":now} for item in candidates)
+    save_json(state/'rules.json',rules)
+    print(f'Added {len(candidates)} rule(s). Drop any that do not belong with `ai rules remove <index>`.')
+
+
 def cmd_rules(args):
     root=git_root(); state=repo_state(root); p=state/'rules.json'; rules=load_json(p,[])
+    if args.rules_cmd=='import': return cmd_rules_import(args,state,rules)
     if args.rules_cmd in (None,'list'):
         if not rules: print('No repository-specific rules.'); return
         for i,r in enumerate(rules,1): print(f"{i}. [{r.get('scope','**')}] {r['rule']}")
