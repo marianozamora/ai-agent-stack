@@ -245,8 +245,9 @@ usage: ai metrics prune [-h] --older-than OLDER_THAN [--confirm]
 
 ```text
 usage: ai metrics label [-h] --task-key TASK_KEY [--attempt ATTEMPT]
-                        (--true-positive | --false-positive) [--note NOTE]
-                        {checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}
+                        (--true-positive | --false-positive | --correct | --incorrect)
+                        [--note NOTE]
+                        [{checks,regression,cleanup,provenance,ponytail,summary,contract,review,security,design}]
 ```
 
 ## `ai benchmark`

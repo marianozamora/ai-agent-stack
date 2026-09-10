@@ -119,6 +119,21 @@ def record_label(state:Path,*,task_key:str,gate:str,attempt:int|None,passed:bool
     append_event(state,row)
 
 
+def record_task_label(state:Path,*,task_key:str,label:str,note:str):
+    """A human's verdict on whether the stack's final readiness decision for one task
+    was right -- 'correct' or 'incorrect'. Where a gate_label judges one gate attempt,
+    this judges the certification itself, which is the claim `ai ready` actually makes.
+
+    The false-PR_READY rate campaign_report() derives from these is the number that
+    validates 'certifies whether a change is ready for human review'; nothing infers it
+    from a PR being reverted or reworked later -- only this explicit label counts.
+    Same rationale as record_label() for not going through record_metric().
+    """
+    row={"ts":time.time(),"event":"task_label","stack_version":VERSION,
+        "task_key":task_key,"label":label,"note":note}
+    append_event(state,row)
+
+
 def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     """Count prior recorded attempts of this gate for this task, for a fresh 1-based number."""
     connection=_sync_metric_index(state)
@@ -212,6 +227,15 @@ def print_campaign_report(report):
               f"median={median if median is not None else '-'}s p90={p90 if p90 is not None else '-'}s "
               f"retries(median/max)={stats['median_retries']}/{stats['max_retries']} "
               f"tokens(median)={tokens if tokens is not None else 'unreported'}")
+    fpr=report.get('false_pr_ready') or {}
+    if fpr.get('labeled_certifications'):
+        rate=fpr['false_pr_ready_rate']
+        print(f"\nFalse PR_READY rate (human-labeled): "
+              f"{f'{rate:.0%}' if rate is not None else 'n/a'} "
+              f"({fpr['incorrect']}/{fpr['labeled_certifications']} certified tasks judged not actually ready)")
+    else:
+        print('\nNo task certifications labeled yet. After a human reviews a PR_READY task:')
+        print('  ai metrics label --task-key <key> --correct|--incorrect')
     if report['gate_labels']:
         print('\nGate false-positive rates (human-labeled, via `ai metrics label`):')
         for gate,stats in sorted(report['gate_labels'].items()):
@@ -229,6 +253,15 @@ def print_campaign_report(report):
 
 def cmd_metrics_label(args,state):
     require_human('Metrics labeling')
+    gate_verdict=args.true_positive or args.false_positive
+    task_verdict=args.correct or args.incorrect
+    if args.gate and task_verdict:
+        raise SystemExit('--correct/--incorrect label the task certification, not a gate; drop the gate argument.')
+    if not args.gate and gate_verdict:
+        raise SystemExit('--true-positive/--false-positive label one gate attempt; name the gate, '
+                         'or use --correct/--incorrect to label the task certification.')
+    if not args.gate:
+        return _label_task_certification(args,state)
     rows,_=load_metric_rows(state,event='gate',task_key=args.task_key)
     matches=[row for row in rows if row.get('gate')==args.gate]
     if args.attempt is not None: matches=[row for row in matches if row.get('attempt')==args.attempt]
@@ -244,3 +277,17 @@ def cmd_metrics_label(args,state):
     record_label(state,task_key=args.task_key,gate=args.gate,attempt=target.get('attempt'),
                 passed=target.get('passed'),label=label,note=args.note or '')
     print(f"Labeled: task={args.task_key} gate={args.gate} attempt={target.get('attempt')} -> {label}")
+
+
+def _label_task_certification(args,state):
+    if not (args.correct or args.incorrect):
+        raise SystemExit('Labeling a task certification needs --correct or --incorrect.')
+    # The task must be one this metrics store actually knows about; labeling a typo'd
+    # key would sit in the log forever contributing to nothing.
+    rows,_=load_metric_rows(state,task_key=args.task_key)
+    if not rows:
+        raise SystemExit(f'No recorded events for task {args.task_key!r}. '
+                         'Find the right task_key with `ai metrics --all-tasks --by task --json`.')
+    label='correct' if args.correct else 'incorrect'
+    record_task_label(state,task_key=args.task_key,label=label,note=args.note or '')
+    print(f"Labeled: task={args.task_key} certification -> {label}")
