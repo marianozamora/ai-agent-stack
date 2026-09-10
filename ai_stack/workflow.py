@@ -498,11 +498,13 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
     """Aggregate a real-usage validation campaign from recorded events plus human labels.
 
     Reads `task_start`/`plan` (task start), `gate`/`pipeline` (evidence and outcomes),
-    `task_close` (final readiness) and `gate_label` (`ai metrics label`) events. Computes,
-    per task and then stratified by task_type and by profile: time to first PR_READY,
-    retries per gate, tokens, and — where labeled — each gate's false-positive rate.
-    Never infers a false positive or an ignored finding from outcomes alone; both require
-    an explicit human label or are reported as an explicitly caveated volume count.
+    `task_close` (final readiness), `gate_label` and `task_label` (`ai metrics label`)
+    events. Computes, per task and then stratified by task_type and by profile: time to
+    first PR_READY, retries per gate, tokens, and — where labeled — each gate's
+    false-positive rate and the false-PR_READY rate (how often a human judged a
+    certified task not actually ready). Never infers a false positive, a false
+    certification, or an ignored finding from outcomes alone; each requires an explicit
+    human label or is reported as an explicitly caveated volume count.
 
     `usage_budgets` is an optional {profile: usage_tokens} map (from `core.context_caps`,
     which this stdlib-only module cannot import itself) used only to flag a profile whose
@@ -530,9 +532,12 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
             bucket['closes'].append(row)
 
     labels: dict[Any, list[dict]] = {}
+    task_labels: dict[Any, list[dict]] = {}
     for row in rows:
         if row.get('event') == 'gate_label':
             labels.setdefault(row.get('gate'), []).append(row)
+        elif row.get('event') == 'task_label':
+            task_labels.setdefault(row.get('task_key'), []).append(row)
 
     tasks = []
     for key, bucket in by_task.items():
@@ -627,8 +632,33 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
                              'labeled': labeled,
                              'false_positive_rate': round(false_positive / labeled, 3) if labeled else None}
 
+    # Of the tasks that reached PR_READY and a human then judged, how many were wrong to
+    # certify. This -- not any gate's rate -- is what the "certifies whether a change is
+    # ready" claim rests on. A task's latest task_label wins if it was relabeled.
+    certified_keys = {t['task_key'] for t in tasks if t['reached_pr_ready']}
+    cert_verdicts = [entries[-1].get('label') for key, entries in task_labels.items()
+                     if key in certified_keys and entries]
+    cert_labeled = len(cert_verdicts)
+    cert_incorrect = sum(1 for v in cert_verdicts if v == 'incorrect')
+    # gates tune toward advisory at 20%; a certifier being wrong is a correctness failure,
+    # not a noise level, so any nonzero rate is surfaced -- this floor only holds the
+    # *recommendation* until one mislabel can no longer dominate the ratio.
+    cert_min_for_rec = 5
+    cert_rate = round(cert_incorrect / cert_labeled, 3) if cert_labeled else None
+    false_pr_ready = {
+        'labeled_certifications': cert_labeled,
+        'incorrect': cert_incorrect,
+        'false_pr_ready_rate': cert_rate,
+        'min_labeled_for_recommendation': cert_min_for_rec,
+    }
+
     recommendations = []
     min_labeled = 5  # below this, one relabeled sample would flip the recommendation
+    if cert_rate is not None and cert_rate > 0 and cert_labeled >= cert_min_for_rec:
+        recommendations.append(
+            f"false PR_READY rate {false_pr_ready['false_pr_ready_rate']:.0%} over {cert_labeled} "
+            f"labeled certifications ({cert_incorrect} judged not actually ready) -- the readiness "
+            f"bar is too low; tighten required gates or their acceptance before trusting PR_READY.")
     for gate, stats in sorted(gate_labels.items()):
         if stats['labeled'] >= min_labeled and stats['false_positive_rate'] is not None and stats['false_positive_rate'] > 0.20:
             recommendations.append(
@@ -653,6 +683,7 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
     return {
         'tasks': len(tasks), 'reached_pr_ready': sum(1 for t in tasks if t['reached_pr_ready']),
         'by_task_type': by_task_type, 'by_profile': by_profile, 'gate_labels': gate_labels,
+        'false_pr_ready': false_pr_ready,
         'findings_raised_caveat': FINDINGS_RAISED_CAVEAT,
         'recommendations': recommendations,
         'tasks_detail': sorted(tasks, key=lambda t: (str(t['task_type']), str(t['task_key']))),

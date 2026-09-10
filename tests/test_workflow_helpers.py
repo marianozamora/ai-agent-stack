@@ -301,6 +301,48 @@ class CampaignReportTests(unittest.TestCase):
         recs = workflow.campaign_report(many)['recommendations']
         self.assertTrue(any('security' in r and 'advisory' in r for r in recs))
 
+    def _certified(self, key, verdicts):
+        """A task that reached PR_READY plus one task_label per verdict in `verdicts`
+        (last one wins)."""
+        rows = self._task(key, 'bug', 'fast', started_at=1000, ready_at=1100)
+        for v in verdicts:
+            rows.append({'event': 'task_label', 'task_key': key, 'label': v})
+        return rows
+
+    def test_false_pr_ready_rate_counts_only_labeled_certified_tasks(self):
+        rows = self._certified('k1', ['incorrect']) + self._certified('k2', ['correct']) \
+             + self._certified('k3', ['correct'])
+        # A label on a task that never reached PR_READY must not enter the rate.
+        rows += self._task('k4', 'bug', 'fast', started_at=1000)
+        rows.append({'event': 'task_label', 'task_key': 'k4', 'label': 'incorrect'})
+        fpr = workflow.campaign_report(rows)['false_pr_ready']
+        self.assertEqual(fpr['labeled_certifications'], 3)
+        self.assertEqual(fpr['incorrect'], 1)
+        self.assertEqual(fpr['false_pr_ready_rate'], round(1 / 3, 3))
+
+    def test_false_pr_ready_rate_is_none_not_zero_without_labels(self):
+        rows = self._task('k1', 'bug', 'fast', started_at=1000, ready_at=1100)
+        fpr = workflow.campaign_report(rows)['false_pr_ready']
+        self.assertIsNone(fpr['false_pr_ready_rate'])
+        self.assertEqual(fpr['labeled_certifications'], 0)
+
+    def test_latest_task_label_wins_on_relabel(self):
+        fpr = workflow.campaign_report(self._certified('k1', ['incorrect', 'correct']))['false_pr_ready']
+        self.assertEqual(fpr['incorrect'], 0)
+
+    def test_false_pr_ready_recommendation_waits_for_the_sample_floor(self):
+        # 3 certified tasks, 1 wrong -> 33% rate is shown but no recommendation yet.
+        below = self._certified('k1', ['incorrect']) + self._certified('k2', ['correct']) \
+              + self._certified('k3', ['correct'])
+        report = workflow.campaign_report(below)
+        self.assertEqual(report['false_pr_ready']['false_pr_ready_rate'], round(1 / 3, 3))
+        self.assertFalse(any('false PR_READY' in r for r in report['recommendations']))
+        # 5 certified, 1 wrong -> now it fires, since one relabel can no longer flip it.
+        at_floor = below + self._certified('k4', ['correct']) + self._certified('k5', ['correct'])
+        recs = workflow.campaign_report(at_floor)['recommendations']
+        self.assertTrue(any('false PR_READY rate' in r and 'readiness bar' in r for r in recs))
+
+
     def test_recommendation_for_p90_outlier_names_dominant_gate(self):
         rows = []
         for i, started in enumerate([0, 0, 0, 0, 0]):
