@@ -2,6 +2,7 @@ from __future__ import annotations
 import json, os, re, shutil, time
 from pathlib import Path
 from typing import Any
+from capabilities import CAPABILITIES
 from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, known_repo_states, first_base, load_json, profile_repo, remote_id, repo_state, require_human, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
@@ -162,7 +163,8 @@ def cmd_doctor(args):
         builder_binary=get_builder(probe_state).executable
         reviewer_binary=get_reviewer(probe_state).probe_binary or reviewer_binary
     except (SystemExit,ValueError): pass
-    for name in ['git','python3','node',builder_binary,reviewer_binary,'rtk','codegraph','graphify','code-review-graph','ctx7','gh']:
+    capability_binaries=[meta['binary'] for meta in CAPABILITIES.values()]
+    for name in ['git','python3','node',builder_binary,reviewer_binary,*capability_binaries,'gh']:
         print(('✓' if shutil.which(name) else '·'),f'{name:10}', 'installed' if shutil.which(name) else 'missing')
     try:
         root=git_root(); state=repo_state(root); bad=contamination(root)

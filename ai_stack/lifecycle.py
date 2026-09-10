@@ -1,6 +1,7 @@
 from __future__ import annotations
 import hashlib, json, re, sys, textwrap, time, uuid
 from pathlib import Path
+from capabilities import capability_block, detect as detect_capabilities, render_budget_lines
 from core import classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, safe_head, save_json, shasum, task_state
 from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
@@ -97,7 +98,7 @@ def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|No
     if profile!='fast' and crg_cmd():
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
         risk=elevate_risk(risk,parse_crg_risk(crg_text))
-    graph=str(state/'graphify'/'graph.json')
+    detected_capabilities=detect_capabilities(state)
     prompt=f'''# AI Agent Stack orchestration
 
 Task: {task}
@@ -110,8 +111,6 @@ Security boundary: {risk['security']}
 External state (NEVER commit these files): {state}
 PR Contract: {task_state(state)/'contracts/current-pr.yml'}
 Design Contract: {(task_state(state)/'contracts/current-design.yml') if figma else 'off'}
-Graphify graph: {graph if Path(graph).exists() else 'not built'}
-Code Review Graph: {'ready' if crg_text else ('installed/not-ready' if crg_cmd() else 'missing')}
 Deep repository profile (AI-generated interpretation; verify before relying on it): {(state/'project-deep-profile.json') if (state/'project-deep-profile.json').exists() else 'not generated — run `ai profile --deep`'}
 Ticket content snapshot (pasted, regex-analyzed, advisory only): {(task_state(state)/'state/ticket.json') if (task_state(state)/'state/ticket.json').exists() else 'none — pass --ticket-file to ai plan/ai run'}
 
@@ -129,7 +128,7 @@ Skill instructions:
 Token Efficiency Policy:
 - Classify first; do not explore broadly before routing.
 - Progressive disclosure: metadata -> compact graph evidence -> snippets -> raw files.
-- Prefer one tool per question; do not call Graphify, CRG, CodeGraph and Context7 for the same need.
+- Prefer one tool per question; never ask two tools the same thing.
 - Reuse external repo state/cache; never rediscover stable project facts in every task.
 - Tests/static evidence arbitrate disagreements; do not create model-to-model debate loops.
 - PASS outputs must be minimal. Findings must be capped and actionable.
@@ -140,27 +139,12 @@ Context budget:
 - review files <= {caps['review_files']}
 - agent calls <= {caps['agent_calls']}
 - review rounds <= {caps['reviews']}
-- Context7 docs queries <= {caps['docs_queries']}
-- Graphify structural queries <= {caps['graph_queries']}
-- active skills <= {caps['skills']}
+{render_budget_lines(detected_capabilities,caps)}- active skills <= {caps['skills']}
 - findings <= {caps['findings']}
 - retries per failing approach <= {caps['retries']}
 - injected context target <= {caps['context_chars']} characters before evidence-driven escalation
 
-Context order:
-1. PR/design contract
-2. Code Review Graph for diff impact, blast radius, affected flows, tests and minimal review context
-3. Graphify for macro architecture/routes/communities when CRG cannot answer the architecture question
-4. CodeGraph for exact symbol navigation when materially better than CRG
-5. Context7 ONLY for external library/framework/API documentation; prefer exact installed version and cached library IDs
-6. RTK for git/tests/lint/search output
-7. raw source reads only when needed to prove/implement something
-
-External docs policy:
-- Never rely on memory for version-sensitive library APIs when Context7 can verify them.
-- Query only the library/topic needed for the current implementation.
-- Do not dump broad documentation into context.
-- Repository code and tests remain the source of truth for project-specific behavior.
+{capability_block(state,detected_capabilities)}
 
 Correctness pipeline:
 Builder -> deterministic checks -> regression check -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> Cleanup -> checks -> provenance gate -> Ponytail -> PR summary.
@@ -183,7 +167,7 @@ If reusable validators are configured (`ai validators show`), use `ai pipeline -
               {'digest':shasum(json.dumps(snapshot,sort_keys=True))[:16],'lessons':snapshot})
     cache_key=task_cache_key(root,task,profile,base,selected_skills)
     save_json(task_state(state)/'state'/'prompt-assignment.json',assign_prompt_variants(state,cache_key))
-    save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)}})
+    save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)},"capabilities":detected_capabilities})
     record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
     return prompt
 

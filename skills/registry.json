@@ -175,6 +175,20 @@
         "order"
       ]
     },
+    "tool-routing": {
+      "enabled": true,
+      "category": "efficiency",
+      "cost": "tiny",
+      "priority": 0,
+      "selectable": false,
+      "task_types": [],
+      "triggers": [],
+      "stages": [
+        "confirm listed",
+        "reuse cache",
+        "escalate only on failure"
+      ]
+    },
     "source-driven-development": {
       "enabled": true,
       "category": "evidence",

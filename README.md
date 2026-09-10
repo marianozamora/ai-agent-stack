@@ -125,6 +125,17 @@ ai skill create house-style --repo --category quality --prompt '...'
 
 A repo-scoped skill lives in that repository's external state, not in the checkout, and may deliberately reuse a bundled skill's name to replace it here without forking the stack. Shadowing replaces the whole definition rather than merging fields.
 
+## Capabilities
+
+The orchestration prompt used to route through Code Review Graph, Graphify, CodeGraph, Context7 and RTK unconditionally, with no check that any of them were actually installed — and RTK and CodeGraph were never once verified present anywhere in the codebase. A capability that isn't there appears nowhere in the prompt: not a status line, not a context-order entry, not a budget cap. The model never learns it exists, so it never routes through it and never burns a retry finding out it can't.
+
+```bash
+ai capabilities list             # what's detected, disabled, or missing
+ai capabilities disable rtk      # force one off regardless of what's installed
+```
+
+Detection is by binary presence alone, exactly like the builder/reviewer providers. Disabling a capability changes what a validator is told, so it invalidates recorded evidence the same way disabling a skill does.
+
 ### Curated upstream skills
 
 The bundled skill router includes compact, trigger-gated adaptations of selected

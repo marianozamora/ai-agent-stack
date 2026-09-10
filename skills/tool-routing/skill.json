@@ -1,0 +1,14 @@
+{
+  "name": "tool-routing",
+  "version": 1,
+  "category": "efficiency",
+  "cost": "tiny",
+  "selectable": false,
+  "task_types": [],
+  "triggers": [],
+  "stages": [
+    "confirm listed",
+    "reuse cache",
+    "escalate only on failure"
+  ]
+}

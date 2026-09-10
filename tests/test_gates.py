@@ -132,7 +132,7 @@ class EvidenceFingerprintTests(unittest.TestCase):
             path.unlink()
 
         # Files it DOES fold in: repo-state configs.
-        for name in ('rules.json', 'skill-overrides.json', 'validators.json', 'prompt-overrides.json'):
+        for name in ('rules.json', 'skill-overrides.json', 'capability-overrides.json', 'validators.json', 'prompt-overrides.json'):
             path = self.state / name
             original = path.read_text() if path.exists() else None
             path.write_text(f'{{"folded": "{name}"}}\n')
