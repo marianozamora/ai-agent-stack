@@ -37,9 +37,22 @@ def run(cmd:list[str], cwd:Path|None=None, check=True, capture=True, env=None)->
     return (p.stdout or "").strip()
 
 
+_GIT_ROOT_CACHE:dict[str,Path] = {}
+
+
 def git_root()->Path:
-    try: return Path(run(["git","rev-parse","--show-toplevel"]))
+    # Keyed by cwd, never a single slot: the test suite chdirs between throwaway
+    # repos inside one process, and a global cache would hand the second repo the
+    # first one's root. Every command calls this at least twice (~16ms a spawn),
+    # and a process's cwd->toplevel mapping cannot change under it. Failures are
+    # deliberately not cached: a caller that recovers by chdir'ing must re-probe.
+    key=os.getcwd()
+    cached=_GIT_ROOT_CACHE.get(key)
+    if cached is not None: return cached
+    try: root=Path(run(["git","rev-parse","--show-toplevel"]))
     except Exception as exc: raise SystemExit("Not inside a git repository.") from exc
+    _GIT_ROOT_CACHE[key]=root
+    return root
 
 
 @contextlib.contextmanager
@@ -148,7 +161,7 @@ def _clear_caches():
     keep returning the stale cached values for that root. Production code never
     needs to call it -- the remote a process started against doesn't change out
     from under it."""
-    _ORIGIN_URL_CACHE.clear(); _REMOTE_ID_CACHE.clear()
+    _ORIGIN_URL_CACHE.clear(); _REMOTE_ID_CACHE.clear(); _GIT_ROOT_CACHE.clear(); _TASK_SCAFFOLD_DONE.clear()
 
 
 def known_repo_states()->list[Path]:
@@ -239,6 +252,7 @@ def save_json(p:Path,obj:Any):
 
 
 TASK_ID_PATTERN = r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}'
+_TASK_SCAFFOLD_DONE:set[tuple[str,str]] = set()
 _BRANCH_FALLBACK_WARNED = False
 
 
@@ -287,6 +301,11 @@ def task_state(state:Path)->Path:
     # Worktrees sharing a remote must never share mutable task artifacts.
     key=shasum(str(root.resolve())+'\0'+identity)[:24]
     d=state/'tasks'/key
+    # The scaffolding below is idempotent, so redoing it per call bought nothing but
+    # five mkdirs and an atomic task.json rewrite each time. The identity above is
+    # still resolved live on every call -- `ai start`/`ai switch` change it mid-process,
+    # and a cache that skipped that would hand back the previous task's directory.
+    if (str(state),key) in _TASK_SCAFFOLD_DONE: return d
     for sub in ('state','contracts','handoffs','review','gates'): (d/sub).mkdir(parents=True,exist_ok=True)
     # Merge: task.json carries lifecycle fields (status, title, created_at) that the
     # old unconditional rewrite would have erased on the next command.
@@ -295,6 +314,7 @@ def task_state(state:Path)->Path:
     meta.setdefault('status','active'); meta.setdefault('created_at',int(time.time()))
     meta.update(id=identity,root=str(root.resolve()),key=key)
     save_json(d/'task.json',meta)
+    _TASK_SCAFFOLD_DONE.add((str(state),key))
     return d
 
 
