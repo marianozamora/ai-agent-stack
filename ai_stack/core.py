@@ -523,13 +523,38 @@ def collect_scope(root:Path,base:str)->dict:
     files=run(["git","diff","--name-only",base],cwd=root,check=False).splitlines()
     untracked=run(["git","ls-files","--others","--exclude-standard"],cwd=root,check=False).splitlines()
     files=sorted(set([f for f in files+untracked if f and not any(f.startswith(p) for p in AI_PATTERNS)]))
-    num=run(["git","diff","--numstat",base],cwd=root,check=False).splitlines(); lines=0
-    for ln in num:
+    untracked_set=set(untracked)
+    lines=0; binary=[]; renamed=[]
+    for ln in run(["git","diff","--numstat",base],cwd=root,check=False).splitlines():
         parts=ln.split('\t')
-        if len(parts)>=2:
-            for x in parts[:2]:
-                if x.isdigit(): lines+=int(x)
-    return {"base":base,"files":files,"file_count":len(files),"changed_lines":lines}
+        if len(parts)<3: continue
+        added,removed,path=parts[0],parts[1],parts[2]
+        # git renders a rename as `old => new` (or with a {a => b} infix). Keep the
+        # arrow out of the reported paths, and record that a rename happened: a pure
+        # rename legitimately scores 0 lines, so without this signal a large
+        # reorganisation is indistinguishable from no change at all.
+        if ' => ' in path: renamed.append(path)
+        if any(path.startswith(pattern) for pattern in AI_PATTERNS): continue
+        # `-\t-` is git's marker for a binary file. The old loop tested isdigit() and
+        # so silently scored these as zero: a replaced 300KB binary counted as a
+        # 0-line, 1-file change, which classify() read as LOW, required_gates() then
+        # dropped the review gate over, and `ai ready` could certify PR_READY on a
+        # change no reviewer had ever seen. Binaries are now counted, never summed.
+        if added=='-' or removed=='-': binary.append(path); continue
+        for x in (added,removed):
+            if x.isdigit(): lines+=int(x)
+    # `git diff` does not describe untracked files at all, so a brand-new 2000-line
+    # module scored zero the same way a binary did. They are measured directly here.
+    for name in sorted(untracked_set):
+        if any(name.startswith(pattern) for pattern in AI_PATTERNS): continue
+        full=root/name
+        if full.is_symlink() or not full.is_file(): continue
+        try: blob=full.read_bytes()
+        except OSError: continue
+        if b'\0' in blob[:8000]: binary.append(name); continue
+        lines+=blob.count(b'\n')+(0 if blob.endswith(b'\n') or not blob else 1)
+    return {"base":base,"files":files,"file_count":len(files),"changed_lines":lines,
+            "binary_files":sorted(set(binary)),"renamed_files":sorted(set(renamed))}
 
 
 def classify(scope:dict, profile:str)->dict:
@@ -541,6 +566,9 @@ def classify(scope:dict, profile:str)->dict:
     if high.search(paths): risk,reason='HIGH','high-risk path/domain'
     elif medium.search(paths): risk,reason='MEDIUM','business/API/integration path'
     elif scope['changed_lines']>=160 or scope['file_count']>=6: risk,reason='MEDIUM','non-trivial diff size'
+    # A binary carries no reviewable diff: the review gate would be reading a size, not
+    # a change. That is the opposite of a reason to skip review, so it never scores LOW.
+    if scope.get('binary_files') and risk=='LOW': risk,reason='MEDIUM','binary content cannot be reviewed as a diff'
     if profile=='strict' and risk=='LOW': risk,reason='MEDIUM','strict profile minimum'
     return {"risk":risk,"reason":reason,"security":security}
 
