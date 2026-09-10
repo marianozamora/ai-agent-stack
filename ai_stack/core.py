@@ -10,7 +10,35 @@ TASK_ID = None
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[1]
 _BUNDLED_ROOT = Path(__file__).resolve().parent/'_bundle'
-STACK_ROOT = _SOURCE_ROOT if (_SOURCE_ROOT/'VERSION').is_file() else _BUNDLED_ROOT
+
+
+def resolve_stack_root(override:str|None,source:Path,bundled:Path)->Path:
+    """Where the shipped, read-only assets live: VERSION, templates/ and skills/.
+
+    AI_STACK_HOME lets those come from somewhere other than the directory cli.py
+    happens to sit in -- a read-only install, or a test that needs its own
+    templates/ instead of writing prompt variants into the source tree it is
+    running from.
+
+    Deliberately NOT named AI_STACK_ROOT: that name is already taken by
+    [tool.coverage.run] in pyproject.toml and exported by CI's coverage job,
+    where it rides into every CLI subprocess through the inherited environment.
+    Reusing it would silently couple coverage runs to asset resolution, and would
+    pass CI unnoticed because there the two paths happen to coincide.
+
+    An override with no VERSION file is an error rather than a quiet fall back to
+    the source tree: a typo that kept working would hide which prompts and skills
+    a run actually loaded, and those feed the model directly.
+    """
+    if not override: return source if (source/'VERSION').is_file() else bundled
+    root=Path(override).expanduser().resolve()
+    if not (root/'VERSION').is_file():
+        raise SystemExit(f'AI_STACK_HOME={override} is not an ai-agent-stack install root '
+                         '(no VERSION file there).')
+    return root
+
+
+STACK_ROOT = resolve_stack_root(os.environ.get('AI_STACK_HOME'),_SOURCE_ROOT,_BUNDLED_ROOT)
 
 
 VERSION = (STACK_ROOT/"VERSION").read_text().strip()
