@@ -27,19 +27,22 @@ class EnforceBudgetBoundaryTests(unittest.TestCase):
         self.assertIn('101 > 100', str(ctx.exception))
 
 
+NO_REPO = None  # no repository in play: bundled skills only
+
+
 class LoadSkillContextBudgetTests(unittest.TestCase):
     def test_no_names_returns_placeholder(self):
-        self.assertEqual(skills.load_skill_context([], 5000), '(none)')
+        self.assertEqual(skills.load_skill_context(None, [], 5000), '(none)')
 
     def test_body_within_budget_is_kept_whole(self):
-        out = skills.load_skill_context(['tdd'], 100000)
+        out = skills.load_skill_context(NO_REPO, ['tdd'], 100000)
         self.assertIn('## Skill: tdd', out)
         self.assertNotIn('[skill context truncated by budget]', out)
 
     def test_body_over_budget_is_truncated_with_marker(self):
-        full = skills.load_skill_context(['tdd'], 100000)
+        full = skills.load_skill_context(NO_REPO, ['tdd'], 100000)
         body_len = len(full) - len('## Skill: tdd\n')
-        out = skills.load_skill_context(['tdd'], body_len // 2)
+        out = skills.load_skill_context(NO_REPO, ['tdd'], body_len // 2)
         self.assertIn('[skill context truncated by budget]', out)
         self.assertLess(len(out), len(full))
 

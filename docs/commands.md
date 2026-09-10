@@ -666,7 +666,16 @@ usage: ai skill create [-h] --category CATEGORY
                        [--task-types TASK_TYPES] [--triggers TRIGGERS]
                        [--stages STAGES] --prompt PROMPT
                        [--description DESCRIPTION] [--always-consider]
+                       [--repo]
                        name
+```
+
+## `ai clarify`
+
+Check the PR contract for unverifiable acceptance criteria before implementing.
+
+```text
+usage: ai clarify [-h] [--json] [--task-id TASK_ID]
 ```
 
 ## `ai handoff`
@@ -685,7 +694,7 @@ usage: ai handoff [-h] [--profile {fast,standard,strict}] [--base BASE]
 Manage repository-specific rules.
 
 ```text
-usage: ai rules [-h] [--task-id TASK_ID] {list,add,remove} ...
+usage: ai rules [-h] [--task-id TASK_ID] {list,add,remove,import} ...
 ```
 
 ### `ai rules list`
@@ -710,6 +719,14 @@ usage: ai rules add [-h] [--scope SCOPE] rule
 
 ```text
 usage: ai rules remove [-h] index
+```
+
+### `ai rules import`
+
+
+
+```text
+usage: ai rules import [-h] [--scope SCOPE] [--confirm] file
 ```
 
 ## `ai docs`
