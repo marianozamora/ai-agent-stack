@@ -39,6 +39,7 @@ class ParserWiringTests(unittest.TestCase):
             ['status'],
             ['metrics', '--json'],
             ['skill', 'list'],
+            ['skill', 'upstream', '--json'],
             ['rules', 'add', 'r'],
             ['rules', 'import', 'CONTRIBUTING.md'],
             ['clarify'],

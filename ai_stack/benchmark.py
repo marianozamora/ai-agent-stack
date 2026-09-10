@@ -20,6 +20,10 @@ BENCHMARK_TASKS: list[dict[str, Any]] = [
      'figma': 'https://figma.com/file/example/onboarding'},
     {'id': 'search-tickets', 'task': 'Break down the search revamp epic into tickets',
      'files': [], 'changed_lines': 0},
+    {'id': 'sdk-docs', 'task': 'Upgrade the SDK using its official documentation for this API version',
+     'files': ['pyproject.toml', 'src/client.py'], 'changed_lines': 55},
+    {'id': 'service-observability', 'task': 'Add OpenTelemetry tracing and SLO alerting to the worker',
+     'files': ['src/workers/events.py', 'src/telemetry.py'], 'changed_lines': 75},
 ]
 
 

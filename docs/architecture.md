@@ -166,6 +166,28 @@ Task
 
 The token policy treats tests/static evidence as the arbiter and prevents model-to-model debate loops. Strict mode increases evidence and reviewer strength but still has bounded skills, files, findings, retries, and review rounds.
 
+### Curated upstream skills
+
+External skill collections are source material, not runtime plugins. Selected
+workflows are rewritten into this engine's compact `prompt.md` format and retain
+their ordinary registry routing. A `requires_trigger` metadata flag keeps narrow
+skills dormant until one of their explicit triggers matches; this prevents a
+large catalog from displacing general TDD or repository-design guidance merely
+because both list the same broad task type.
+
+`skills/upstreams.json` binds each adaptation to its repository, branch, commit,
+license, original path and local prompt hash. `ai skill upstream` validates that
+manifest against the live skill registry and prompt files without network access.
+`--check` performs one read-only `git ls-remote` per source and reports `CURRENT`
+or `UPDATE_AVAILABLE`; it never changes the pin or local prompts. Updates
+therefore remain reviewable source changes and cannot silently alter orchestration
+behavior.
+
+The upstream documents themselves are not bundled or loaded. This preserves the
+skill-context sub-budget and avoids introducing another meta-router, command set
+or lifecycle. License notices travel inside `skills/`, which both the staged
+installer and wheel bundler already copy as runtime data.
+
 
 ## Verified task lifecycle (0.9.4)
 

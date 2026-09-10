@@ -144,8 +144,8 @@ class RunBenchmarkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, \
                 patch('benchmark.select_skills', return_value=['skill-x']):
             report = benchmark.run_benchmark(Path(d))
-        self.assertEqual(report['fixtures'], 6)
-        self.assertEqual(len(report['results']), 6)
+        self.assertEqual(report['fixtures'], len(benchmark.BENCHMARK_TASKS))
+        self.assertEqual(len(report['results']), len(benchmark.BENCHMARK_TASKS))
         for row in report['results']:
             self.assertIn('id', row)
             self.assertIn('task', row)

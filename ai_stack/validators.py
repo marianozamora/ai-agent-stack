@@ -10,7 +10,7 @@ INSTRUCTIONS = {
     'cleanup': 'Inspect the final diff for debug residue, unused imports/helpers, commented-out code, scratch notes and unnecessary scaffolding. Respect project tooling and useful comments. Report fixes; never apply them. Do not require later gates to exist.',
     'contract': 'Read the PR contract. Require a meaningful objective and nonempty, concrete acceptance criteria. Map EVERY criterion and must_not_change constraint to source locations and fresh test evidence. Empty, ambiguous or unverifiable requirements must return NEEDS_HUMAN. Do not invent acceptance criteria.',
     'review': 'Review correctness and regression risk in the diff and affected callers. Cite concrete failure paths and locations for blockers. Check error handling, edge cases and test coverage. Do not block for personal style preferences.',
-    'security': 'Review relevant trust boundaries: authorization, tenant isolation, injection, untrusted paths, secrets, sensitive logs and insecure defaults. Cite concrete source evidence or exploit paths. Do not claim security based solely on passing tests.',
+    'security': 'Review relevant trust boundaries: authorization, tenant isolation, injection/SSRF, untrusted and destructive paths, secrets, sensitive logs, privacy/retention, dependency supply chain, model output/tool permissions and insecure defaults. Apply only the categories present in the change. Cite concrete source evidence or exploit paths. Do not claim security based solely on passing tests.',
     'ponytail': 'Review maintainability against explicit repository rules, tooling and neighboring conventions: responsibility boundaries, duplication, error semantics, resource lifetime and meaningful tests. Block only material issues. Cite locations and established conventions.',
     'design': 'Read the design contract and actual implementation. Require populated components, states, responsive and material fidelity requirements as applicable. Verify every material requirement with source or existing visual evidence. Missing design evidence or an empty contract requires NEEDS_HUMAN; never fabricate visual verification.',
     'summary': 'Produce a concise PR draft in summary_markdown: title, concrete changes and motivation, actual checks with outcomes, risks and rollout notes. Use only fresh evidence; do not invent tests or results. The wrapper saves the draft outside the checkout. Do not add internal assistant attribution. Legitimate product/integration names are permitted.',
@@ -62,5 +62,4 @@ def intact_record(record, fingerprint):
     except (OSError, KeyError, TypeError):
         return False
     return True
-
 

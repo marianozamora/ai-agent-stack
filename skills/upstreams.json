@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "sources": {
+    "addyosmani-agent-skills": {
+      "repository": "https://github.com/addyosmani/agent-skills.git",
+      "ref": "main",
+      "commit": "6ca0cd7db39b41b1c37e26d335c507ee92382c6d",
+      "license": "MIT",
+      "license_file": "UPSTREAM_LICENSES.md",
+      "integration": "curated adaptations; upstream prompts are not loaded at runtime",
+      "skills": {
+        "source-driven-development": {
+          "path": "skills/source-driven-development/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "6bafe670fb377ccff670fae425bfa8cda04c08df47a07ed77d25bafa36f5d011"
+        },
+        "deprecation-and-migration": {
+          "path": "skills/deprecation-and-migration/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "2a74e7848a1f289fb4d4e29a28bfecefa6539b6ce0545721a2f38e2b5c85d4ec"
+        },
+        "observability-and-instrumentation": {
+          "path": "skills/observability-and-instrumentation/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "27b1c49431bc959ba9ea2575d34a90d9799c2f272a633e53a7dd885b0de0fbb4"
+        }
+      }
+    }
+  }
+}

@@ -125,6 +125,27 @@ ai skill create house-style --repo --category quality --prompt '...'
 
 A repo-scoped skill lives in that repository's external state, not in the checkout, and may deliberately reuse a bundled skill's name to replace it here without forking the stack. Shadowing replaces the whole definition rather than merging fields.
 
+### Curated upstream skills
+
+The bundled skill router includes compact, trigger-gated adaptations of selected
+workflows from [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills):
+source-driven development, deprecation/migration, and observability. Their full
+upstream prompts are deliberately not injected; the stack keeps its own context
+caps, routing, gates and zero-footprint lifecycle.
+
+The exact upstream commit, paths, local prompt hashes and license are recorded in
+`skills/upstreams.json`. Inspect the local pin without network access, or compare
+it with the remote branch explicitly:
+
+```bash
+ai skill upstream
+ai skill upstream --check
+ai skill upstream --check --json
+```
+
+An available upstream update is advisory. Updating the pin or a curated prompt
+remains a reviewed source change; the command never downloads or rewrites skills.
+
 ## State and privacy boundary
 
 ```text
