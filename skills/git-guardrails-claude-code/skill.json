@@ -1,0 +1,16 @@
+{
+  "name": "git-guardrails-claude-code",
+  "version": 1,
+  "category": "safety",
+  "cost": "low",
+  "priority": 65,
+  "task_types": [],
+  "triggers": ["git guardrails", "block git push", "prevent force push", "git safety hook", "block dangerous git", "pretooluse hook for git"],
+  "requires_trigger": true,
+  "stages": ["ask scope", "copy hook script", "register hook in settings", "confirm customization", "verify block"],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/misc/git-guardrails-claude-code/SKILL.md",
+    "adaptation": "curated"
+  }
+}

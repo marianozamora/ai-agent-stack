@@ -1,0 +1,16 @@
+{
+  "name": "research",
+  "version": 1,
+  "category": "evidence",
+  "cost": "low",
+  "priority": 60,
+  "task_types": [],
+  "triggers": ["research this", "investigate", "look into", "background agent", "primary sources", "gather docs"],
+  "requires_trigger": true,
+  "stages": ["scope question", "dispatch background agent", "verify primary sources", "write findings", "cite sources"],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/engineering/research/SKILL.md",
+    "adaptation": "curated"
+  }
+}
