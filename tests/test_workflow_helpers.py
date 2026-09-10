@@ -75,6 +75,31 @@ class HelpersTests(unittest.TestCase):
         self.assertAlmostEqual(row['pass_rate'], 5 / 6, places=3)
         self.assertEqual(row['median_usage_tokens'], 110)
 
+    def test_outcome_stats_usage_ignores_retry_thrash_and_never_passed_gates(self):
+        # One task whose cleanup gate thrashed through 5 failing attempts and never
+        # passed: it must not set the usage projection at all.
+        thrash = [{'event': 'gate', 'gate': 'cleanup', 'passed': False, 'attempt': i + 1,
+                   'task_key': 'stuck', 'profile': 'standard',
+                   'usage': {'input_tokens': 200_000 + i * 50_000, 'output_tokens': 3_000}}
+                  for i in range(5)]
+        stats = workflow.outcome_stats(thrash, profile='standard', min_n=5)
+        self.assertTrue(stats[0]['sufficient'])
+        self.assertIsNone(stats[0]['median_usage_tokens'])
+
+        # A gate that passes on the 2nd attempt contributes one sample: the sum of
+        # both attempts (the real end-to-end cost of the run that worked), not two.
+        rows = thrash + [
+            {'event': 'gate', 'gate': 'cleanup', 'passed': False, 'attempt': 1, 'task_key': 't_a',
+             'profile': 'standard', 'usage': {'input_tokens': 40_000, 'output_tokens': 1_000}},
+            {'event': 'gate', 'gate': 'cleanup', 'passed': True, 'attempt': 2, 'task_key': 't_a',
+             'profile': 'standard', 'usage': {'input_tokens': 30_000, 'output_tokens': 1_000}},
+            {'event': 'gate', 'gate': 'cleanup', 'passed': True, 'attempt': 1, 'task_key': 't_b',
+             'profile': 'standard', 'usage': {'input_tokens': 50_000, 'output_tokens': 2_000}},
+        ]
+        stats = workflow.outcome_stats(rows, profile='standard', min_n=5)
+        # per-task successful-run totals: t_a -> 72_000, t_b -> 52_000; median -> 62_000
+        self.assertEqual(stats[0]['median_usage_tokens'], 62_000)
+
     def test_analyze_ticket_text_extracts_acceptance_figma_and_blockers(self):
         text = (
             "Implement the retry handler.\n\n"
