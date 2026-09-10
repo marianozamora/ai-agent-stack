@@ -112,6 +112,26 @@ def _usage_totals(entries):
             for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
 
 
+def _successful_run_usage(entries):
+    """One token total per task whose gate eventually passed: the sum across that
+    task's attempts. A gate that thrashed through N failing retries contributes a
+    single data point (the cost of the run that worked), not N points of
+    while-stuck spend, and a gate that never passed contributes nothing rather
+    than projecting a forward cost from a run that never converged.
+    """
+    by_task: dict[Any, list[dict[str, Any]]] = {}
+    for entry in entries:
+        by_task.setdefault(entry.get('task_key'), []).append(entry)
+    totals = []
+    for task_entries in by_task.values():
+        if not any(e.get('passed') is True for e in task_entries):
+            continue
+        attempt_totals = _usage_totals(task_entries)
+        if attempt_totals:
+            totals.append(sum(attempt_totals))
+    return totals
+
+
 def _pass_rate_stats(entries):
     """Overall and first-attempt pass rate for a group of gate events. None if not applicable."""
     n = len(entries)
@@ -215,7 +235,7 @@ def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
             result.update(_pass_rate_stats(entries))
             result['median_attempts'] = (statistics.median(latest_attempt_per_task.values())
                                           if latest_attempt_per_task else None)
-            usage_totals = _usage_totals(entries)
+            usage_totals = _successful_run_usage(entries)
             result['median_usage_tokens'] = statistics.median(usage_totals) if usage_totals else None
         stats.append(result)
     return stats
