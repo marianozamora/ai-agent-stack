@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, shutil, time
 from typing import Any
-from core import STACK_ROOT, VERSION, base_suggestions, contamination, git_root, json_file_health, known_repo_states, load_json, profile_repo, remote_id, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
+from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, known_repo_states, first_base, load_json, profile_repo, remote_id, repo_state, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
 from providers import builder as get_builder, reviewer as get_reviewer
@@ -91,8 +91,11 @@ def base_report(root,state)->str:
     """How `ai status`/`ai doctor` describe the diff base, without ever guessing one."""
     stored=load_json(state/'repo.json',{}).get('default_base')
     if stored: return f'{stored} (recorded)' if verify_ref(root,stored) else f'{stored} (recorded, MISSING — rerun ai init --base <ref>)'
-    detected=base_suggestions(root)
-    return f'{detected[0]} (detected; record it with ai init)' if detected else 'FAIL: none detected'
+    # first_base(), not base_suggestions(): this line only ever showed the top
+    # suggestion, so verifying the rest was up to 8 extra `git rev-parse` spawns
+    # per `ai status`/`ai doctor` whose results were built and thrown away.
+    detected=first_base(root)
+    return f'{detected} (detected; record it with ai init)' if detected else 'FAIL: none detected'
 
 
 def cmd_init(args):
