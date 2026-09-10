@@ -13,7 +13,7 @@ from pathlib import Path
 from core import (TASK_ID_PATTERN, active_task_id, git_root, load_json, repo_state,
                   resolve_base, save_json, set_active_task, shasum, task_state)
 from metrics import record_metric
-from workflow import analyze_ticket_text
+from workflow import analyze_ticket_text, ticket_snapshot
 
 
 OPEN_STATES = ('active', 'paused')
@@ -177,22 +177,20 @@ def cmd_start(args):
     # contract is new or the caller explicitly supplied a title.
     from lifecycle import ensure_contract, populate_acceptance_if_empty
     ensure_contract(state, args.title or (title or identity if fresh else ''))
-    detected=0
+    detected=0; clarifications=[]
     if getattr(args,'ticket_file',None):
         analysis=analyze_ticket_text(Path(args.ticket_file).read_text())
         populate_acceptance_if_empty(task/'contracts/current-pr.yml',analysis['acceptance_items'])
-        save_json(task/'state/ticket.json',{'version':1,'fetched_at':time.time(),'source':'pasted',
-            'length':analysis['length'],'figma_url':analysis['figma_url'],
-            'acceptance_items':analysis['acceptance_items'],'blockers_mentioned':analysis['blockers_mentioned'],
-            'has_acceptance':analysis['has_acceptance'],
-            'caveat':'Deterministic regex read of pasted content; not a verified analysis of ticket sufficiency.'})
-        detected=len(analysis['acceptance_items'])
+        save_json(task/'state/ticket.json',ticket_snapshot(analysis))
+        detected=len(analysis['acceptance_items']); clarifications=analysis['clarifications_needed']
     record_metric(state,'task_start',task_id=identity,resumed=bool(existing))
     print(f'Started task: {identity}')
     if title: print(f'  title:    {title}')
     print(f'  base:     {base}')
     print(f'  contract: {task/"contracts/current-pr.yml"}'+('' if fresh else ' (existing, resumed)'))
     if getattr(args,'ticket_file',None): print(f'  ticket:   {detected} acceptance item(s) detected')
+    if clarifications:
+        print(f'  clarify:  {len(clarifications)} unresolved marker(s) in the source; run `ai clarify`')
 
 
 def cmd_switch(args):

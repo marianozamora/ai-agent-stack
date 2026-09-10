@@ -9,7 +9,7 @@ from prompts import assign_prompt_variants
 from providers import builder as get_builder
 from skills import load_skill_context, select_skills
 from tools import ctx7_cmd
-from workflow import analyze_ticket_text
+from workflow import analyze_ticket_text, ticket_snapshot
 
 
 def semantic_fingerprint(root:Path)->dict:
@@ -90,7 +90,7 @@ def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
 def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None)->str:
     scope=collect_scope(root,base); risk=classify(scope,profile); caps=context_caps(profile)
     selected_skills=select_skills(state,task,profile,figma,explicit_skills)
-    skill_context=load_skill_context(selected_skills, max(2000,caps['context_chars']//3))
+    skill_context=load_skill_context(state, selected_skills, max(2000,caps['context_chars']//3))
     selected_lessons=select_lessons(state,scope,profile)
     lessons_block=render_lessons(selected_lessons,max(1,caps['context_chars']//10))
     crg_text=''
@@ -205,11 +205,7 @@ def cmd_planrun(args,launch:bool):
     if ticket_analysis is not None:
         task=task_state(state)
         populate_acceptance_if_empty(task/'contracts/current-pr.yml',ticket_analysis['acceptance_items'])
-        save_json(task/'state/ticket.json',{'version':1,'fetched_at':time.time(),'source':'pasted',
-            'length':ticket_analysis['length'],'figma_url':ticket_analysis['figma_url'],
-            'acceptance_items':ticket_analysis['acceptance_items'],'blockers_mentioned':ticket_analysis['blockers_mentioned'],
-            'has_acceptance':ticket_analysis['has_acceptance'],
-            'caveat':'Deterministic regex read of pasted content; not a verified analysis of ticket sufficiency.'})
+        save_json(task/'state/ticket.json',ticket_snapshot(ticket_analysis))
     print('AI plan')
     print('  repo state: ',state)
     print('  profile:    ',args.profile)
@@ -234,6 +230,8 @@ def cmd_planrun(args,launch:bool):
     if ticket_analysis is not None:
         print('  ticket:     ',f"{len(ticket_analysis['acceptance_items'])} acceptance item(s) detected"
               +(', figma link found' if ticket_analysis['figma_url'] else ''))
+        if ticket_analysis['clarifications_needed']:
+            print('  clarify:    ',f"{len(ticket_analysis['clarifications_needed'])} unresolved marker(s); run `ai clarify`")
         if ticket_analysis['blockers_mentioned']:
             print('  blockers:   ','; '.join(ticket_analysis['blockers_mentioned'])+' (advisory; not verified)')
     if launch:
@@ -250,16 +248,16 @@ def cmd_ticket(args):
     if not text.strip(): raise SystemExit('No ticket content provided (use --file, --text, or pipe via stdin).')
     state=repo_state(git_root()); task=task_state(state)
     analysis=analyze_ticket_text(text)
-    snapshot={'version':1,'fetched_at':time.time(),'source':'pasted','length':analysis['length'],
-              'figma_url':analysis['figma_url'],'acceptance_items':analysis['acceptance_items'],
-              'blockers_mentioned':analysis['blockers_mentioned'],'has_acceptance':analysis['has_acceptance'],
-              'caveat':'Deterministic regex read of pasted content; not a verified analysis of ticket sufficiency.'}
+    snapshot=ticket_snapshot(analysis)
     save_json(task/'state/ticket.json',snapshot)
     if args.json: print(json.dumps(snapshot,indent=2)); return
     print(f"Ticket content: {analysis['length']} chars")
     print(f"Acceptance criteria detected: {len(analysis['acceptance_items'])}")
     for item in analysis['acceptance_items']: print(f"  - {item}")
     print(f"Figma link: {analysis['figma_url'] or 'none'}")
+    if analysis['clarifications_needed']:
+        print('Unresolved clarification markers found in the source (answer these before implementing):')
+        for c in analysis['clarifications_needed']: print(f"  - {c}")
     if analysis['blockers_mentioned']:
         print('Blockers/dependencies mentioned (advisory; not verified against any live source):')
         for b in analysis['blockers_mentioned']: print(f"  - {b}")
