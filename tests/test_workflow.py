@@ -862,11 +862,44 @@ if mode=='exit': sys.exit(2)
         self.assertEqual(payload['next_action'], 'run tests')
         self.assertEqual(payload['state'], 'in_progress')
 
+    def _path_without(self, executable_name):
+        """A PATH value with every directory containing `executable_name` removed.
+
+        `crg_cmd()` resolves via shutil.which(), which honors the subprocess's own
+        PATH -- so this, not mocking, is what actually controls whether the CLI sees
+        code-review-graph as installed. Filtering by directory (not just hoping the
+        test machine lacks it) is what makes the "without CRG" test deterministic on
+        a machine that has code-review-graph installed for real, which is exactly how
+        this test used to break: it passed in CI where the binary is absent and failed
+        here where it is not.
+        """
+        dirs = [d for d in self.env.get('PATH', '').split(os.pathsep) if d and not (Path(d) / executable_name).is_file()]
+        return os.pathsep.join(dirs)
+
     def test_impact_falls_back_to_heuristic_without_crg(self):
+        self.env['PATH'] = self._path_without('code-review-graph')
         (self.repo / 'app.txt').write_text('changed for impact\n')
         output = self.ai('impact', '--base', 'HEAD')
         self.assertIn('Change impact', output)
         self.assertIn('CRG:         unavailable', output)
+        self.assertIn('final risk:', output)
+
+    def test_impact_falls_back_to_heuristic_when_crg_present_but_graph_unavailable(self):
+        # The other half of cmd_impact's fallback: code-review-graph is installed but
+        # its graph isn't built/current, so `status` fails and crg_impact() returns ''
+        # without ever trying to build (ai impact defaults --build to off). This branch
+        # has its own distinct message and was previously untested, which is exactly
+        # why nothing caught the sibling test asserting the wrong one of the two.
+        bin_dir = self.home / 'fake-bin'
+        bin_dir.mkdir()
+        stub = bin_dir / 'code-review-graph'
+        stub.write_text('#!/bin/sh\nexit 1\n')
+        stub.chmod(0o755)
+        self.env['PATH'] = str(bin_dir) + os.pathsep + self._path_without('code-review-graph')
+        (self.repo / 'app.txt').write_text('changed for impact\n')
+        output = self.ai('impact', '--base', 'HEAD')
+        self.assertIn('Change impact', output)
+        self.assertIn('CRG:         graph unavailable/stale', output)
         self.assertIn('final risk:', output)
 
     def test_review_prepares_prompt_without_launching_codex(self):
