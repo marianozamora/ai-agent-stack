@@ -88,8 +88,9 @@ def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
     return True
 
 
-def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None)->str:
-    scope=collect_scope(root,base); risk=classify(scope,profile); caps=context_caps(profile)
+def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None,scope:dict|None=None)->str:
+    if scope is None: scope=collect_scope(root,base)
+    risk=classify(scope,profile); caps=context_caps(profile)
     selected_skills=select_skills(state,task,profile,figma,explicit_skills)
     skill_context=load_skill_context(state, selected_skills, max(2000,caps['context_chars']//3))
     selected_lessons=select_lessons(state,scope,profile)
@@ -180,12 +181,13 @@ def cmd_planrun(args,launch:bool):
         m=re.search(r'https?://\S*figma\.com/\S+',args.task or '')
         figma=m.group(0) if m else None
     if args.no_figma: figma=None
-    args.profile,profile_auto=resolve_profile(args.profile,collect_scope(root,args.base),args.task or '',figma)
+    scope=collect_scope(root,args.base)
+    args.profile,profile_auto=resolve_profile(args.profile,scope,args.task or '',figma)
     ticket_analysis=None
     if getattr(args,'ticket_file',None):
         ticket_analysis=analyze_ticket_text(Path(args.ticket_file).read_text())
         if not figma and ticket_analysis['figma_url']: figma=ticket_analysis['figma_url']
-    prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None))
+    prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None),scope)
     plan=load_json(task_state(state)/'state'/'current-plan.json',{})
     if ticket_analysis is not None:
         task=task_state(state)
