@@ -60,6 +60,21 @@
           "prompt_sha256": "27ee07ee1057ac6b97eab6183f27f366399c3250af8b61df02e590efa2b4fc9b"
         }
       }
+    },
+    "archify": {
+      "repository": "https://github.com/tt-a1i/archify.git",
+      "ref": "main",
+      "commit": "10722002bb8777ecb639d93c49586fae4adf3ae4",
+      "license": "MIT",
+      "license_file": "UPSTREAM_LICENSES.md",
+      "integration": "reference-only pointer; the upstream Node package (~8MB, its own CLI, npm deps, and a remote update-check) is not vendored, only cloned/npm-installed on demand by the agent at the pinned commit",
+      "skills": {
+        "archify": {
+          "path": "archify/SKILL.md",
+          "adaptation": "reference",
+          "prompt_sha256": "62d50739f5190465ec97b2e50f2eb85505f5ebf803f9044f417ff488e4f145b5"
+        }
+      }
     }
   }
 }

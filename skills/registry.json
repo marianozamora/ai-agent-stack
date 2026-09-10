@@ -425,6 +425,42 @@
         "path": "skills/misc/git-guardrails-claude-code/SKILL.md",
         "adaptation": "curated"
       }
+    },
+    "archify": {
+      "enabled": true,
+      "category": "diagramming",
+      "cost": "medium",
+      "priority": 60,
+      "task_types": [
+        "feature",
+        "architecture",
+        "design"
+      ],
+      "triggers": [
+        "architecture diagram",
+        "sequence diagram",
+        "workflow diagram",
+        "dataflow diagram",
+        "data-flow diagram",
+        "lifecycle diagram",
+        "state diagram",
+        "diagram this",
+        "visualize the architecture",
+        "mermaid"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "ensure local checkout",
+        "choose diagram type",
+        "author candidate",
+        "validate",
+        "deliver"
+      ],
+      "provenance": {
+        "source": "archify",
+        "path": "archify/SKILL.md",
+        "adaptation": "reference"
+      }
     }
   }
 }
