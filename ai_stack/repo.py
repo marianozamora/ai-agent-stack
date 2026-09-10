@@ -6,6 +6,7 @@ from capabilities import CAPABILITIES
 from core import STACK_ROOT, VERSION, contamination, git_root, json_file_health, known_repo_states, first_base, load_json, profile_repo, remote_id, repo_state, require_human, resolve_base, safe_head, save_json, task_state, verify_ref
 from crg import crg_cmd, crg_exec
 from detect import proposal, render
+from metrics import metric_index_health
 from providers import builder as get_builder, reviewer as get_reviewer
 from skills import enabled_skills, skill_registry
 from tasks import running_tasks
@@ -200,6 +201,7 @@ def cmd_doctor(args):
         metrics_file=state/'metrics.jsonl'
         if metrics_file.exists():
             row_count=sum(1 for _ in metrics_file.open())
+            print('Metrics index:', metric_index_health(state))
             if row_count>METRICS_ADVISORY_ROWS:
                 print(f'Metrics log:  {row_count} events (audited; queries use metrics.sqlite3); consider '
                       f'`ai metrics prune --older-than <window> --confirm` only for retention.')

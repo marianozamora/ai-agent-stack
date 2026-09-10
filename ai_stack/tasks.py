@@ -224,8 +224,8 @@ def cmd_close(args):
                close_reason=args.reason or '')
     readiness=load_json(task_dir(state,root,identity)/'state/readiness.json',{}).get('status','none')
     # Record before clearing the pointer: record_metric() resolves the task through
-    # task_state(), which would otherwise fall back to the branch and file the close
-    # event against a task that never existed.
+    # task_state(), which once the pointer is gone has no active task to resolve and
+    # would refuse rather than file the close event against the right task.
     record_metric(state,'task_close',task_id=identity,readiness=readiness,reason=args.reason or '')
     if active_task_id(state,root)==identity: set_active_task(state,root,None)
     print(f'Closed task: {identity}')
@@ -285,7 +285,6 @@ def cmd_current(args):
     if not identity:
         idle={'active':None,'hint':'No active task. Run `ai start <id>`.'}
         print(json.dumps(idle,indent=2) if args.json else idle['hint'])
-        if not args.json: print('(commands currently fall back to the branch name; that fallback is deprecated)')
         return
     directory=task_dir(state,root,identity)
     meta=read_task(state,root,identity)

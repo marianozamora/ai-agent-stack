@@ -61,7 +61,11 @@ COMMAND_DESCRIPTIONS = {
 
 
 def cmd_path(args):
-    print(task_state(repo_state(git_root())))
+    state=repo_state(git_root())
+    # With an active task, point at its directory; with none, the repo-level state
+    # dir is still the useful answer -- `ai path` should never just error out.
+    try: print(task_state(state))
+    except SystemExit: print(state)
 
 
 def parser():

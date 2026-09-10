@@ -74,6 +74,44 @@ def rebuild_metric_index(state:Path):
     connection=_sync_metric_index(state,force=True); connection.close()
 
 
+def metric_index_health(state:Path)->str:
+    """One-line reconciliation of metrics.sqlite3 against metrics.jsonl, for `ai doctor`.
+
+    The index is disposable and already self-heals on a rewrite, but a silently wrong
+    one skews every learning read that goes through it (`ai failures`, `ai confidence`,
+    `ai prompt report`). This forces the check the incremental path never does on its
+    own: sync, count what landed, and rebuild once if the log and the index disagree.
+    """
+    path=state/'metrics.jsonl'
+    if not path.exists(): return 'no metrics recorded yet'
+    log_lines=len(path.read_text(errors='replace').splitlines())
+
+    def counts():
+        connection=_sync_metric_index(state)
+        try:
+            indexed=connection.execute('SELECT COUNT(*) FROM events').fetchone()[0]
+            malformed=int(_meta(connection).get('malformed','0'))
+        finally:
+            connection.close()
+        return indexed,malformed
+
+    try:
+        indexed,malformed=counts()
+    except sqlite3.DatabaseError:
+        (state/'metrics.sqlite3').unlink(missing_ok=True); rebuild_metric_index(state)
+        indexed,malformed=counts()
+        return f'rebuilt: index was corrupt; {indexed} events re-indexed'
+    if indexed+malformed==log_lines:
+        skipped=f', {malformed} malformed line(s) skipped' if malformed else ''
+        return f'OK: {indexed} events indexed{skipped}'
+    rebuild_metric_index(state)
+    indexed,malformed=counts()
+    if indexed+malformed==log_lines:
+        return f'rebuilt: index was stale; {indexed} events re-indexed'
+    return (f'MISMATCH: {log_lines} log line(s) but {indexed} indexed + {malformed} malformed '
+            'after a full rebuild -- inspect metrics.jsonl')
+
+
 def load_metric_rows(state:Path,*,event:str|None=None,task_key:str|None=None)->tuple[list[dict],int]:
     try:
         connection=_sync_metric_index(state)

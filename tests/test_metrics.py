@@ -65,6 +65,41 @@ class LoadMetricRowsTests(unittest.TestCase):
             self.assertEqual(malformed, 0)
 
 
+class MetricIndexHealthTests(unittest.TestCase):
+    def test_no_log_yet(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(metrics.metric_index_health(Path(d)), 'no metrics recorded yet')
+
+    def test_ok_reports_the_indexed_count_and_malformed_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            (state / 'metrics.jsonl').write_text('\n'.join([
+                json.dumps({'event': 'gate', 'n': 1}), '{bad', json.dumps({'event': 'plan', 'n': 2})]) + '\n')
+            health = metrics.metric_index_health(state)
+            self.assertEqual(health, 'OK: 2 events indexed, 1 malformed line(s) skipped')
+
+    def test_an_index_left_behind_by_a_rewrite_reconciles_to_ok(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            log = state / 'metrics.jsonl'
+            log.write_text(json.dumps({'event': 'gate', 'n': 1}) + '\n')
+            metrics.metric_index_health(state)  # builds the index
+            # A full rewrite (what `ai metrics prune` does) leaves the index describing
+            # the old file; the health check must sync it and report OK, not a mismatch.
+            log.write_text('\n'.join(json.dumps({'event': 'gate', 'n': k}) for k in (1, 2, 3)) + '\n')
+            self.assertEqual(metrics.metric_index_health(state), 'OK: 3 events indexed')
+            self.assertEqual([r['n'] for r in metrics.load_metric_rows(state)[0]], [1, 2, 3])
+
+    def test_a_corrupt_index_is_rebuilt(self):
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            (state / 'metrics.jsonl').write_text(json.dumps({'event': 'gate', 'n': 1}) + '\n')
+            (state / 'metrics.sqlite3').write_bytes(b'not a database at all')
+            health = metrics.metric_index_health(state)
+            self.assertIn('corrupt', health)
+            self.assertIn('re-indexed', health)
+
+
 class RecordMetricTests(unittest.TestCase):
     """record_metric only needs task_state() to hand back a dir holding task.json
     and state/current-plan.json, so we patch metrics.task_state to a tmp task dir
