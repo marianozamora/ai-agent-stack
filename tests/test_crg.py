@@ -1,4 +1,4 @@
-import argparse, os, subprocess, sys, tempfile, unittest
+import argparse, contextlib, io, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
@@ -366,6 +366,184 @@ class CmdReviewLaunchReviewerTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 crg.cmd_review(self._args())
         self.assertEqual(caught.exception.code, 0)
+
+
+class CmdCrgTests(unittest.TestCase):
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+
+    def _args(self, crg_cmd, **overrides):
+        base = dict(crg_cmd=crg_cmd, base='HEAD', brief=True)
+        base.update(overrides)
+        return argparse.Namespace(**base)
+
+    def test_doctor_reports_ready_and_missing(self):
+        with patch('crg.shutil.which', return_value='/usr/bin/code-review-graph'):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                crg.cmd_crg(self._args('doctor'))
+        self.assertIn('Code Review Graph: ready', buf.getvalue())
+
+        with patch('crg.shutil.which', return_value=None):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                crg.cmd_crg(self._args('doctor'))
+        self.assertIn('missing', buf.getvalue())
+
+    def test_missing_binary_raises_for_a_mutating_subcommand(self):
+        with patch('crg.shutil.which', return_value=None):
+            with self.assertRaises(SystemExit) as caught:
+                crg.cmd_crg(self._args('build'))
+        self.assertIn('code-review-graph missing', str(caught.exception))
+
+    def test_build_argv(self):
+        captured = {}
+        def fake_run(cmd, **k):
+            captured['cmd'] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout='built\n')
+        with patch('crg.shutil.which', return_value='/usr/bin/code-review-graph'), \
+                patch('crg.subprocess.run', side_effect=fake_run):
+            with self.assertRaises(SystemExit) as caught:
+                crg.cmd_crg(self._args('build'))
+        self.assertEqual(caught.exception.code, 0)
+        self.assertEqual(captured['cmd'], ['/usr/bin/code-review-graph', 'build'])
+
+    def test_update_brief_argv(self):
+        captured = {}
+        def fake_run(cmd, **k):
+            captured['cmd'] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout='')
+        with patch('crg.shutil.which', return_value='/usr/bin/code-review-graph'), \
+                patch('crg.subprocess.run', side_effect=fake_run):
+            with self.assertRaises(SystemExit):
+                crg.cmd_crg(self._args('update', base='origin/main', brief=True))
+        self.assertEqual(captured['cmd'],
+                         ['/usr/bin/code-review-graph', 'update', '--base', 'origin/main', '--brief'])
+
+    def test_detect_brief_argv(self):
+        captured = {}
+        def fake_run(cmd, **k):
+            captured['cmd'] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout='')
+        with patch('crg.shutil.which', return_value='/usr/bin/code-review-graph'), \
+                patch('crg.subprocess.run', side_effect=fake_run):
+            with self.assertRaises(SystemExit):
+                crg.cmd_crg(self._args('detect', base='origin/main', brief=True))
+        self.assertEqual(captured['cmd'],
+                         ['/usr/bin/code-review-graph', 'detect-changes', '--base', 'origin/main', '--brief'])
+
+    def test_nonzero_rc_propagates(self):
+        with patch('crg.shutil.which', return_value='/usr/bin/code-review-graph'), \
+                patch('crg.subprocess.run',
+                      return_value=subprocess.CompletedProcess([], 3, stdout='boom')):
+            with self.assertRaises(SystemExit) as caught:
+                crg.cmd_crg(self._args('build'))
+        self.assertEqual(caught.exception.code, 3)
+
+
+class CrgImpactFlowTests(unittest.TestCase):
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+
+    def test_status_failure_without_build_if_missing_returns_empty(self):
+        with patch('crg.crg_cmd', return_value=['crg']), \
+                patch('crg.crg_exec', return_value=(1, '')) as exec_mock:
+            out = crg.crg_impact(self.root, self.state, 'HEAD', build_if_missing=False)
+        self.assertEqual(out, '')
+        # only the status probe ran -- no build attempted
+        self.assertEqual(exec_mock.call_count, 1)
+        self.assertEqual(exec_mock.call_args[0][2], ['status'])
+
+    def test_status_failure_with_build_if_missing_calls_build_then_detect(self):
+        calls = []
+        def fake_exec(root, state, argv, check=True):
+            calls.append(argv)
+            if argv == ['status']: return (1, '')
+            if argv == ['build']: return (0, '')
+            if argv[0] == 'detect-changes': return (0, 'impact text')
+            return (0, '')
+        with patch('crg.crg_cmd', return_value=['crg']), \
+                patch('crg.crg_exec', side_effect=fake_exec):
+            out = crg.crg_impact(self.root, self.state, 'HEAD', build_if_missing=True)
+        self.assertEqual(out, 'impact text')
+        self.assertIn(['build'], calls)
+
+    def test_refresh_with_output_writes_last_impact_file(self):
+        def fake_exec(root, state, argv, check=True):
+            if argv == ['status']: return (0, '')
+            if argv[0] == 'update': return (0, 'refreshed impact')
+            return (0, '')
+        with patch('crg.crg_cmd', return_value=['crg']), \
+                patch('crg.crg_exec', side_effect=fake_exec):
+            out = crg.crg_impact(self.root, self.state, 'HEAD', refresh=True)
+        self.assertEqual(out, 'refreshed impact')
+        impact_file = core.task_state(self.state) / 'review' / 'last-impact.txt'
+        self.assertEqual(impact_file.read_text(), 'refreshed impact\n')
+
+    def test_refresh_with_empty_update_falls_back_to_detect_changes(self):
+        calls = []
+        def fake_exec(root, state, argv, check=True):
+            calls.append(argv)
+            if argv == ['status']: return (0, '')
+            if argv[0] == 'update': return (0, '')  # empty -> falls through
+            if argv[0] == 'detect-changes': return (0, 'fallback impact')
+            return (0, '')
+        with patch('crg.crg_cmd', return_value=['crg']), \
+                patch('crg.crg_exec', side_effect=fake_exec):
+            out = crg.crg_impact(self.root, self.state, 'HEAD', refresh=True)
+        self.assertEqual(out, 'fallback impact')
+        self.assertTrue(any(c[0] == 'detect-changes' for c in calls))
+
+
+class CmdImpactTests(unittest.TestCase):
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+
+    def test_prints_crg_risk_and_elevated_final_risk(self):
+        crg_output = 'some analysis... risk: HIGH ...more text'
+        with patch('crg.crg_cmd', return_value=['crg']), \
+                patch('crg.crg_impact', return_value=crg_output):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                crg.cmd_impact(argparse.Namespace(base='HEAD', profile='standard', refresh=False, build=False))
+        out = buf.getvalue()
+        self.assertIn('CRG risk:     HIGH', out)
+        self.assertIn('final risk:   HIGH', out)
+        self.assertIn(crg_output, out)
+
+
+class CmdReviewPrTargetTests(unittest.TestCase):
+    """cmd_review --pr N writes into its own adhoc-reviews/pr-N/ directory,
+    never into the active task's own state/ -- reviewing an unrelated PR must
+    not clobber the active task's review artifact."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+
+    def _args(self, **overrides):
+        base = dict(commit=None, pr=7, base=None, refresh=False, build=False,
+                    profile='standard', launch=False)
+        base.update(overrides)
+        return argparse.Namespace(**base)
+
+    def test_pr_review_writes_to_its_own_adhoc_dir_not_the_active_tasks_state(self):
+        @contextlib.contextmanager
+        def fake_worktree(root, ref):
+            yield root  # reuse the sandbox repo itself; no real worktree needed
+
+        with patch.object(crg, 'resolve_pr_target',
+                          return_value=('deadbeef1234', 'main', 'PR #7 (feature -> main)')), \
+                patch.object(crg, 'temp_worktree', side_effect=fake_worktree), \
+                patch.object(crg, 'crg_cmd', return_value=None):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                crg.cmd_review(self._args())
+
+        pr_review = self.state / 'adhoc-reviews' / 'pr-7' / 'current-review.md'
+        self.assertTrue(pr_review.is_file())
+        active_task_review = core.task_state(self.state) / 'state' / 'current-review.md'
+        self.assertFalse(active_task_review.is_file())
+        self.assertIn(str(pr_review), buf.getvalue())
 
 
 if __name__ == '__main__':
