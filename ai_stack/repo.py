@@ -279,8 +279,10 @@ def cmd_rules(args):
         if not rules: print('No repository-specific rules.'); return
         for i,r in enumerate(rules,1): print(f"{i}. [{r.get('scope','**')}] {r['rule']}")
     elif args.rules_cmd=='add':
+        require_human('Rule curation')
         rules.append({"rule":args.rule,"scope":args.scope,"source":"user","confidence":1.0,"created_at":int(time.time())}); save_json(p,rules); print('Rule added.')
     elif args.rules_cmd=='remove':
+        require_human('Rule curation')
         idx=args.index-1
         if idx<0 or idx>=len(rules): raise SystemExit('Invalid rule index.')
         old=rules.pop(idx); save_json(p,rules); print('Removed:',old['rule'])
