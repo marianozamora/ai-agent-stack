@@ -34,6 +34,7 @@ class Reviewer(Protocol):
     def available(self)->bool: ...
     def verdict(self,root:Path,review_dir:Path,name:str,prompt:str,
                 schema:dict,checker:Callable[[Any],dict],timeout:int|None)->dict: ...
+    def review_argv(self,root:Path,prompt:str)->list[str]: ...
 
 
 class ClaudeBuilder:
@@ -56,6 +57,9 @@ class ClaudeBuilder:
         os.execvpe(path,[path,prompt],env)
 
 
+CODEX_READONLY_SANDBOX=['exec','-s','read-only']  # shared by verdict() and review_argv(): never write to the checkout
+
+
 class CodexReviewer:
     """Codex in its read-only sandbox, with a required output schema.
 
@@ -75,6 +79,11 @@ class CodexReviewer:
         if not path: raise ValueError('Codex CLI missing. Install/authenticate Codex or configure a custom validator.')
         return run_codex_json(path,root,review_dir,name,prompt,schema,checker,timeout)
 
+    def review_argv(self,root:Path,prompt:str)->list[str]:
+        """Argv for a live, streamed review (ai review --launch): interactive-ish
+        output straight to the terminal, unlike verdict()'s schema-checked run_codex_json."""
+        return [self.executable,*CODEX_READONLY_SANDBOX,'-C',str(root),prompt]
+
 
 class CommandReviewer:
     """A configured command that reads the prompt on stdin and returns one JSON line.
@@ -91,6 +100,9 @@ class CommandReviewer:
         self.probe_binary=command[0] if command else None
 
     def available(self)->bool: return bool(self.command) and bool(shutil.which(self.command[0]))
+
+    def review_argv(self,root:Path,prompt:str)->list[str]:
+        raise ValueError('command reviewers are not read-only; cannot launch a review')
 
     def verdict(self,root,review_dir,name,prompt,schema,checker,timeout=None):
         if not self.available(): raise ValueError(f'Reviewer command not executable: {" ".join(self.command)}')
@@ -120,7 +132,7 @@ def run_codex_json(executable:str,root:Path,review_dir:Path,name:str,prompt:str,
         try:
             with events.open('w') as output:
                 try:
-                    result=subprocess.run([executable,'exec','-s','read-only',
+                    result=subprocess.run([executable,*CODEX_READONLY_SANDBOX,
                         '-c','approval_policy="never"','--ephemeral','--json',
                         '--output-schema',str(schema_path),'--output-last-message',str(final),'-'],
                         input=prompt,text=True,cwd=root,stdout=output,stderr=subprocess.STDOUT,timeout=timeout)

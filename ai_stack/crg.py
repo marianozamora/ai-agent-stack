@@ -212,9 +212,10 @@ def cmd_review(args):
         if not active_reviewer.probe_binary or not shutil.which(active_reviewer.probe_binary):
             label=active_reviewer.name.capitalize()
             raise SystemExit(f'{label} CLI missing. Review prompt was prepared; rerun with {label} installed.')
-        # Codex exec supports a read-only sandbox. The CRG external-data environment
-        # is inherited so the reviewer can query the graph without touching the repo.
-        codex=active_reviewer.executable
+        # The active reviewer builds its own argv for a live, streamed launch --
+        # never a hardcoded command here, so any read-only reviewer works, not
+        # just Codex. The CRG external-data environment is inherited so the
+        # reviewer can query the graph without touching the repo.
         env=crg_env(state)
-        p=subprocess.run([codex,'exec','-s','read-only','-C',str(review_root),prompt],cwd=review_root,env=env)
+        p=subprocess.run(active_reviewer.review_argv(review_root,prompt),cwd=review_root,env=env)
         raise SystemExit(p.returncode)

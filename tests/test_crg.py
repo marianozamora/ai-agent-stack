@@ -344,6 +344,29 @@ class CmdReviewLaunchReviewerTests(unittest.TestCase):
             crg.cmd_review(self._args(launch=False))
         self.assertTrue(any('Review context:' in str(a[0]) for a in buf if a))
 
+    def test_launch_uses_the_reviewers_own_argv_not_a_hardcoded_codex_command(self):
+        # cmd_review must launch whatever argv the active (read-only) reviewer
+        # builds for itself -- not a Codex invocation baked into crg.py. A fake
+        # read-only reviewer with its own review_argv() proves the launch path
+        # is generic: it's safe today only because CodexReviewer is the sole
+        # read_only provider, and this breaks the moment another one is.
+        class FakeReadOnlyReviewer:
+            name = 'fake'; read_only = True; executable = 'fake-exe'; probe_binary = 'fake-exe'
+            def available(self): return True
+            def review_argv(self, root, prompt):
+                return [sys.executable, '-c', 'import sys; sys.exit(0)']
+
+        fake = FakeReadOnlyReviewer()
+
+        def fake_which(name):
+            return '/usr/bin/fake-exe' if name == 'fake-exe' else None
+
+        with mock.patch.object(crg, 'get_reviewer', return_value=fake), \
+                mock.patch.object(crg.shutil, 'which', side_effect=fake_which):
+            with self.assertRaises(SystemExit) as caught:
+                crg.cmd_review(self._args())
+        self.assertEqual(caught.exception.code, 0)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -117,6 +117,17 @@ class CodexReviewerTests(unittest.TestCase):
     def test_probe_binary_matches_executable(self):
         self.assertEqual(providers.CodexReviewer.probe_binary, providers.CodexReviewer.executable)
 
+    def test_review_argv_builds_the_readonly_launch_command(self):
+        reviewer = providers.CodexReviewer()
+        argv = reviewer.review_argv(Path('/repo'), 'the prompt')
+        self.assertEqual(argv, ['codex', 'exec', '-s', 'read-only', '-C', '/repo', 'the prompt'])
+
+    def test_review_argv_shares_the_readonly_sandbox_flags_with_run_codex_json(self):
+        # Both launch paths must agree that the sandbox is read-only; they read the
+        # shared flags from one place so they can't silently drift apart.
+        argv = providers.CodexReviewer().review_argv(Path('/repo'), 'p')
+        self.assertEqual(argv[1:4], providers.CODEX_READONLY_SANDBOX)
+
 
 class CommandReviewerTests(unittest.TestCase):
     def setUp(self):
@@ -208,6 +219,15 @@ class CommandReviewerTests(unittest.TestCase):
             reviewer.verdict(Path('.'), self.review_dir, 'cleanup', 'prompt',
                              validators.SCHEMA, _checker, 10)
         self.assertIn('not executable', str(caught.exception))
+
+    def test_review_argv_refuses_since_it_is_not_read_only(self):
+        # A CommandReviewer can never guarantee read-only sandboxing, so a live,
+        # streamed launch (ai review --launch) must refuse it outright rather
+        # than run an arbitrary command directly against the checkout.
+        reviewer = providers.CommandReviewer(['/bin/echo'])
+        with self.assertRaises(ValueError) as caught:
+            reviewer.review_argv(Path('.'), 'prompt')
+        self.assertIn('not read-only', str(caught.exception))
 
 
 class RunCodexJsonTests(unittest.TestCase):
