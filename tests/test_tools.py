@@ -137,6 +137,15 @@ class CmdDocsDoctorTests(unittest.TestCase):
 
 
 class CmdDocsSetupTests(unittest.TestCase):
+    def setUp(self):
+        # cmd_docs() calls git_root()+repo_state() unconditionally before branching on
+        # docs_cmd, so a bare `patch('tools.subprocess.run', ...)` below -- which patches
+        # the process-wide subprocess module, not just tools.py's reference to it -- would
+        # also intercept core.run()'s `git rev-parse`/`git remote get-url` calls whenever
+        # this repo's cwd/root isn't already cached from an earlier test. _sandbox() gives
+        # each test its own repo and warms both caches before any patch is applied.
+        self.root, self.state = _sandbox(self)
+
     def test_missing_ctx7_raises(self):
         with patch('tools.shutil.which', return_value=None):
             with self.assertRaises(SystemExit) as caught:

@@ -193,6 +193,7 @@ class RegressionGuardAstTests(unittest.TestCase):
     # name -> why it is not curation of what a gate/validator reads or who judges it.
     ALLOWLIST = {
         'cmd_start': 'creates/opens a task workspace, not curated prompt context',
+        'cmd_close': 'closes a task workspace (reclaiming a stale lock along the way), not curated prompt context',
         'cmd_planrun': 'runs the plan/gate/build loop itself, does not curate context',
         'cmd_ticket': 'writes the task ticket the human is drafting, not gate input',
         'cmd_handoff': 'writes a handoff note for a human, not gate/validator input',
