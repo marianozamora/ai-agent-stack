@@ -373,6 +373,62 @@ class CmdValidatorsTests(unittest.TestCase):
         self.assertEqual(set(config['validators']), set(INSTRUCTIONS) - {victim})
 
 
+class CmdValidatorsProposeTests(unittest.TestCase):
+    """cmd_validators(action='propose') -- what `ai finish` tells the user to run,
+    previously untested. Detection needs real, available tooling (ai_stack/detect.py),
+    so this sandbox commits a pyproject.toml with a [tool.ruff] section (checks) and a
+    tests/test_*.py file (regression) -- both ruff and python3 are on PATH wherever
+    this suite runs."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        (self.root / 'pyproject.toml').write_text('[tool.ruff]\nline-length = 100\n')
+        (self.root / 'tests').mkdir()
+        (self.root / 'tests' / 'test_sample.py').write_text('def test_ok():\n    assert True\n')
+        _git(self.root, 'add', '.')
+        _git(self.root, 'commit', '-qm', 'add detectable tooling')
+        # detect.detect() marks a match 'available' only if its binary is actually on
+        # PATH; this test only cares that config detection wires up correctly, not
+        # whether ruff/pytest happen to be installed in whatever environment the
+        # suite runs under (e.g. CI's quick-test job never installs ruff), so every
+        # queried binary is reported present.
+        which_patcher = mock.patch('detect.shutil.which', return_value='/usr/bin/true')
+        which_patcher.start()
+        self.addCleanup(which_patcher.stop)
+
+    def _run(self, **ns):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gates.cmd_validators(argparse.Namespace(action='propose', **ns))
+        return buf.getvalue()
+
+    def test_without_apply_nothing_is_written(self):
+        out = self._run(json=False, apply=False)
+        self.assertIn('Nothing written', out)
+        self.assertFalse((self.state / 'validators.json').exists())
+
+    def test_apply_writes_checks_and_regression(self):
+        out = self._run(json=False, apply=True)
+        self.assertIn('Applied:', out)
+        self.assertIn('checks', out)
+        self.assertIn('regression', out)
+        config = json.loads((self.state / 'validators.json').read_text())
+        self.assertIn('checks', config['validators'])
+        self.assertIn('regression', config['validators'])
+
+    def test_a_second_apply_has_nothing_left_to_add(self):
+        self._run(json=False, apply=True)
+        out = self._run(json=False, apply=True)
+        self.assertIn('Applied: nothing to add', out)
+
+    def test_json_output_is_valid_json(self):
+        out = self._run(json=True, apply=False)
+        report = json.loads(out)
+        self.assertIn('rows', report)
+        gates_seen = {row['gate'] for row in report['rows']}
+        self.assertEqual(gates_seen, {'checks', 'regression'})
+
+
 class CmdValidateGuardTests(unittest.TestCase):
     """cmd_validate(args) -- guard paths that raise before Codex is invoked."""
 
@@ -561,6 +617,56 @@ class RunGateFingerprintReuseTests(unittest.TestCase):
         # One computation for cmd_pipeline's own --resume check (reused as `before`),
         # one for run_gate's `after` -- never a third, separate `before`.
         self.assertEqual(len(calls), 2)
+
+
+class PipelineValidatorConfigChangeTests(unittest.TestCase):
+    """cmd_pipeline() re-reads validator_config() before every gate in `required` and
+    stops with NEEDS_HUMAN the moment it differs from what the run started with
+    (gates.py, inside the `for name in required` loop) -- this is what protects a
+    multi-gate pipeline from finishing a run against config a prior gate silently
+    changed (the subprocess-level version of this is
+    tests/test_workflow.py::test_a_validator_that_mutates_validators_json_fails_its_own_gate,
+    which goes through the persistent-write path instead of a mock)."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        self.config = {'version': 1, 'validators': {
+            'checks': {'command': ['true'], 'adapter': 'exit-code', 'evidence': 'ok', 'timeout': 30},
+            'regression': {'command': ['true'], 'adapter': 'exit-code', 'evidence': 'ok', 'timeout': 30}}}
+        core.save_json(self.state / 'validators.json', self.config)
+        self.changed = {'version': 1, 'validators': {
+            'checks': self.config['validators']['checks'],
+            'regression': {'command': ['false'], 'adapter': 'exit-code', 'evidence': 'ok', 'timeout': 30}}}
+
+    def test_config_changing_mid_run_stops_the_pipeline(self):
+        # Call order inside cmd_pipeline: (1) its own top-of-function read into
+        # `config`, (2) the loop's pre-gate check for 'checks' (must still match, so
+        # that gate runs), (3) the loop's pre-gate check for 'regression' (now
+        # different -> NEEDS_HUMAN before 'regression' ever runs).
+        side_effect = [self.config, self.config, self.changed]
+        with mock.patch.object(gates, 'validator_config', side_effect=side_effect), \
+                mock.patch.object(gates, 'required_gates', return_value=['checks', 'regression']), \
+                mock.patch.object(gates, 'cmd_ready') as ready:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as caught:
+                gates.cmd_pipeline(argparse.Namespace(dry_run=False, resume=False, allow_overrun=False,
+                                                       force_unlock=False))
+            ready.assert_not_called()
+        self.assertIn('NEEDS_HUMAN: validator configuration changed; rerun pipeline.', str(caught.exception))
+        record = core.load_json(core.task_state(self.state) / 'gates/checks.json', {})
+        self.assertTrue(record.get('passed'), 'the gate before the config change should still have run and passed')
+        self.assertFalse((core.task_state(self.state) / 'gates/regression.json').exists())
+
+    def test_unchanged_config_runs_the_whole_pipeline(self):
+        with mock.patch.object(gates, 'validator_config', return_value=self.config), \
+                mock.patch.object(gates, 'required_gates', return_value=['checks', 'regression']), \
+                mock.patch.object(gates, 'cmd_ready') as ready:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                gates.cmd_pipeline(argparse.Namespace(dry_run=False, resume=False, allow_overrun=False,
+                                                       force_unlock=False))
+            ready.assert_called_once()
 
 
 class RetryBudgetTests(unittest.TestCase):

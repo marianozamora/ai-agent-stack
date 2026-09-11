@@ -342,8 +342,11 @@ def task_state(state:Path)->Path:
 
 
 def safe_head(root:Path)->str:
+    # run() raises RuntimeError when git runs and fails (e.g. no commits yet) and
+    # OSError/FileNotFoundError when the git binary itself is missing; a bare
+    # `except:` also swallowed KeyboardInterrupt, which must still propagate.
     try:return run(["git","rev-parse","HEAD"],cwd=root)
-    except:return ""
+    except (RuntimeError,OSError):return ""
 
 
 def enforce_budget(text:str,limit:int,label:str):

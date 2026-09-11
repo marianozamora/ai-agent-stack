@@ -994,6 +994,70 @@ if mode=='exit': sys.exit(2)
         self.assertIn('README.md', output)
         self.assertNotIn('No deployment tooling', output)
 
+    def test_pipeline_cost_budget_stops_before_the_token_budget_does(self):
+        # 'standard' caps usage_cost_usd at $1.50 (ai_stack/core.py context_caps);
+        # keep tokens far under its 120000 budget so only cost trips the stop.
+        # A non-fast profile always requires 'review' too (required_gates).
+        self.plan('--profile', 'standard')
+        self.configure_pipeline()
+        self.ai('validators', 'set', 'review', '--', sys.executable, '-c',
+                'import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"]}))')
+        costly_script = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
+                         '"usage":{"input_tokens":10,"output_tokens":5,"cost_usd":2.00}}))')
+        self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', costly_script)
+        output = self.ai('pipeline', ok=False)
+        self.assertIn('BUDGET_EXCEEDED', output)
+        self.assertIn('crossed at:  cleanup', output)
+        self.assertIn('reported cost', output)
+        self.assertIn('not run:', output)
+        task_dir = Path(self.ai('path').strip())
+        run = json.loads((task_dir / 'state/pipeline-run.json').read_text())
+        self.assertEqual(run['overrun_dimension'], 'cost_usd')
+
+    def test_pipeline_allow_overrun_ignores_the_cost_budget(self):
+        self.plan('--profile', 'standard')
+        self.configure_pipeline()
+        self.ai('validators', 'set', 'review', '--', sys.executable, '-c',
+                'import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"]}))')
+        costly_script = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
+                         '"usage":{"input_tokens":10,"output_tokens":5,"cost_usd":2.00}}))')
+        self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', costly_script)
+        output = self.ai('pipeline', '--allow-overrun')
+        self.assertIn('PR_READY', output)
+        self.assertNotIn('BUDGET_EXCEEDED', output)
+
+    def test_pipeline_names_tokens_when_both_budgets_are_crossed(self):
+        # crossed() checks tokens before cost_usd, so when a gate's usage crosses
+        # both at once the stop is reported in tokens -- the documented order.
+        self.plan('--profile', 'standard')
+        self.configure_pipeline()
+        self.ai('validators', 'set', 'review', '--', sys.executable, '-c',
+                'import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"]}))')
+        both_script = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
+                       '"usage":{"input_tokens":100000,"output_tokens":30000,"cost_usd":2.00}}))')
+        self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', both_script)
+        output = self.ai('pipeline', ok=False)
+        self.assertIn('BUDGET_EXCEEDED', output)
+        self.assertIn('crossed at:  cleanup', output)
+        self.assertIn('reported tokens', output)
+        self.assertNotIn('reported cost', output)
+
+    def test_a_validator_that_mutates_validators_json_fails_its_own_gate(self):
+        """The persistent-manipulation scenario A's human-only guard closes off:
+        evidence_fingerprint() folds state/validators.json into its digest (alongside
+        rules.json, prompt-overrides.json, ...), so a validator that writes its own
+        config mid-run changes the after-fingerprint against the before one computed
+        for this same gate, and the gate fails closed instead of recording a PASS
+        against tampered evidence."""
+        self.plan()
+        self.configure_pipeline()
+        mutating_script = ('import os, json; '
+                           'open(os.environ["AI_REPO_STATE"] + "/validators.json", "w").write("{}"); '
+                           'print(json.dumps({"status":"PASS","evidence":["fixture validated"]}))')
+        output = self.ai('gate', 'checks', '--', sys.executable, '-c', mutating_script, ok=False)
+        self.assertIn('checks: FAIL', output)
+        self.assertIn('Repository or task changed during gate', output)
+
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
