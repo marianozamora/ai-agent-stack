@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, shutil, subprocess, time
+import json, os, shutil, subprocess, sys, time
 from pathlib import Path
 from core import git_root, load_json, profile_repo, repo_state, run, save_json, shasum
 
@@ -37,11 +37,16 @@ def cmd_docs(args):
         q=args.query or f"Documentation for {args.name} used by this repository"
         out=run(cmd+['library',args.name,q,'--json'],cwd=root)
         print(out)
+        saved=False
         try:
             arr=json.loads(out); best=arr[0] if isinstance(arr,list) and arr else None
             if best and best.get('id'):
                 m=load_json(state/'context7-libraries.json',{}); m[args.name]={"id":best['id'],"resolved_at":int(time.time())}; save_json(state/'context7-libraries.json',m)
-        except Exception: pass
+                saved=True
+        except (ValueError,TypeError,AttributeError,KeyError): pass
+        if not saved:
+            print(f'Could not resolve a Context7 ID for {args.name} from ctx7 output; '
+                  'pass the full /org/project ID to ai docs query.',file=sys.stderr)
         return
     if args.docs_cmd=='query':
         lib=args.library
