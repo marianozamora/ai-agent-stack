@@ -494,6 +494,22 @@ to `rules.json` with `source: "lesson"` and retires the lesson, so a durable
 observation graduates into the one always-injected normative store instead of
 lessons and rules becoming two competing prompt-injection paths.
 
+The same `require_human()` guard also covers every other command that writes
+what a gate/validator is told or who judges it: `ai rules add`/`remove`
+(`repo.cmd_rules`), `ai validators set`/`install`/`remove` and `propose
+--apply` (`gates.cmd_validators` — `propose` without `--apply` and `show`
+stay read-only), `ai providers set` (`providers.cmd_providers` — the plain
+view and `doctor` stay read-only), `ai capabilities enable`/`disable`
+(`capabilities.cmd_capabilities`), and `ai skill enable`/`disable`/`create`
+(`skills.cmd_skill`/`cmd_skill_create` — `list`/`explain`/`dry-run`/`upstream`
+stay read-only). Without this, a validator could run `ai validators set
+regression -- true` on itself, have its own gate fail on the resulting
+fingerprint mismatch, and leave `validators.json` modified for whoever
+re-launches the pipeline next. `tests/test_human_only_guard.py` covers all of
+these plus a static AST check: any new `cmd_*` handler that writes
+(`save_json`/`.write_text(`/`.unlink(`) without calling `require_human()` must
+be named in that test's explicit allowlist with a reason, or the test fails.
+
 ## Deep repository profile (`ai profile --deep`)
 
 `profile_repo()` (called automatically by `ai plan`/`ai run` on first use) is
