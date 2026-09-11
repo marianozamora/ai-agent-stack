@@ -21,7 +21,10 @@ def _sandbox(tc):
     env = {k: v for k, v in os.environ.items() if k not in ('AI_GATE', 'AI_TASK_DIR')}
     env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'), AI_TASK_ID='review-task')
 
-    for args in (('init', '-q'), ('config', 'user.name', 'T'), ('config', 'user.email', 't@e.com')):
+    # -b main: test_pr_review_writes_to_its_own_adhoc_dir_not_the_active_tasks_state mocks
+    # resolve_pr_target() to return base='main', which must actually resolve in this repo --
+    # the runner's git default branch name is not guaranteed (CI defaults to 'master').
+    for args in (('init', '-q', '-b', 'main'), ('config', 'user.name', 'T'), ('config', 'user.email', 't@e.com')):
         subprocess.run(['git', *args], cwd=repo, check=True, capture_output=True)
     (repo / 'app.txt').write_text('initial\n')
     subprocess.run(['git', 'add', '.'], cwd=repo, check=True, capture_output=True)
