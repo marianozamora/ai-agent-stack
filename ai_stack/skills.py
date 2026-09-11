@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, re
 from pathlib import Path
-from core import STACK_ROOT, classify_task, context_caps, git_root, load_json, repo_state, run, save_json, shasum
+from core import STACK_ROOT, classify_task, context_caps, git_root, load_json, repo_state, require_human, run, save_json, shasum
 
 
 TASK_TYPES=['bug','feature','architecture','design','prototype','planning']
@@ -190,6 +190,7 @@ def cmd_skill(args):
         if p is not None: print('\n'+p.read_text().strip())
         return
     if args.skill_cmd in ('enable','disable'):
+        require_human('Skill overrides')
         o=skill_overrides(state); o[name]=(args.skill_cmd=='enable'); save_json(state/'skill-overrides.json',o)
         print(f"{name}: {'enabled' if o[name] else 'disabled'}")
         return
@@ -206,6 +207,7 @@ def cmd_skill(args):
 
 
 def cmd_skill_create(args):
+    require_human('Skill creation')
     name=args.name
     if not re.fullmatch(r'[a-z][a-z0-9-]*',name):
         raise SystemExit('Skill name must be lowercase letters, digits and hyphens, starting with a letter.')
