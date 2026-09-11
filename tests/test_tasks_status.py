@@ -78,7 +78,7 @@ class CloseOrphanedLockTests(_TaskSandbox):
 
     def test_a_stale_lock_is_reclaimed_and_the_task_closes(self):
         self.start('PROJ-1')
-        payload = self._write_lock('PROJ-1')
+        self._write_lock('PROJ-1')
         lock = self.directory('PROJ-1') / tasks.LOCK_NAME
         with patch.object(tasks, 'process_alive', return_value=False):
             tasks.cmd_close(namespace(id='PROJ-1'))
@@ -231,6 +231,94 @@ class ProcessAliveRealTests(unittest.TestCase):
         proc = subprocess.Popen(['true'])
         proc.wait()
         self.assertFalse(tasks.process_alive(proc.pid))
+
+    def test_a_permission_error_means_the_process_exists_but_is_owned_by_another_user(self):
+        with patch.object(tasks.os, 'kill', side_effect=PermissionError):
+            self.assertTrue(tasks.process_alive(1))
+
+    def test_an_invalid_pid_type_is_not_alive_rather_than_a_crash(self):
+        with patch.object(tasks.os, 'kill', side_effect=TypeError):
+            self.assertFalse(tasks.process_alive(object()))
+        with patch.object(tasks.os, 'kill', side_effect=ValueError):
+            self.assertFalse(tasks.process_alive(-1))
+
+
+class RunningTasksTests(_TaskSandbox):
+    def test_only_locked_tasks_are_listed_with_their_lock_state(self):
+        self.start('PROJ-1')
+        self.start('PROJ-2', switch=True)
+        (self.directory('PROJ-1') / tasks.LOCK_NAME).write_text(json.dumps(
+            {'pid': 999999, 'host': socket.gethostname(), 'command': 'ai gate checks', 'started_at': time.time()}))
+        with patch.object(tasks, 'process_alive', return_value=True):
+            running = tasks.running_tasks(self.state, self.repo)
+        self.assertEqual([r['id'] for r in running], ['PROJ-1'])
+        self.assertEqual(running[0]['command'], 'ai gate checks')
+        self.assertEqual(running[0]['state'], 'held')
+
+    def test_no_locks_means_an_empty_list(self):
+        self.start('PROJ-1')
+        self.assertEqual(tasks.running_tasks(self.state, self.repo), [])
+
+
+class TaskLockExhaustionTests(unittest.TestCase):
+    """The lock acquisition loop only retries once (for reclaiming a stale lock);
+    an os.open() that keeps raising FileExistsError past that must give up rather
+    than loop forever -- e.g. a rival process re-races the same lock file."""
+
+    def test_persistent_contention_gives_up_after_one_retry(self):
+        with tempfile.TemporaryDirectory(prefix='lock-exhaustion-') as d:
+            directory = Path(d)
+            with patch.object(tasks.os, 'open', side_effect=FileExistsError):
+                with patch.object(tasks, 'lock_state', return_value='stale'):
+                    with self.assertRaises(SystemExit) as caught:
+                        with tasks.task_lock(directory, 'ai pipeline'):
+                            pass
+            self.assertIn('could not acquire the task lock', str(caught.exception))
+
+
+class RestartingAClosedTaskTests(_TaskSandbox):
+    def test_starting_a_closed_task_without_resume_is_refused(self):
+        self.start('PROJ-1')
+        tasks.cmd_close(namespace(id='PROJ-1'))
+        with self.assertRaises(SystemExit) as caught:
+            self.start('PROJ-1')
+        self.assertIn('is closed', str(caught.exception))
+        self.assertIn('--resume', str(caught.exception))
+        self.assertEqual(tasks.read_task(self.state, self.repo, 'PROJ-1')['status'], 'closed')
+
+
+class CmdWorkAndCmdFinishGuardTests(_TaskSandbox):
+    """cmd_work/cmd_finish are thin composition over lifecycle.cmd_planrun /
+    gates.cmd_pipeline; their own guard clauses -- reached before either is
+    called -- are what belongs to tasks.py itself."""
+
+    def _finish_namespace(self):
+        return argparse.Namespace(no_resume=False, allow_overrun=False, force_unlock=False)
+
+    def test_work_without_an_active_task_is_refused(self):
+        with self.assertRaises(SystemExit) as caught:
+            tasks.cmd_work(argparse.Namespace(task=None, profile=None, base=None, figma=None,
+                                              no_figma=False, skill=None, ticket_file=None, plan_only=True))
+        self.assertIn('No active task', str(caught.exception))
+
+    def test_finish_without_a_plan_is_refused(self):
+        self.start('PROJ-1')
+        with self.assertRaises(SystemExit) as caught:
+            tasks.cmd_finish(self._finish_namespace())
+        self.assertIn('NEEDS_HUMAN: this task has no plan yet', str(caught.exception))
+
+    def test_finish_with_a_plan_but_no_configured_validators_is_refused(self):
+        self.start('PROJ-1')
+        directory = self.directory('PROJ-1')
+        (directory / 'state').mkdir(parents=True, exist_ok=True)
+        (directory / 'state/current-plan.json').write_text(json.dumps(
+            {'profile': 'fast', 'risk': {'risk': 'LOW', 'security': False}, 'scope': {'base': 'HEAD'}}))
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            tasks.cmd_finish(self._finish_namespace())
+        self.assertIn('NEEDS_HUMAN: no validator configured for:', buf.getvalue())
+        self.assertIn('ai validators propose --apply', buf.getvalue())
 
 
 if __name__ == '__main__':
