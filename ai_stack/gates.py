@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse, hashlib, json, os, re, shutil, sys, tempfile, time, uuid
 from pathlib import Path
 from detect import proposal, render
-from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, required_gates, run, safe_head, save_json, task_state
+from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import consecutive_gate_failures, gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
@@ -80,6 +80,7 @@ def cmd_validators(args):
             if added and not args.json:
                 print('\nNothing written. Re-run with --apply to configure the proposed gates.')
             return
+        require_human('Validator configuration')
         for row in added: config['validators'][row['gate']]=row['validator']
         validate_config(config)
         save_json(state/'validators.json',config)
@@ -87,6 +88,7 @@ def cmd_validators(args):
         print('Saved:',state/'validators.json')
         return
     if args.action=='install':
+        require_human('Validator configuration')
         for name in INSTRUCTIONS:
             existing=config['validators'].get(name)
             if existing is None or existing.get('builtin')==name:
@@ -96,6 +98,7 @@ def cmd_validators(args):
         validate_config(config)
         save_json(state/'validators.json',config)
     elif args.action=='set':
+        require_human('Validator configuration')
         command=args.command[1:] if args.command[:1]==['--'] else args.command
         config['validators'][args.name]={'command':command,'adapter':args.adapter,
             'timeout':args.timeout,'evidence':args.evidence}
@@ -103,6 +106,7 @@ def cmd_validators(args):
         except ValueError as exc: raise SystemExit(str(exc)) from exc
         save_json(state/'validators.json',config)
     elif args.action=='remove':
+        require_human('Validator configuration')
         config['validators'].pop(args.name,None)
         save_json(state/'validators.json',config)
     print(json.dumps(config,indent=2))

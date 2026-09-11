@@ -176,7 +176,7 @@ def capability_block(state:Path,detected:list[str])->str:
 
 
 def cmd_capabilities(args):
-    from core import git_root, repo_state
+    from core import git_root, repo_state, require_human
     root=git_root(); state=repo_state(root)
     registry=enabled_capabilities(state)
     if args.capabilities_cmd in (None,'list'):
@@ -190,6 +190,7 @@ def cmd_capabilities(args):
     name=args.name
     if name not in registry: raise SystemExit(f'Unknown capability: {name}')
     if args.capabilities_cmd in ('enable','disable'):
+        require_human('Capability overrides')
         o=overrides(state); o[name]=(args.capabilities_cmd=='enable'); save_json(state/'capability-overrides.json',o)
         print(f"{name}: {'enabled' if o[name] else 'disabled'}")
         return
