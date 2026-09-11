@@ -387,6 +387,14 @@ class CmdValidatorsProposeTests(unittest.TestCase):
         (self.root / 'tests' / 'test_sample.py').write_text('def test_ok():\n    assert True\n')
         _git(self.root, 'add', '.')
         _git(self.root, 'commit', '-qm', 'add detectable tooling')
+        # detect.detect() marks a match 'available' only if its binary is actually on
+        # PATH; this test only cares that config detection wires up correctly, not
+        # whether ruff/pytest happen to be installed in whatever environment the
+        # suite runs under (e.g. CI's quick-test job never installs ruff), so every
+        # queried binary is reported present.
+        which_patcher = mock.patch('detect.shutil.which', return_value='/usr/bin/true')
+        which_patcher.start()
+        self.addCleanup(which_patcher.stop)
 
     def _run(self, **ns):
         buf = io.StringIO()
