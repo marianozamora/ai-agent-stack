@@ -218,8 +218,16 @@ def cmd_close(args):
         print(f'Task {identity!r} is already closed.'); return
     lock=task_dir(state,root,identity)/'pipeline.lock'
     if lock.exists():
-        raise SystemExit(f'A pipeline is still running for {identity!r} ({lock}). '
-                         'Wait for it, or remove the lock if the process is gone.')
+        # A lock left behind by a process that no longer exists must not block close
+        # forever -- task_lock() already reclaims exactly this case for a fresh
+        # acquisition, so closing gets the same recovery instead of a permanent wedge.
+        if lock_state(load_json(lock,{}))=='stale':
+            held=load_json(lock,{})
+            print(f'Reclaiming a stale lock from pid {held.get("pid")} (no such process).')
+            lock.unlink(missing_ok=True)
+        else:
+            raise SystemExit(f'A pipeline is still running for {identity!r} ({lock}). '
+                             'Wait for it, or remove the lock if the process is gone.')
     write_task(state,root,identity,status='closed',closed_at=int(time.time()),
                close_reason=args.reason or '')
     readiness=load_json(task_dir(state,root,identity)/'state/readiness.json',{}).get('status','none')
