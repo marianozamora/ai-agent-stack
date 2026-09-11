@@ -181,9 +181,10 @@ def reviewer(state:Path)->Any:
 
 
 def cmd_providers(args):
-    from core import git_root, load_json, repo_state, save_json
+    from core import git_root, load_json, repo_state, require_human, save_json
     root=git_root(); state=repo_state(root)
     if args.providers_cmd=='set':
+        require_human('Provider selection')
         meta=load_json(state/'repo.json',{})
         settings=meta.get('providers') if isinstance(meta.get('providers'),dict) else {}
         if args.builder:
