@@ -373,6 +373,54 @@ class CmdValidatorsTests(unittest.TestCase):
         self.assertEqual(set(config['validators']), set(INSTRUCTIONS) - {victim})
 
 
+class CmdValidatorsProposeTests(unittest.TestCase):
+    """cmd_validators(action='propose') -- what `ai finish` tells the user to run,
+    previously untested. Detection needs real, available tooling (ai_stack/detect.py),
+    so this sandbox commits a pyproject.toml with a [tool.ruff] section (checks) and a
+    tests/test_*.py file (regression) -- both ruff and python3 are on PATH wherever
+    this suite runs."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        (self.root / 'pyproject.toml').write_text('[tool.ruff]\nline-length = 100\n')
+        (self.root / 'tests').mkdir()
+        (self.root / 'tests' / 'test_sample.py').write_text('def test_ok():\n    assert True\n')
+        _git(self.root, 'add', '.')
+        _git(self.root, 'commit', '-qm', 'add detectable tooling')
+
+    def _run(self, **ns):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gates.cmd_validators(argparse.Namespace(action='propose', **ns))
+        return buf.getvalue()
+
+    def test_without_apply_nothing_is_written(self):
+        out = self._run(json=False, apply=False)
+        self.assertIn('Nothing written', out)
+        self.assertFalse((self.state / 'validators.json').exists())
+
+    def test_apply_writes_checks_and_regression(self):
+        out = self._run(json=False, apply=True)
+        self.assertIn('Applied:', out)
+        self.assertIn('checks', out)
+        self.assertIn('regression', out)
+        config = json.loads((self.state / 'validators.json').read_text())
+        self.assertIn('checks', config['validators'])
+        self.assertIn('regression', config['validators'])
+
+    def test_a_second_apply_has_nothing_left_to_add(self):
+        self._run(json=False, apply=True)
+        out = self._run(json=False, apply=True)
+        self.assertIn('Applied: nothing to add', out)
+
+    def test_json_output_is_valid_json(self):
+        out = self._run(json=True, apply=False)
+        report = json.loads(out)
+        self.assertIn('rows', report)
+        gates_seen = {row['gate'] for row in report['rows']}
+        self.assertEqual(gates_seen, {'checks', 'regression'})
+
+
 class CmdValidateGuardTests(unittest.TestCase):
     """cmd_validate(args) -- guard paths that raise before Codex is invoked."""
 

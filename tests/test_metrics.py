@@ -99,6 +99,26 @@ class MetricIndexHealthTests(unittest.TestCase):
             self.assertIn('corrupt', health)
             self.assertIn('re-indexed', health)
 
+    def test_an_index_with_fewer_rows_than_the_log_is_rebuilt(self):
+        """A row removed straight from the SQLite table (not via a metrics.jsonl
+        rewrite) leaves the sync metadata -- source_size/mtime -- believing the index
+        is already current, so _sync_metric_index() skips re-syncing on its own. Only
+        metric_index_health()'s own indexed+malformed == log_lines reconciliation
+        catches this and forces the rebuild."""
+        import sqlite3
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d)
+            (state / 'metrics.jsonl').write_text('\n'.join(
+                json.dumps({'event': 'gate', 'n': k}) for k in (1, 2, 3)) + '\n')
+            self.assertEqual(metrics.metric_index_health(state), 'OK: 3 events indexed')
+            connection = sqlite3.connect(state / 'metrics.sqlite3')
+            connection.execute('DELETE FROM events WHERE id = (SELECT MIN(id) FROM events)')
+            connection.commit()
+            connection.close()
+            health = metrics.metric_index_health(state)
+            self.assertEqual(health, 'rebuilt: index was stale; 3 events re-indexed')
+            self.assertEqual([r['n'] for r in metrics.load_metric_rows(state)[0]], [1, 2, 3])
+
 
 class RecordMetricTests(unittest.TestCase):
     """record_metric only needs task_state() to hand back a dir holding task.json

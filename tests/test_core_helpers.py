@@ -90,6 +90,26 @@ class CoreHelpersTests(unittest.TestCase):
         self.assertLess(standard['usage_tokens'], strict['usage_tokens'])
 
 
+class SafeHeadTests(unittest.TestCase):
+    """safe_head() must swallow exactly the failures core.run() can raise for a git
+    invocation (RuntimeError: git ran and failed; OSError/FileNotFoundError: no git
+    binary) and nothing broader -- a bare `except:` would also swallow a
+    KeyboardInterrupt raised while git is running."""
+
+    def test_a_failed_git_invocation_returns_empty_string(self):
+        with mock.patch.object(core, 'run', side_effect=RuntimeError('not a git repository')):
+            self.assertEqual(core.safe_head(Path('/nonexistent')), '')
+
+    def test_a_missing_git_binary_returns_empty_string(self):
+        with mock.patch.object(core, 'run', side_effect=FileNotFoundError('git')):
+            self.assertEqual(core.safe_head(Path('/nonexistent')), '')
+
+    def test_keyboard_interrupt_is_not_swallowed(self):
+        with mock.patch.object(core, 'run', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                core.safe_head(Path('/nonexistent'))
+
+
 class NormalizeRemoteTests(unittest.TestCase):
     """normalize_remote() collapses equivalent remote URLs to the same string, so
     a routine `git remote set-url` between protocols (ssh<->https) or an
