@@ -68,6 +68,13 @@ def validator_config(state):
         raise SystemExit(f'Invalid validator configuration: {exc}') from exc
 
 
+def resolved_command(item)->list[str]:
+    """A bundled validator runs the engine executing now. The path stored at install time names
+    a release directory, and releases are retained, so after an upgrade it silently kept running old code."""
+    if item.get('builtin'): return [sys.executable,str(Path(__file__).with_name('cli.py')),'validate',item['builtin']]
+    return item['command']
+
+
 def cmd_validators(args):
     root=git_root(); state=repo_state(root); config=validator_config(state)
     if args.action=='propose':
@@ -92,8 +99,7 @@ def cmd_validators(args):
         for name in INSTRUCTIONS:
             existing=config['validators'].get(name)
             if existing is None or existing.get('builtin')==name:
-                config['validators'][name]={
-                    'command':[sys.executable,str(Path(__file__).with_name('cli.py')),'validate',name],
+                config['validators'][name]={'command':resolved_command({'builtin':name}),
                     'adapter':'json','timeout':600,'evidence':None,'builtin':name}
         validate_config(config)
         save_json(state/'validators.json',config)
@@ -284,7 +290,7 @@ def cmd_pipeline(args):
                     raise SystemExit(budget_message(overrun,required,name))
                 fingerprint=evidence_fingerprint(root,state,current_plan(state))
                 record=load_json(task/'gates'/(name+'.json'),{})
-                item=config[name]
+                item={**config[name],'command':resolved_command(config[name])}
                 if (args.resume and record.get('passed') and intact_record(record,fingerprint)
                         and record.get('command')==item['command'] and record.get('adapter')==item['adapter']
                         ):
