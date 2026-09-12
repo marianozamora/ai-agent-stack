@@ -30,5 +30,6 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 - Automatic lesson or prompt promotion.
 - Live ticket-provider integrations and credential management.
 - Memory-provider abstractions beyond repository-local external state.
+- [Gas Town](https://github.com/gastownhall/gastown) as the parallel multi-agent layer (a candidate for the multi-repository orchestration item above). Deferred because its always-on coordinator/supervisor sessions multiply token spend, it writes `.claude/`, `.beads/` and worktrees into managed repositories, and its merge queue lands to `main` unattended. If revisited, the thin integration is its Refinery's `test_command`/`lint_command`/`typecheck_command` pointed at this stack's deterministic checks, with `merge_strategy = "pr"` and `require_review = true` so a human still merges.
 
 These remain deferred until real-repository usage shows that their operational value exceeds their complexity and security cost.
