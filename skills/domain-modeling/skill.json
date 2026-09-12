@@ -1,0 +1,34 @@
+{
+  "name": "domain-modeling",
+  "version": 1,
+  "category": "elicitation",
+  "cost": "low",
+  "priority": 55,
+  "task_types": [
+    "feature",
+    "architecture",
+    "design"
+  ],
+  "triggers": [
+    "domain model",
+    "domain modeling",
+    "ubiquitous language",
+    "context.md",
+    "modelo de dominio",
+    "glosario de dominio"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "challenge glossary",
+    "sharpen fuzzy terms",
+    "test with scenarios",
+    "cross-reference code",
+    "update CONTEXT.md inline",
+    "offer ADR sparingly"
+  ],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/engineering/domain-modeling/SKILL.md",
+    "adaptation": "curated"
+  }
+}

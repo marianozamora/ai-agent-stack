@@ -1,0 +1,29 @@
+{
+  "name": "to-questionnaire",
+  "version": 1,
+  "category": "elicitation",
+  "cost": "low",
+  "priority": 45,
+  "task_types": [
+    "planning",
+    "feature"
+  ],
+  "triggers": [
+    "questionnaire",
+    "async questionnaire",
+    "cuestionario",
+    "encuesta asíncrona"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "scope the send",
+    "identify the gap",
+    "draft questions",
+    "write questionnaire file"
+  ],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/productivity/to-questionnaire/SKILL.md",
+    "adaptation": "curated"
+  }
+}

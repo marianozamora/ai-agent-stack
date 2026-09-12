@@ -772,5 +772,191 @@
       "research",
       "tdd"
     ]
+  },
+  {
+    "task": "code review since main before merging",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "code-review"
+    ],
+    "standard": [
+      "code-review",
+      "tdd"
+    ],
+    "strict": [
+      "code-review",
+      "tdd"
+    ]
+  },
+  {
+    "task": "revisar el pr de pagos antes de mergear",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "code-review"
+    ],
+    "standard": [
+      "code-review",
+      "tdd"
+    ],
+    "strict": [
+      "code-review",
+      "tdd"
+    ]
+  },
+  {
+    "task": "just tidy the code, nothing else",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "sharpen the domain model for orders before we design this",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "domain-modeling"
+    ],
+    "standard": [
+      "domain-modeling",
+      "tdd"
+    ],
+    "strict": [
+      "domain-modeling",
+      "tdd"
+    ]
+  },
+  {
+    "task": "hazme un modelo de dominio para el checkout",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "domain-modeling"
+    ],
+    "standard": [
+      "domain-modeling",
+      "tdd"
+    ],
+    "strict": [
+      "domain-modeling",
+      "tdd"
+    ]
+  },
+  {
+    "task": "add a new field to the user table",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "turn this into an async questionnaire for the vendor",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "to-questionnaire"
+    ],
+    "standard": [
+      "to-questionnaire",
+      "tdd"
+    ],
+    "strict": [
+      "to-questionnaire",
+      "tdd"
+    ]
+  },
+  {
+    "task": "necesito armar un cuestionario para el proveedor",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "to-questionnaire"
+    ],
+    "standard": [
+      "to-questionnaire",
+      "tdd"
+    ],
+    "strict": [
+      "to-questionnaire",
+      "tdd"
+    ]
+  },
+  {
+    "task": "just send them a quick message asking",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "do an architecture review of the billing module",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "codebase-design"
+    ],
+    "strict": [
+      "wayfinder",
+      "codebase-design",
+      "improve-codebase-architecture"
+    ]
+  },
+  {
+    "task": "haz una auditoría de arquitectura del módulo de pagos",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "improve-codebase-architecture"
+    ],
+    "strict": [
+      "wayfinder",
+      "improve-codebase-architecture",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "just add a new field to the config",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
   }
 ]

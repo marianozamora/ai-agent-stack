@@ -1,0 +1,34 @@
+{
+  "name": "code-review",
+  "version": 1,
+  "category": "quality",
+  "cost": "medium",
+  "priority": 75,
+  "task_types": [
+    "bug",
+    "feature",
+    "architecture"
+  ],
+  "triggers": [
+    "code review",
+    "review since",
+    "review the diff",
+    "review this branch",
+    "review my pr",
+    "revisar el pr",
+    "revisión de código"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "pin fixed point",
+    "identify spec and standards sources",
+    "apply smell baseline",
+    "parallel standards + spec subagents",
+    "aggregate without reranking"
+  ],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/engineering/code-review/SKILL.md",
+    "adaptation": "curated"
+  }
+}
