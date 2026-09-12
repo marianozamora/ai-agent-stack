@@ -8,7 +8,7 @@
   "acceptance": ["fmt() returns a string"],
   "synthetic": {
     "cleanup": {"status": "PASS", "evidence": ["No debug residue"],
-                "usage": {"input_tokens": 30000, "output_tokens": 20000}}
+                "usage": {"input_tokens": 150000, "output_tokens": 20000}}
   },
   "expect": {"risk": "LOW", "readiness": "NEEDS_HUMAN",
              "pipeline_message_contains": "BUDGET_EXCEEDED"}
