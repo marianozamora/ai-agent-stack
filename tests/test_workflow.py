@@ -581,7 +581,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertIn('configure validators',self.ai('pipeline',ok=False))
         self.configure_pipeline()
         preview=json.loads(self.ai('pipeline','--dry-run'))
-        self.assertEqual(preview['order'][:4],['checks','regression','contract','cleanup'])
+        self.assertEqual(preview['order'],['checks','regression','contract','summary','cleanup','ponytail','provenance'])
         self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],0)
         self.assertIn('PR_READY',self.ai('pipeline'))
         report=json.loads(self.ai('metrics','--json'))
@@ -677,10 +677,10 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertIn('crossed at:  cleanup', output)
         self.assertIn('not run:', output)
         report = json.loads(self.ai('metrics', '--json'))
-        # checks, regression and contract run (and report 12 input tokens each) before cleanup.
-        self.assertEqual(report['gate_attempts'], 4)
+        # checks, regression, contract and summary run (and report 12 input tokens each) before cleanup.
+        self.assertEqual(report['gate_attempts'], 5)
         self.assertEqual(report['pipeline_budget_exceeded'], 1)
-        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 150036)
+        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 150048)
 
     def test_pipeline_refuses_an_empty_contract_before_any_gate_runs(self):
         self.plan()
@@ -742,7 +742,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.ai('validators','set','cleanup','--',sys.executable,'-c',
                 'open("app.txt","w").write("changed"); print(\'{"status":"PASS","evidence":["fixture"]}\')')
         self.assertIn('changed during gate',self.ai('pipeline',ok=False))
-        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],4)
+        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],5)
         (self.repo/'auth').mkdir()
         (self.repo/'auth/token.py').write_text('token = 1')
         output=self.ai('pipeline',ok=False)
@@ -769,6 +769,8 @@ value={'status':mode if mode in ('PASS','FAIL','NEEDS_HUMAN') else 'PASS',
        'evidence':['app.txt:1 inspected fixture'], 'findings':[],
        'summary_markdown':'# Fixture change\\nVerified fixture tests.' if name=='summary' else ''}
 if mode=='contradiction': value['findings']=['app.txt:1 unresolved blocker']
+schema=json.loads(Path(args[args.index('--output-schema')+1]).read_text())
+if 'status' not in schema['required']: value={gate:dict(value) for gate in schema['required']}
 if mode!='missing': Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))
 print(json.dumps({'type':'turn.completed','usage':{'input_tokens':10,'output_tokens':2}}))
 if mode=='exit': sys.exit(2)
@@ -796,12 +798,13 @@ if mode=='exit': sys.exit(2)
         self.assertEqual(config['validators']['checks']['adapter'],'exit-code')
         self.assertIn('PR_READY',self.ai('pipeline'))
         self.assertEqual((task/'review/calls').read_text().splitlines(),
-                         ['contract','cleanup','ponytail','summary','provenance'])
+                         ['contract','summary','cleanup'])
         self.assertTrue((task/'state/pr-summary.md').is_file())
         report=json.loads(self.ai('metrics','--json'))
-        self.assertEqual(report['usage']['input_tokens']['reported_total'],50)
+        self.assertEqual(report['usage']['input_tokens']['reported_total'],30)
+        self.assertTrue(json.loads((task/'gates/provenance.json').read_text())['passed'])
         self.ai('pipeline','--resume')
-        self.assertEqual(len((task/'review/calls').read_text().splitlines()),5)
+        self.assertEqual(len((task/'review/calls').read_text().splitlines()),3)
         (task/'state/pr-summary.md').write_text('tampered')
         self.assertIn('summary',self.ai('ready',ok=False))
         self.assertIn('PR_READY',self.ai('pipeline','--resume'))
@@ -845,7 +848,7 @@ if mode=='exit': sys.exit(2)
         self.assertIn('review',calls)
         self.assertIn('security',calls)
         self.assertIn('design',calls)
-        self.assertEqual(calls[-2:],['summary','provenance'])
+        self.assertEqual(calls[-2:],['summary','cleanup'])
 
     def test_init_reports_repository_state_and_languages(self):
         output = self.ai('init')

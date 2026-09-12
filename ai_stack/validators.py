@@ -48,6 +48,22 @@ def check_verdict(value: Any, name: str) -> dict[str, Any]:
     return value
 
 
+# Judged by one reviewer call: each starts from the same diff, contract and logs, so
+# separate calls re-read that context three times for three independent verdicts.
+BUNDLE = ('cleanup', 'ponytail', 'provenance')
+
+
+def bundle_schema(names) -> dict[str, Any]:
+    return {'type': 'object', 'additionalProperties': False, 'required': list(names),
+            'properties': {name: SCHEMA for name in names}}
+
+
+def check_bundle(value: Any, names) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != set(names):
+        raise ValueError('Bundled validator response must hold exactly one verdict per gate.')
+    return {name: check_verdict(value[name], name) for name in names}
+
+
 def intact_record(record, fingerprint):
     if not isinstance(record, dict) or record.get('fingerprint') != fingerprint:
         return False

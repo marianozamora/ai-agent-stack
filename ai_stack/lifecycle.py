@@ -148,7 +148,7 @@ Context budget:
 {capability_block(state,detected_capabilities)}
 
 Correctness pipeline:
-Builder -> deterministic checks -> regression check -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> Cleanup -> checks -> provenance gate -> Ponytail -> PR summary.
+Builder -> deterministic checks -> regression check -> contract -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> PR summary -> one combined cleanup/ponytail/provenance review.
 Ponytail judges project-specific quality; it does not impose SOLID or FP contrary to repo conventions.
 Cleanup removes AI provenance/references and unnecessary comments without changing behavior.
 If a gate passes, return only its compact PASS contract unless more detail is required by a failure.
