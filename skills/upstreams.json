@@ -58,6 +58,26 @@
           "path": "skills/misc/git-guardrails-claude-code/SKILL.md",
           "adaptation": "curated",
           "prompt_sha256": "27ee07ee1057ac6b97eab6183f27f366399c3250af8b61df02e590efa2b4fc9b"
+        },
+        "code-review": {
+          "path": "skills/engineering/code-review/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "3d46ca27af61df415666e55be5d0e020ff87b22bdae02b97f80ba3a549260e1b"
+        },
+        "domain-modeling": {
+          "path": "skills/engineering/domain-modeling/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "e66485a238a2e7a9de4397b24787c2185b872747b1c1a42cdf9cc79842e7a752"
+        },
+        "to-questionnaire": {
+          "path": "skills/productivity/to-questionnaire/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "f7dc1e85686214c5cd6b2e5351fe0459626d3135447287f432968703b8a1103c"
+        },
+        "improve-codebase-architecture": {
+          "path": "skills/engineering/improve-codebase-architecture/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "9063f25f67a000fa2831538ee848afad3c5a43ad1330141568e4431031d30ec0"
         }
       }
     }

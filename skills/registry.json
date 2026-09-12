@@ -22,7 +22,7 @@
         "timeout",
         "fallo",
         "falla",
-        "excepción",
+        "excepci\u00f3n",
         "se rompe"
       ],
       "stages": [
@@ -45,7 +45,7 @@
         "handoff",
         "continue tomorrow",
         "switch model",
-        "continuar mañana",
+        "continuar ma\u00f1ana",
         "traspaso"
       ],
       "stages": [
@@ -117,8 +117,8 @@
         "redesign",
         "multi-repo",
         "arquitectura",
-        "migración",
-        "rediseño"
+        "migraci\u00f3n",
+        "redise\u00f1o"
       ],
       "stages": [
         "open decisions",
@@ -142,7 +142,7 @@
         "regression",
         "prueba",
         "comportamiento",
-        "regresión"
+        "regresi\u00f3n"
       ],
       "always_consider": true,
       "stages": [
@@ -193,7 +193,7 @@
         "epic",
         "decompose",
         "break down",
-        "épica",
+        "\u00e9pica",
         "desglosa",
         "descomponer"
       ],
@@ -237,10 +237,10 @@
         "sdk",
         "dependency version",
         "api version",
-        "documentación oficial",
-        "librería",
+        "documentaci\u00f3n oficial",
+        "librer\u00eda",
         "biblioteca",
-        "versión de la api"
+        "versi\u00f3n de la api"
       ],
       "requires_trigger": true,
       "stages": [
@@ -273,7 +273,7 @@
         "obsoleta",
         "migra",
         "migrar",
-        "migración"
+        "migraci\u00f3n"
       ],
       "requires_trigger": true,
       "stages": [
@@ -309,9 +309,9 @@
         "slo",
         "alerting",
         "observabilidad",
-        "telemetría",
+        "telemetr\u00eda",
         "trazas",
-        "métricas",
+        "m\u00e9tricas",
         "alertas",
         "logs estructurados"
       ],
@@ -450,7 +450,7 @@
         "wizard",
         "aprovisiona",
         "credenciales",
-        "configuración manual"
+        "configuraci\u00f3n manual"
       ],
       "requires_trigger": true,
       "stages": [
@@ -492,6 +492,129 @@
       "provenance": {
         "source": "mattpocock-skills",
         "path": "skills/misc/git-guardrails-claude-code/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "code-review": {
+      "enabled": true,
+      "category": "quality",
+      "cost": "medium",
+      "priority": 75,
+      "task_types": [
+        "bug",
+        "feature",
+        "architecture"
+      ],
+      "triggers": [
+        "code review",
+        "review since",
+        "review the diff",
+        "review this branch",
+        "review my pr",
+        "revisar el pr",
+        "revisi\u00f3n de c\u00f3digo"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "pin fixed point",
+        "identify spec and standards sources",
+        "apply smell baseline",
+        "parallel standards + spec subagents",
+        "aggregate without reranking"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/engineering/code-review/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "domain-modeling": {
+      "enabled": true,
+      "category": "elicitation",
+      "cost": "low",
+      "priority": 55,
+      "task_types": [
+        "feature",
+        "architecture",
+        "design"
+      ],
+      "triggers": [
+        "domain model",
+        "domain modeling",
+        "ubiquitous language",
+        "context.md",
+        "modelo de dominio",
+        "glosario de dominio"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "challenge glossary",
+        "sharpen fuzzy terms",
+        "test with scenarios",
+        "cross-reference code",
+        "update CONTEXT.md inline",
+        "offer ADR sparingly"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/engineering/domain-modeling/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "to-questionnaire": {
+      "enabled": true,
+      "category": "elicitation",
+      "cost": "low",
+      "priority": 45,
+      "task_types": [
+        "planning",
+        "feature"
+      ],
+      "triggers": [
+        "questionnaire",
+        "async questionnaire",
+        "cuestionario",
+        "encuesta as\u00edncrona"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "scope the send",
+        "identify the gap",
+        "draft questions",
+        "write questionnaire file"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/productivity/to-questionnaire/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "improve-codebase-architecture": {
+      "enabled": true,
+      "category": "quality",
+      "cost": "medium",
+      "priority": 65,
+      "task_types": [
+        "architecture"
+      ],
+      "triggers": [
+        "architecture review",
+        "architecture audit",
+        "deepening opportunities",
+        "revisi\u00f3n de arquitectura",
+        "auditor\u00eda de arquitectura"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "scope from hot spots",
+        "apply deletion test",
+        "render before/after report",
+        "grill the chosen candidate",
+        "sync domain model and ADRs"
+      ],
+      "provenance": {
+        "source": "mattpocock-skills",
+        "path": "skills/engineering/improve-codebase-architecture/SKILL.md",
         "adaptation": "curated"
       }
     }

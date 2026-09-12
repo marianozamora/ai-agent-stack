@@ -615,7 +615,8 @@ Inspect, select, create, or audit skill sources.
 
 ```text
 usage: ai skill [-h] [--task-id TASK_ID]
-                {list,explain,enable,disable,dry-run,upstream,create} ...
+                {list,explain,enable,disable,dry-run,upstream,create,export}
+                ...
 ```
 
 ### `ai skill list`
@@ -678,6 +679,14 @@ usage: ai skill create [-h] --category CATEGORY
                        [--description DESCRIPTION] [--always-consider]
                        [--repo]
                        name
+```
+
+### `ai skill export`
+
+
+
+```text
+usage: ai skill export [-h] --out OUT [--skill SKILL]
 ```
 
 ## `ai capabilities`

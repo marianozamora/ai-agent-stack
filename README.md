@@ -17,7 +17,7 @@ Current release: see [`VERSION`](VERSION). Changes between releases are recorded
 | | |
 |---|---|
 | Runtime dependencies | none — Python 3.10+ standard library only |
-| Bundled skills | 17, resolved in a repo-over-stack cascade |
+| Bundled skills | 21, resolved in a repo-over-stack cascade |
 | Test suite | 976 tests, 390 subtests (`tests/`) |
 | Line coverage | 86% overall (`coverage report`), CI-enforced floor 81%; `ai_stack/skills.py` at 96% |
 | Codebase | ~5,800 lines across [`ai_stack/`](ai_stack) |
@@ -164,6 +164,20 @@ ai skill create house-style --repo --category quality --prompt '...'
 Routing reads only `skills/registry.json`: triggers match whole words (with plain inflections and accents folded, in English or Spanish), `task_types` and `primary_for` add type bonuses, and `requires_trigger` keeps specialist skills out unless a trigger matches.
 
 A repo-scoped skill lives in that repository's external state, not in the checkout, and may deliberately reuse a bundled skill's name to replace it here without forking the stack. Shadowing replaces the whole definition rather than merging fields.
+
+### Just the skill library
+
+Want the prompts without the routing engine, gates, or CLI? Export them as plain, standalone `SKILL.md` files any project can drop into `.claude/skills/`:
+
+```bash
+# From an installed stack:
+ai skill export --out /path/to/project/.claude/skills
+
+# Or zero-install, straight from a clone of this repository:
+python3 scripts/export_skills.py --out /path/to/project/.claude/skills
+```
+
+`--skill NAME` (repeatable) exports a subset; omitted, every enabled, selectable skill is exported, each with its own frontmatter description and any companion file it depends on (e.g. `wizard`'s `template.sh`). The result has zero dependency on this stack — it's the exact same discipline this project's own skills are curated from ([`mattpocock/skills`](https://github.com/mattpocock/skills), [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills)), just packaged for standalone use.
 
 ## Capabilities
 

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, re, sys
+import json, re, shutil, sys
 from pathlib import Path
 from core import STACK_ROOT, classify_task, context_caps, fold, git_root, load_json, repo_state, require_human, run, save_json, shasum
 
@@ -97,11 +97,14 @@ def upstream_registry()->dict:
     return data
 
 
-def skill_overrides(state:Path)->dict:
-    return load_json(state/'skill-overrides.json',{})
+def skill_overrides(state:Path|None)->dict:
+    return load_json(state/'skill-overrides.json',{}) if state is not None else {}
 
 
-def enabled_skills(state:Path)->dict:
+def enabled_skills(state:Path|None)->dict:
+    """`state=None` means no repository in play (mirrors skill_roots/skill_registry): the
+    bundled registry's own `enabled` defaults apply, with no override file to read.
+    """
     reg=skill_registry(state).get('skills',{})
     overrides=skill_overrides(state)
     out={}
@@ -235,6 +238,7 @@ def load_skill_context(state:Path|None, names:list[str], max_chars:int)->str:
 
 def cmd_skill(args):
     if args.skill_cmd=='upstream': return cmd_skill_upstream(args)
+    if args.skill_cmd=='export': return cmd_skill_export(args)
     root=git_root(); state=repo_state(root); registry=enabled_skills(state)
     if args.skill_cmd in (None,'list'):
         print('Skills')
@@ -291,6 +295,73 @@ def cmd_skill(args):
         print('  prompt:')
         print(body)
         return
+
+
+def native_frontmatter(name:str,meta:dict)->str:
+    """A description for Claude Code's native `SKILL.md` frontmatter, built mechanically
+    from registry metadata rather than freehand text: every bundled README's body currently
+    reads "This is an ai-agent-stack strategy... loaded only after the router activates it",
+    which is actively misleading once the file is copied somewhere that has no router at all.
+    """
+    parts=[f"AI Agent Stack skill (category: {meta.get('category','general')})."]
+    if meta.get('task_types'): parts.append(f"Use for {', '.join(meta['task_types'])} tasks.")
+    if meta.get('triggers'): parts.append("Typical triggers: "+', '.join(meta['triggers'])+".")
+    if meta.get('stages'): parts.append("Process: "+' -> '.join(meta['stages'])+".")
+    description=' '.join(parts).replace('"','\\"')
+    return f'---\nname: {name}\ndescription: "{description}"\n---\n'
+
+
+def export_skills(state:Path|None,out_dir:Path,names:list[str]|None=None)->list[str]:
+    """Write every selected skill as a standalone, native-format `SKILL.md` (frontmatter +
+    the prompt body) under `out_dir/<name>/SKILL.md`, so a project that wants only the
+    prompt library -- not this stack's routing, gates, or CLI -- can drop the result
+    straight into its own `.claude/skills/`. `names=None` exports every enabled,
+    selectable skill in the merged registry (bundled, plus this repo's own if `state` is
+    given); `names` restricts to exactly those, raising on an unknown one the same way
+    `select_skills`'s explicit path does. Writes only under `out_dir`, never into `state`
+    or the stack's own `skills/` -- this is the one skill operation whose entire purpose
+    is to write somewhere else on purpose.
+    """
+    registry=enabled_skills(state)
+    # selectable:false (tool-routing) is internal wiring, not a portable prompt -- rejected
+    # explicitly here the same way select_skills() rejects it as an explicit --skill request.
+    selectable={name:meta for name,meta in registry.items() if meta.get('selectable',True)}
+    if names is not None:
+        unknown=[x for x in names if x not in selectable]
+        if unknown: raise SystemExit('Unknown skill(s): '+', '.join(unknown))
+        targets=names
+    else:
+        targets=[name for name,meta in selectable.items() if meta['enabled']]
+    exported=[]
+    for name in targets:
+        meta=registry[name]
+        prompt_path=resolve_skill_file(state,name,'prompt.md')
+        if prompt_path is None:
+            print(f'Skipping {name!r}: no prompt.md found',file=sys.stderr); continue
+        body=prompt_path.read_text().strip()
+        folder=out_dir/name; folder.mkdir(parents=True,exist_ok=True)
+        (folder/'SKILL.md').write_text(native_frontmatter(name,meta)+'\n'+body+'\n')
+        # A skill's prompt can reference a companion file bundled alongside it (wizard's
+        # template.sh, git-guardrails-claude-code's block-dangerous-git.sh) -- copy every
+        # file next to the source prompt.md except our own internal skill.json/README.md,
+        # so the exported skill is actually self-contained rather than silently broken.
+        for sibling in prompt_path.parent.iterdir():
+            if sibling.name in ('prompt.md','skill.json','README.md') or not sibling.is_file(): continue
+            shutil.copy2(sibling,folder/sibling.name)
+        exported.append(name)
+    return exported
+
+
+def cmd_skill_export(args):
+    root=None; state=None
+    try: root=git_root(); state=repo_state(root)
+    except SystemExit: pass  # exporting the bundled library alone needs no repository at all
+    out_dir=Path(args.out).expanduser().resolve()
+    exported=export_skills(state,out_dir,args.skill)
+    print(f'Exported {len(exported)} skill(s) to {out_dir}:')
+    for name in exported: print(' ',name)
+    print('\nThese are plain, standalone SKILL.md files -- no dependency on this stack\'s CLI, '
+          'routing, or gates. Copy the folder into a project\'s .claude/skills/ to use them there.')
 
 
 def cmd_skill_create(args):
