@@ -761,16 +761,18 @@ assert 'approval_policy="never"' in args
 assert '--output-schema' in args and '--ephemeral' in args
 prompt=sys.stdin.read()
 assert 'Read-only review' in prompt
+def summary_text(gate): return '# Fixture change\\nVerified fixture tests.' if gate=='summary' else ''
 name=os.environ['AI_GATE']
 task=Path(os.environ['AI_TASK_DIR'])
 with (task/'review/calls').open('a') as out: out.write(name+'\\n')
 mode=os.environ.get('FAKE_VERDICT','PASS')
 value={'status':mode if mode in ('PASS','FAIL','NEEDS_HUMAN') else 'PASS',
-       'evidence':['app.txt:1 inspected fixture'], 'findings':[],
-       'summary_markdown':'# Fixture change\\nVerified fixture tests.' if name=='summary' else ''}
+       'evidence':['app.txt:1 inspected fixture'], 'findings':[], 'summary_markdown':summary_text(name)}
 if mode=='contradiction': value['findings']=['app.txt:1 unresolved blocker']
 schema=json.loads(Path(args[args.index('--output-schema')+1]).read_text())
-if 'status' not in schema['required']: value={gate:dict(value) for gate in schema['required']}
+# A bundled response needs 'summary' key's own real summary_markdown regardless of which
+# gate in the bundle actually triggered this call (the outer AI_GATE/`name`).
+if 'status' not in schema['required']: value={gate:{**value,'summary_markdown':summary_text(gate)} for gate in schema['required']}
 if mode!='missing': Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))
 print(json.dumps({'type':'turn.completed','usage':{'input_tokens':10,'output_tokens':2}}))
 if mode=='exit': sys.exit(2)
@@ -797,14 +799,16 @@ if mode=='exit': sys.exit(2)
         self.assertEqual(config,json.loads(self.ai('validators','show')))
         self.assertEqual(config['validators']['checks']['adapter'],'exit-code')
         self.assertIn('PR_READY',self.ai('pipeline'))
+        # 'summary' is bundle[0]: it alone triggers the shared call for summary/cleanup/
+        # ponytail/provenance, so only it (not 'cleanup') appears in the call log.
         self.assertEqual((task/'review/calls').read_text().splitlines(),
-                         ['contract','summary','cleanup'])
+                         ['contract','summary'])
         self.assertTrue((task/'state/pr-summary.md').is_file())
         report=json.loads(self.ai('metrics','--json'))
-        self.assertEqual(report['usage']['input_tokens']['reported_total'],30)
+        self.assertEqual(report['usage']['input_tokens']['reported_total'],20)
         self.assertTrue(json.loads((task/'gates/provenance.json').read_text())['passed'])
         self.ai('pipeline','--resume')
-        self.assertEqual(len((task/'review/calls').read_text().splitlines()),3)
+        self.assertEqual(len((task/'review/calls').read_text().splitlines()),2)
         (task/'state/pr-summary.md').write_text('tampered')
         self.assertIn('summary',self.ai('ready',ok=False))
         self.assertIn('PR_READY',self.ai('pipeline','--resume'))
@@ -848,7 +852,7 @@ if mode=='exit': sys.exit(2)
         self.assertIn('review',calls)
         self.assertIn('security',calls)
         self.assertIn('design',calls)
-        self.assertEqual(calls[-2:],['summary','cleanup'])
+        self.assertEqual(calls[-1],'summary')
 
     def test_init_reports_repository_state_and_languages(self):
         output = self.ai('init')

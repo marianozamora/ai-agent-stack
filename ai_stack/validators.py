@@ -49,8 +49,12 @@ def check_verdict(value: Any, name: str) -> dict[str, Any]:
 
 
 # Judged by one reviewer call: each starts from the same diff, contract and logs, so
-# separate calls re-read that context three times for three independent verdicts.
-BUNDLE = ('cleanup', 'ponytail', 'provenance')
+# separate calls re-read that context four times for four independent verdicts.
+# 'summary' first: it is always bundle[0] (both are unconditionally required together, see
+# core.GATES[:7]), so it is always the member that triggers the shared call in a normal
+# pipeline run, generating the PR draft the other three -- provenance especially -- judge
+# in the same response, before anything is written to disk.
+BUNDLE = ('summary', 'cleanup', 'ponytail', 'provenance')
 
 
 def bundle_schema(names) -> dict[str, Any]:
