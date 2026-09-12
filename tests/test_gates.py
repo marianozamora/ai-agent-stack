@@ -677,6 +677,32 @@ class PipelineValidatorConfigChangeTests(unittest.TestCase):
             ready.assert_called_once()
 
 
+class BundledValidatorEngineTests(unittest.TestCase):
+    """validators.json stores an absolute release path for a bundled validator; installs
+    retain old releases, so running that path after an upgrade silently used old code."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        _accept(self.state)
+
+    def test_a_builtin_resolves_to_the_running_engine_and_a_custom_command_is_untouched(self):
+        stale = {'command': ['/old/python', '/old/release-x/ai_stack/cli.py', 'validate', 'cleanup'], 'builtin': 'cleanup'}
+        self.assertEqual(gates.resolved_command(stale),
+                         [sys.executable, str(ROOT / 'ai_stack/cli.py'), 'validate', 'cleanup'])
+        self.assertEqual(gates.resolved_command({'command': ['npm', 'test']}), ['npm', 'test'])
+
+    def test_the_pipeline_runs_and_reuses_evidence_with_the_resolved_command(self):
+        stale = ['/old/python', '/old/release-x/ai_stack/cli.py', 'validate', 'cleanup']
+        core.save_json(self.state / 'validators.json', {'version': 1, 'validators': {
+            'cleanup': {'command': stale, 'adapter': 'json', 'timeout': 600, 'evidence': None, 'builtin': 'cleanup'}}})
+        with mock.patch.object(gates, 'required_gates', return_value=['cleanup']), \
+                mock.patch.object(gates, 'cmd_gate') as gate, mock.patch.object(gates, 'cmd_ready'), \
+                contextlib.redirect_stdout(io.StringIO()):
+            gates.cmd_pipeline(argparse.Namespace(dry_run=False, resume=False, allow_overrun=False, force_unlock=False))
+        self.assertEqual(gate.call_args.args[0].command, gates.resolved_command({'builtin': 'cleanup'}))
+
+
 class RetryBudgetTests(unittest.TestCase):
     """run_gate() enforces the profile's retry cap, which used to be advice rendered
     into the builder's prompt and nothing else -- so a gate could thrash indefinitely
