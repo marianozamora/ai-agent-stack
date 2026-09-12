@@ -201,6 +201,8 @@ class RegressionGuardAstTests(unittest.TestCase):
         'cmd_ready': 'writes readiness state derived from gate results, not an input to them',
         'cmd_validate': "runs only inside its own gate; stores the bundled reviewer's verdicts, not curated input",
         'cmd_clarify': 'records clarifying Q&A for the current task, not curated rules',
+        'cmd_analyze': "records a tasks file's coverage of the current task's contract, not curated rules",
+        'cmd_checklist': "writes a completeness checklist for the current task's contract, not curated rules",
         'cmd_benchmark': 'writes benchmark run output, not gate/validator input',
         'cmd_profile': 'writes the deep repo profile cache, a detection artifact not curation',
         'cmd_init': 'first-time repo scaffolding, runs before any task/gate exists',

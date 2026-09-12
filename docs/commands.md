@@ -720,6 +720,31 @@ Check the PR contract for unverifiable acceptance criteria before implementing.
 usage: ai clarify [-h] [--json] [--task-id TASK_ID]
 ```
 
+## `ai analyze`
+
+Check that a tasks file covers every acceptance criterion, and vice versa.
+
+```text
+usage: ai analyze [-h] --tasks-file TASKS_FILE [--json] [--task-id TASK_ID]
+```
+
+## `ai checklist`
+
+Generate a per-criterion completeness checklist from the PR contract.
+
+```text
+usage: ai checklist [-h] [--json] [--task-id TASK_ID]
+```
+
+## `ai tasks-to-issues`
+
+Turn a tasks file (or the contract's acceptance criteria) into GitHub issues.
+
+```text
+usage: ai tasks-to-issues [-h] [--tasks-file TASKS_FILE] [--execute] [--json]
+                          [--task-id TASK_ID]
+```
+
 ## `ai handoff`
 
 Record a compact continuation point.
