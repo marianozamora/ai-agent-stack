@@ -1,0 +1,776 @@
+[
+  {
+    "task": "latest dashboard slow",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "arregla el login que falla",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Añadir métricas y SLOs al checkout",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "observability-and-instrumentation"
+    ],
+    "standard": [
+      "observability-and-instrumentation",
+      "tdd"
+    ],
+    "strict": [
+      "observability-and-instrumentation",
+      "tdd"
+    ]
+  },
+  {
+    "task": "migrar de REST a GraphQL con deprecación",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "deprecation-and-migration"
+    ],
+    "strict": [
+      "wayfinder",
+      "deprecation-and-migration",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "break down the epic into tickets",
+    "figma": null,
+    "type": "planning",
+    "fast": [
+      "to-tickets"
+    ],
+    "standard": [
+      "to-tickets"
+    ],
+    "strict": [
+      "to-tickets"
+    ]
+  },
+  {
+    "task": "prototype: can we stream PDFs?",
+    "figma": null,
+    "type": "prototype",
+    "fast": [
+      "prototype"
+    ],
+    "standard": [
+      "prototype"
+    ],
+    "strict": [
+      "prototype"
+    ]
+  },
+  {
+    "task": "resolve merge conflict in main",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "resolving-merge-conflicts"
+    ],
+    "standard": [
+      "resolving-merge-conflicts",
+      "tdd"
+    ],
+    "strict": [
+      "resolving-merge-conflicts",
+      "tdd"
+    ]
+  },
+  {
+    "task": "investiga la documentación oficial de Next 15",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "source-driven-development"
+    ],
+    "standard": [
+      "source-driven-development",
+      "research"
+    ],
+    "strict": [
+      "source-driven-development",
+      "research",
+      "tdd"
+    ]
+  },
+  {
+    "task": "add git guardrails hook for claude code",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "git-guardrails-claude-code"
+    ],
+    "standard": [
+      "git-guardrails-claude-code",
+      "tdd"
+    ],
+    "strict": [
+      "git-guardrails-claude-code",
+      "tdd"
+    ]
+  },
+  {
+    "task": "build a wizard for onboarding",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "wizard"
+    ],
+    "standard": [
+      "wizard",
+      "tdd"
+    ],
+    "strict": [
+      "wizard",
+      "tdd"
+    ]
+  },
+  {
+    "task": "grill me on the design",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "grilling"
+    ],
+    "standard": [
+      "grilling",
+      "tdd"
+    ],
+    "strict": [
+      "grilling",
+      "tdd"
+    ]
+  },
+  {
+    "task": "fix typo",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "login regression returns 403",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "crash on submit button",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "la app crashea al enviar",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "500 error on checkout",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "timeout when uploading files",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "desglosa el roadmap del trimestre",
+    "figma": null,
+    "type": "planning",
+    "fast": [
+      "to-tickets"
+    ],
+    "standard": [
+      "to-tickets"
+    ],
+    "strict": [
+      "to-tickets"
+    ]
+  },
+  {
+    "task": "hoja de ruta del proyecto",
+    "figma": null,
+    "type": "planning",
+    "fast": [
+      "to-tickets"
+    ],
+    "standard": [
+      "to-tickets"
+    ],
+    "strict": [
+      "to-tickets"
+    ]
+  },
+  {
+    "task": "podemos hacer un poc de streaming",
+    "figma": null,
+    "type": "prototype",
+    "fast": [
+      "prototype"
+    ],
+    "standard": [
+      "prototype"
+    ],
+    "strict": [
+      "prototype"
+    ]
+  },
+  {
+    "task": "prueba de concepto de cache distribuido",
+    "figma": null,
+    "type": "prototype",
+    "fast": [
+      "prototype"
+    ],
+    "standard": [
+      "prototype",
+      "tdd"
+    ],
+    "strict": [
+      "prototype",
+      "tdd"
+    ]
+  },
+  {
+    "task": "rewrite the auth module",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "codebase-design"
+    ],
+    "strict": [
+      "wayfinder",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "reescribe el modulo de pagos",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "codebase-design"
+    ],
+    "strict": [
+      "wayfinder",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "refactoriza la arquitectura de servicios",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "codebase-design"
+    ],
+    "strict": [
+      "wayfinder",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "deprecate old REST endpoints",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "deprecation-and-migration"
+    ],
+    "strict": [
+      "wayfinder",
+      "deprecation-and-migration",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "obsoleto el endpoint viejo",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "deprecation-and-migration"
+    ],
+    "strict": [
+      "wayfinder",
+      "deprecation-and-migration",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "add SLOs and tracing to the API",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "observability-and-instrumentation"
+    ],
+    "standard": [
+      "observability-and-instrumentation",
+      "tdd"
+    ],
+    "strict": [
+      "observability-and-instrumentation",
+      "tdd"
+    ]
+  },
+  {
+    "task": "instrument the checkout flow with metrics",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "observability-and-instrumentation"
+    ],
+    "standard": [
+      "observability-and-instrumentation",
+      "tdd"
+    ],
+    "strict": [
+      "observability-and-instrumentation",
+      "tdd"
+    ]
+  },
+  {
+    "task": "investigate the official React docs before changing this",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "research"
+    ],
+    "standard": [
+      "research",
+      "tdd"
+    ],
+    "strict": [
+      "research",
+      "tdd"
+    ]
+  },
+  {
+    "task": "check the source of truth for the payment API",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "merge conflict blocking the release",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "resolving-merge-conflicts"
+    ],
+    "standard": [
+      "resolving-merge-conflicts",
+      "tdd"
+    ],
+    "strict": [
+      "resolving-merge-conflicts",
+      "tdd"
+    ]
+  },
+  {
+    "task": "hay un conflicto de merge en main",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "resolving-merge-conflicts"
+    ],
+    "standard": [
+      "resolving-merge-conflicts",
+      "tdd"
+    ],
+    "strict": [
+      "resolving-merge-conflicts",
+      "tdd"
+    ]
+  },
+  {
+    "task": "hay un conflicto de fusion en main",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "add a safety hook for git commits in claude code",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "design a wizard flow for signup",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "wizard"
+    ],
+    "standard": [
+      "wizard",
+      "tdd"
+    ],
+    "strict": [
+      "wizard",
+      "tdd"
+    ]
+  },
+  {
+    "task": "provisiona credenciales para el nuevo entorno",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "wizard"
+    ],
+    "standard": [
+      "wizard",
+      "tdd"
+    ],
+    "strict": [
+      "wizard",
+      "tdd"
+    ]
+  },
+  {
+    "task": "grill the requirements with me before building",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "cuestiona este plan antes de construirlo",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "grilling"
+    ],
+    "standard": [
+      "grilling",
+      "tdd"
+    ],
+    "strict": [
+      "grilling",
+      "tdd"
+    ]
+  },
+  {
+    "task": "update the login page copy",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "actualiza el texto del footer",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "new feature: dark mode toggle",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "nueva funcionalidad: modo oscuro",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "some figma design work",
+    "figma": "https://figma.com/file/abc",
+    "type": "design",
+    "fast": [
+      "prototype"
+    ],
+    "standard": [
+      "prototype",
+      "codebase-design"
+    ],
+    "strict": [
+      "prototype",
+      "codebase-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "build the onboarding screen",
+    "figma": "https://figma.com/file/xyz",
+    "type": "design",
+    "fast": [
+      "prototype"
+    ],
+    "standard": [
+      "prototype",
+      "codebase-design"
+    ],
+    "strict": [
+      "prototype",
+      "codebase-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "bug ligado a una excepcion no manejada",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "failing test in CI",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "test slow, not late",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "c++ and node.js version bump migration",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "deprecation-and-migration"
+    ],
+    "strict": [
+      "wayfinder",
+      "deprecation-and-migration",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "investigar las bibliotecas de terceros antes de integrarlas",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "source-driven-development"
+    ],
+    "standard": [
+      "source-driven-development",
+      "research"
+    ],
+    "strict": [
+      "source-driven-development",
+      "research",
+      "tdd"
+    ]
+  }
+]
