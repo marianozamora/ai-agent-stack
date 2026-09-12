@@ -20,8 +20,7 @@ class CuratedSkillRoutingTests(unittest.TestCase):
         self.state = Path(self.temp.name)
 
     def test_specialized_skills_do_not_displace_ordinary_feature_routing(self):
-        self.assertEqual(skills.select_skills(self.state, 'add a user preference field', 'standard'),
-                         ['tdd', 'writing-for-agents'])
+        self.assertEqual(skills.select_skills(self.state, 'add a user preference field', 'standard'), ['tdd'])
 
     def test_source_driven_skill_requires_and_wins_on_specific_triggers(self):
         selected = skills.select_skills(

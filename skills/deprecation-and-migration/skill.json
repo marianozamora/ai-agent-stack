@@ -4,10 +4,29 @@
   "category": "migration",
   "cost": "medium",
   "priority": 95,
-  "task_types": ["architecture"],
-  "triggers": ["deprecat", "migration", "migrate", "sunset", "legacy replacement"],
+  "task_types": [
+    "architecture"
+  ],
+  "triggers": [
+    "deprecat",
+    "migration",
+    "migrate",
+    "sunset",
+    "legacy replacement",
+    "obsoleto",
+    "obsoleta",
+    "migra",
+    "migrar",
+    "migración"
+  ],
   "requires_trigger": true,
-  "stages": ["inventory contracts", "choose compatibility policy", "migrate incrementally", "verify rollback", "remove when proven"],
+  "stages": [
+    "inventory contracts",
+    "choose compatibility policy",
+    "migrate incrementally",
+    "verify rollback",
+    "remove when proven"
+  ],
   "provenance": {
     "source": "addyosmani-agent-skills",
     "path": "skills/deprecation-and-migration/SKILL.md",

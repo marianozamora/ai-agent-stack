@@ -10,13 +10,20 @@
       "task_types": [
         "bug"
       ],
+      "primary_for": [
+        "bug"
+      ],
       "triggers": [
         "bug",
         "regression",
         "failing test",
         "exception",
         "crash",
-        "timeout"
+        "timeout",
+        "fallo",
+        "falla",
+        "excepción",
+        "se rompe"
       ],
       "stages": [
         "reproduce",
@@ -37,7 +44,9 @@
       "triggers": [
         "handoff",
         "continue tomorrow",
-        "switch model"
+        "switch model",
+        "continuar mañana",
+        "traspaso"
       ],
       "stages": [
         "state",
@@ -54,11 +63,17 @@
         "prototype",
         "design"
       ],
+      "primary_for": [
+        "prototype"
+      ],
       "triggers": [
         "prototype",
         "spike",
         "poc",
-        "feasibility"
+        "feasibility",
+        "prototipo",
+        "prueba de concepto",
+        "viabilidad"
       ],
       "stages": [
         "question",
@@ -72,17 +87,13 @@
       "category": "efficiency",
       "cost": "low",
       "priority": 30,
-      "task_types": [
-        "feature",
-        "architecture",
-        "planning"
-      ],
+      "task_types": [],
       "triggers": [
         "prompt",
         "instructions",
-        "agent"
+        "agent",
+        "agente"
       ],
-      "always_consider": true,
       "stages": [
         "remove redundancy",
         "conditionalize context",
@@ -97,11 +108,17 @@
       "task_types": [
         "architecture"
       ],
+      "primary_for": [
+        "architecture"
+      ],
       "triggers": [
         "architecture",
         "migration",
         "redesign",
-        "multi-repo"
+        "multi-repo",
+        "arquitectura",
+        "migración",
+        "rediseño"
       ],
       "stages": [
         "open decisions",
@@ -122,7 +139,10 @@
       "triggers": [
         "test",
         "behavior",
-        "regression"
+        "regression",
+        "prueba",
+        "comportamiento",
+        "regresión"
       ],
       "always_consider": true,
       "stages": [
@@ -145,7 +165,10 @@
         "refactor",
         "architecture",
         "module",
-        "boundary"
+        "boundary",
+        "refactoriza",
+        "refactorizar",
+        "arquitectura"
       ],
       "stages": [
         "identify seam",
@@ -162,11 +185,17 @@
       "task_types": [
         "planning"
       ],
+      "primary_for": [
+        "planning"
+      ],
       "triggers": [
         "tickets",
         "epic",
         "decompose",
-        "break down"
+        "break down",
+        "épica",
+        "desglosa",
+        "descomponer"
       ],
       "stages": [
         "vertical slices",
@@ -207,7 +236,11 @@
         "library",
         "sdk",
         "dependency version",
-        "api version"
+        "api version",
+        "documentación oficial",
+        "librería",
+        "biblioteca",
+        "versión de la api"
       ],
       "requires_trigger": true,
       "stages": [
@@ -235,7 +268,12 @@
         "migration",
         "migrate",
         "sunset",
-        "legacy replacement"
+        "legacy replacement",
+        "obsoleto",
+        "obsoleta",
+        "migra",
+        "migrar",
+        "migración"
       ],
       "requires_trigger": true,
       "stages": [
@@ -269,7 +307,13 @@
         "structured logging",
         "metrics",
         "slo",
-        "alerting"
+        "alerting",
+        "observabilidad",
+        "telemetría",
+        "trazas",
+        "métricas",
+        "alertas",
+        "logs estructurados"
       ],
       "requires_trigger": true,
       "stages": [
@@ -299,7 +343,10 @@
         "rebase conflict",
         "resolve conflict",
         "conflicting files",
-        "rebasing"
+        "rebasing",
+        "conflicto de merge",
+        "conflictos de merge",
+        "resolver conflictos"
       ],
       "requires_trigger": true,
       "stages": [
@@ -331,7 +378,10 @@
         "look into",
         "background agent",
         "primary sources",
-        "gather docs"
+        "gather docs",
+        "investiga",
+        "investigar",
+        "fuentes primarias"
       ],
       "requires_trigger": true,
       "stages": [
@@ -363,7 +413,9 @@
         "grill-me",
         "stress-test this plan",
         "stress test this decision",
-        "pressure-test"
+        "pressure-test",
+        "cuestiona este plan",
+        "ponme a prueba"
       ],
       "requires_trigger": true,
       "stages": [
@@ -395,7 +447,10 @@
         "cutover",
         "one-off migration",
         "third-party dashboard",
-        "wizard"
+        "wizard",
+        "aprovisiona",
+        "credenciales",
+        "configuración manual"
       ],
       "requires_trigger": true,
       "stages": [

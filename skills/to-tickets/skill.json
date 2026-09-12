@@ -7,11 +7,17 @@
   "task_types": [
     "planning"
   ],
+  "primary_for": [
+    "planning"
+  ],
   "triggers": [
     "tickets",
     "epic",
     "decompose",
-    "break down"
+    "break down",
+    "épica",
+    "desglosa",
+    "descomponer"
   ],
   "stages": [
     "vertical slices",

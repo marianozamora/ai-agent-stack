@@ -12,7 +12,10 @@
     "refactor",
     "architecture",
     "module",
-    "boundary"
+    "boundary",
+    "refactoriza",
+    "refactorizar",
+    "arquitectura"
   ],
   "stages": [
     "identify seam",

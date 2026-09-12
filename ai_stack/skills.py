@@ -1,7 +1,7 @@
 from __future__ import annotations
-import json, re
+import json, re, sys
 from pathlib import Path
-from core import STACK_ROOT, classify_task, context_caps, git_root, load_json, repo_state, require_human, run, save_json, shasum
+from core import STACK_ROOT, classify_task, context_caps, fold, git_root, load_json, repo_state, require_human, run, save_json, shasum
 
 
 TASK_TYPES=['bug','feature','architecture','design','prototype','planning']
@@ -77,35 +77,45 @@ def enabled_skills(state:Path)->dict:
     return out
 
 
+_INFLECTION=r'(?:e|es|s|d|ed|ing|ion|ions)?'
+
+
+def trigger_hits(triggers:list[str],text:str)->list[str]:
+    """Whole-word matches allowing plain inflections: `test` hits "tests" but not "latest",
+    `slo` hits "SLOs" but not "slow". Accents are folded on both sides."""
+    folded=fold(text)
+    return [t for t in triggers if re.search(r'(?<!\w)'+re.escape(fold(t))+_INFLECTION+r'(?!\w)',folded)]
+
+
+def score_skills(state:Path,task:str,figma:str|None=None)->list[dict]:
+    """Every selectable, enabled skill that scores for this task, best first, with why."""
+    kind=classify_task(task,figma); rows=[]
+    for name,meta in enabled_skills(state).items():
+        # selectable:false (tool-routing) is loaded separately, only when a capability is
+        # detected, so it must never displace tdd/diagnosing-bugs from `fast`'s single slot.
+        if not meta['enabled'] or not meta.get('selectable',True): continue
+        hits=trigger_hits(meta.get('triggers',[]),task or '')
+        if meta.get('requires_trigger') and not hits: continue
+        score=0; reasons=[]
+        if kind in meta.get('task_types',[]): score+=5; reasons.append(f'task type {kind}')
+        if kind in meta.get('primary_for',[]): score+=3; reasons.append(f'primary for {kind}')
+        if hits: score+=2*len(hits); reasons.append('triggers: '+', '.join(hits))
+        if meta.get('always_consider') and kind in ('feature','bug','design'): score+=1; reasons.append('always considered')
+        if score: rows.append({'name':name,'score':score,'priority':int(meta.get('priority',0)),'reasons':reasons})
+    rows.sort(key=lambda row:(row['score'],row['priority'],row['name']),reverse=True)
+    return rows
+
+
 def select_skills(state:Path,task:str,profile:str,figma:str|None=None, explicit:list[str]|None=None)->list[str]:
-    caps=context_caps(profile); registry=enabled_skills(state); explicit=explicit or []
-    # A skill marked selectable:false (tool-routing) never competes for one of the
-    # profile's skill slots -- it is loaded separately, only when at least one
-    # capability is actually detected (capabilities.py), so it must never be able to
-    # displace tdd/diagnosing-bugs out of a `fast` profile's single slot.
-    registry={name:meta for name,meta in registry.items() if meta.get('selectable',True)}
+    caps=context_caps(profile); explicit=explicit or []
     if explicit:
+        registry={name:meta for name,meta in enabled_skills(state).items() if meta.get('selectable',True)}
         unknown=[x for x in explicit if x not in registry]
         if unknown: raise SystemExit('Unknown skill(s): '+', '.join(unknown))
+        disabled=[x for x in explicit if not registry[x]['enabled']]
+        if disabled: print('Skipping disabled skill(s): '+', '.join(disabled)+' (ai skill enable NAME)',file=sys.stderr)
         return [x for x in explicit if registry[x]['enabled']][:caps['skills']]
-    kind=classify_task(task,figma)
-    scores=[]
-    tl=(task or '').lower()
-    for name,meta in registry.items():
-        if not meta['enabled']: continue
-        matched_triggers=[trigger for trigger in meta.get('triggers',[]) if trigger.lower() in tl]
-        if meta.get('requires_trigger') and not matched_triggers: continue
-        score=0
-        if kind in meta.get('task_types',[]): score+=5
-        if kind=='bug' and meta.get('category')=='debugging': score+=3
-        if kind=='prototype' and name=='prototype': score+=3
-        if kind=='architecture' and name=='wayfinder': score+=3
-        if kind=='planning' and name=='to-tickets': score+=3
-        score+=2*len(matched_triggers)
-        if meta.get('always_consider') and kind in ('feature','bug','design'): score+=1
-        if score: scores.append((score, int(meta.get('priority',0)), name))
-    scores.sort(reverse=True)
-    return [name for _,_,name in scores[:caps['skills']]]
+    return [row['name'] for row in score_skills(state,task,figma)[:caps['skills']]]
 
 
 def upstream_status(check:bool=False)->list[dict]:
@@ -178,7 +188,11 @@ def cmd_skill(args):
             print(f"{mark} {name:20} {meta.get('category','')}  cost={meta.get('cost','?')}{origin}")
         if getattr(args,'task',None):
             selected=select_skills(state,args.task,args.profile,None,None)
-            print('\nRecommended:', ', '.join(selected) or 'none')
+            print(f'\nTask type: {classify_task(args.task)}')
+            print('Recommended:', ', '.join(selected) or 'none')
+            for row in score_skills(state,args.task)[:5]:
+                mark='*' if row['name'] in selected else ' '
+                print(f"  {mark} {row['name']:34} score={row['score']}  {'; '.join(row['reasons'])}")
         return
     if args.skill_cmd=='create': return cmd_skill_create(args)
     name=args.name

@@ -8,11 +8,17 @@
     "prototype",
     "design"
   ],
+  "primary_for": [
+    "prototype"
+  ],
   "triggers": [
     "prototype",
     "spike",
     "poc",
-    "feasibility"
+    "feasibility",
+    "prototipo",
+    "prueba de concepto",
+    "viabilidad"
   ],
   "stages": [
     "question",

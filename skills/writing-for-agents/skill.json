@@ -4,17 +4,13 @@
   "category": "efficiency",
   "cost": "low",
   "priority": 30,
-  "task_types": [
-    "feature",
-    "architecture",
-    "planning"
-  ],
+  "task_types": [],
   "triggers": [
     "prompt",
     "instructions",
-    "agent"
+    "agent",
+    "agente"
   ],
-  "always_consider": true,
   "stages": [
     "remove redundancy",
     "conditionalize context",

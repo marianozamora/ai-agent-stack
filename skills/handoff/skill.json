@@ -8,7 +8,9 @@
   "triggers": [
     "handoff",
     "continue tomorrow",
-    "switch model"
+    "switch model",
+    "continuar mañana",
+    "traspaso"
   ],
   "stages": [
     "state",

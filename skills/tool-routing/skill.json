@@ -3,6 +3,7 @@
   "version": 1,
   "category": "efficiency",
   "cost": "tiny",
+  "priority": 0,
   "selectable": false,
   "task_types": [],
   "triggers": [],
