@@ -19,6 +19,9 @@ from deploy import cmd_deploy
 from gates import cmd_gate, cmd_pipeline, cmd_ready, cmd_validate, cmd_validators
 from learning import cmd_confidence, cmd_failures, cmd_lessons
 from clarify import cmd_clarify
+from analyze import cmd_analyze
+from checklist import cmd_checklist
+from issues import cmd_tasks_to_issues
 from lifecycle import cmd_handoff, cmd_planrun, cmd_ticket
 from metrics import cmd_metrics
 from prompts import cmd_prompt
@@ -42,6 +45,9 @@ COMMAND_DESCRIPTIONS = {
     'run':'Build an orchestration prompt and launch Claude.', 'plan':'Build an orchestration prompt without launching a model.',
     'ticket':'Analyze pasted ticket content.',
     'clarify':'Check the PR contract for unverifiable acceptance criteria before implementing.', 'review':'Prepare or launch a bounded Codex review.',
+    'analyze':'Check that a tasks file covers every acceptance criterion, and vice versa.',
+    'checklist':'Generate a per-criterion completeness checklist from the PR contract.',
+    'tasks-to-issues':'Turn a tasks file (or the contract\'s acceptance criteria) into GitHub issues.',
     'impact':'Report deterministic diff impact.', 'ready':'Certify readiness from fresh gate evidence.',
     'gate':'Run and record one evidence gate.', 'pipeline':'Run all required configured gates in order.',
     'validators':'Inspect or configure reusable validators.', 'validate':'Run a bundled semantic validator.',
@@ -163,6 +169,9 @@ def parser():
     sk.set_defaults(func=cmd_skill)
     cp=sp.add_parser('capabilities'); cps=cp.add_subparsers(dest='capabilities_cmd'); cps.add_parser('list'); cpe=cps.add_parser('enable'); cpe.add_argument('name'); cpd=cps.add_parser('disable'); cpd.add_argument('name'); cp.set_defaults(func=cmd_capabilities)
     cl=sp.add_parser('clarify'); cl.add_argument('--json',action='store_true'); cl.set_defaults(func=cmd_clarify)
+    an=sp.add_parser('analyze'); an.add_argument('--tasks-file',required=True,help='Markdown checklist ("- [ ] ... (AC: 1,2)") to check against the contract\'s acceptance criteria'); an.add_argument('--json',action='store_true'); an.set_defaults(func=cmd_analyze)
+    ch=sp.add_parser('checklist'); ch.add_argument('--json',action='store_true'); ch.set_defaults(func=cmd_checklist)
+    ti=sp.add_parser('tasks-to-issues'); ti.add_argument('--tasks-file',help='Same tagged Markdown checklist ai analyze reads; default: one issue per acceptance criterion'); ti.add_argument('--execute',action='store_true',help='Actually create the issues via `gh issue create` (default: dry run)'); ti.add_argument('--json',action='store_true'); ti.set_defaults(func=cmd_tasks_to_issues)
     ho=sp.add_parser('handoff'); ho.add_argument('task',nargs='?',default=''); ho.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); ho.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); ho.add_argument('--state'); ho.add_argument('--evidence',action='append'); ho.add_argument('--next'); ho.set_defaults(func=cmd_handoff)
     r=sp.add_parser('rules'); rs=r.add_subparsers(dest='rules_cmd'); rs.add_parser('list'); a=rs.add_parser('add'); a.add_argument('rule'); a.add_argument('--scope',default='**'); rm=rs.add_parser('remove'); rm.add_argument('index',type=int); ri=rs.add_parser('import'); ri.add_argument('file',help='Conventions document to read (CONTRIBUTING.md, docs/conventions.md, .specify/memory/constitution.md, ...)'); ri.add_argument('--scope',default='**'); ri.add_argument('--confirm',action='store_true'); r.set_defaults(func=cmd_rules)
     d=sp.add_parser('docs'); ds=d.add_subparsers(dest='docs_cmd',required=True); ds.add_parser('doctor'); setup=ds.add_parser('setup'); setup.add_argument('--mcp',action='store_true'); setup.add_argument('--universal',action='store_true'); ds.add_parser('detect'); l=ds.add_parser('library'); l.add_argument('name'); l.add_argument('query',nargs='?',default=''); q=ds.add_parser('query'); q.add_argument('library'); q.add_argument('query'); q.add_argument('--refresh',action='store_true'); d.set_defaults(func=cmd_docs)

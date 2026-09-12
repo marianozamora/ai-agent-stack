@@ -43,6 +43,9 @@ class ParserWiringTests(unittest.TestCase):
             ['rules', 'add', 'r'],
             ['rules', 'import', 'CONTRIBUTING.md'],
             ['clarify'],
+            ['analyze', '--tasks-file', 'tasks.md'],
+            ['checklist'],
+            ['tasks-to-issues'],
             ['skill', 'create', 'x', '--category', 'q', '--prompt', 'p', '--repo'],
             ['path'],
         ]

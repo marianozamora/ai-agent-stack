@@ -84,6 +84,22 @@ ai rules import CONTRIBUTING.md --confirm  # adds them to external state
 
 The document is only read. The rules land in external state like every other rule, and a human still reviews the list.
 
+Two more spec-kit-inspired, deterministic checks close gaps `ai clarify` deliberately leaves open (it checks that criteria are *verifiable*, never that they're *sufficient*):
+
+```bash
+ai checklist                          # a per-criterion completeness checklist from the contract
+ai analyze --tasks-file tasks.md      # does the tasks file cover every criterion, and only real ones?
+```
+
+`ai checklist` emits five universal, human-checked prompts per acceptance criterion (happy path, boundary/empty case, failure path, verifiable without reading the implementation, doesn't contradict `must_not_change`) — a checklist, not a judgement. `ai analyze` reads any Markdown task breakdown tagged `- [ ] task (AC: 1, 3)` and fails closed on an uncovered criterion or a tag pointing at one that doesn't exist; an untagged task is reported, not blocked. Once a breakdown is ready, turn it into real work items:
+
+```bash
+ai tasks-to-issues --tasks-file tasks.md   # dry run: prints what would be filed
+ai tasks-to-issues --tasks-file tasks.md --execute   # files them via `gh issue create`
+```
+
+Falls back to one issue per acceptance criterion with no `--tasks-file`. `--execute` is the one thing here `require_human()` guards — like a deploy, filing real issues is a human's decision to make, not a model's inside a gate.
+
 ## Deployment
 
 `ai deploy` is detection-only by default and never mutates anything. Documenting and running a deploy is opt-in and explicit:
