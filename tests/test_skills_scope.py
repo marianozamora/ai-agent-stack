@@ -4,6 +4,8 @@ Before this, skill_root() was the single stack-wide directory, so a repository c
 add a skill of its own without editing the framework -- and a team with one repo-specific
 convention had to either fork the stack or push that convention on every other repo.
 """
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -132,6 +134,36 @@ class RepoScopedCreateTests(CascadeTests):
         skills.cmd_skill_create(make_args(repo=False, prompt='bundled body'))
         self.assertIn('custom-skill', json.loads((self.stack_root / 'registry.json').read_text())['skills'])
         self.assertIn('repo body', skills.load_skill_context(self.state, ['custom-skill'], 10000))
+
+
+class DryRunTests(RepoScopedCreateTests):
+    """dry-run shows the real prompt.md body -- not just metadata -- against the same
+    per-skill budget build_prompt() actually splits across selected skills."""
+
+    def _dry_run(self, name='custom-skill', profile='standard'):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            skills.cmd_skill(Namespace(skill_cmd='dry-run', name=name, profile=profile))
+        return buf.getvalue()
+
+    def test_shows_the_actual_prompt_body(self):
+        skills.cmd_skill_create(make_args(repo=True, prompt='Choose a seam. Then verify it.'))
+        out = self._dry_run()
+        self.assertIn('Choose a seam. Then verify it.', out)
+        self.assertIn('prompt size:', out)
+        self.assertNotIn('exceeds the budget', out)
+
+    def test_warns_when_the_prompt_alone_exceeds_the_skill_budget(self):
+        # fast's context_chars is 12000, so the per-skill budget is max(2000, 12000//3) = 4000.
+        skills.cmd_skill_create(make_args(repo=True, prompt='x' * 5000))
+        out = self._dry_run(profile='fast')
+        self.assertIn('exceeds the budget and would be truncated by 1000 chars', out)
+
+    def test_a_skill_with_no_prompt_file_is_reported_not_crashed(self):
+        skills.cmd_skill_create(make_args(repo=True, prompt='will be deleted'))
+        (self.repo_root() / 'custom-skill' / 'prompt.md').unlink()
+        out = self._dry_run()
+        self.assertIn('prompt:      missing', out)
 
     def test_create_preserves_registry_fields_it_does_not_own(self):
         (self.stack_root / 'registry.json').write_text(
