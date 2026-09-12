@@ -1,0 +1,33 @@
+{
+  "name": "improve-animations",
+  "version": 1,
+  "category": "quality",
+  "cost": "medium",
+  "priority": 72,
+  "task_types": [
+    "design",
+    "feature",
+    "bug"
+  ],
+  "triggers": [
+    "improve the animation",
+    "improve animation",
+    "animation roadmap",
+    "animation plan",
+    "mejorar las animaciones",
+    "mejorar animaciones"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "recon",
+    "audit eight categories",
+    "vet and prioritize",
+    "wait for selection",
+    "write self-contained plans"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/improve-animations/SKILL.md",
+    "adaptation": "curated"
+  }
+}

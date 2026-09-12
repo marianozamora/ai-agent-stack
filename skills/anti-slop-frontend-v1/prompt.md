@@ -1,0 +1,5 @@
+Legacy v1 taste rules, only for projects that depend on them. Dials fixed at variance 8, motion 6, density 4 unless the user overrides. Check `package.json` before any import and print the install command for anything missing; check Tailwind v3 vs v4. React/Next: server components by default, interactive motion isolated in `'use client'` leaves. No emojis.
+
+Layout: `min-h-[100dvh]`, CSS Grid over flex percentage math, one icon library (Phosphor or Radix) at one stroke width. Type: Geist/Outfit/Satoshi over Inter, no serif in dashboards, body `max-w-[65ch]`. One accent under 80% saturation, no purple/neon. Centered heroes banned when variance > 4; no three equal cards; cards only when elevation means hierarchy, none above density 7. Always ship loading, empty and error states and `:active` feedback.
+
+Motion via `transform`/`opacity`, springs at `stiffness 100, damping 20`, perpetual loops memoized in their own client component, strict `useEffect` cleanups. No generic names, fake round numbers or Unsplash links.

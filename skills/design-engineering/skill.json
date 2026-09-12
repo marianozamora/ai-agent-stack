@@ -1,0 +1,29 @@
+{
+  "name": "design-engineering",
+  "version": 1,
+  "category": "quality",
+  "cost": "medium",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "triggers": [
+    "design engineering",
+    "design engineer",
+    "ingeniería de diseño"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "craft review",
+    "before/after table",
+    "animation checklist",
+    "component principles",
+    "fresh-eyes pass"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/emil-design-eng/SKILL.md",
+    "adaptation": "curated"
+  }
+}

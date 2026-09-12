@@ -149,6 +149,20 @@ Routing reads only `skills/registry.json`: triggers match whole words (with plai
 
 A repo-scoped skill lives in that repository's external state, not in the checkout, and may deliberately reuse a bundled skill's name to replace it here without forking the stack. Shadowing replaces the whole definition rather than merging fields.
 
+### Just the skill library
+
+Want the prompts without the routing engine, gates, or CLI? Export them as plain, standalone `SKILL.md` files any project can drop into `.claude/skills/`:
+
+```bash
+# From an installed stack:
+ai skill export --out /path/to/project/.claude/skills
+
+# Or zero-install, straight from a clone of this repository:
+python3 scripts/export_skills.py --out /path/to/project/.claude/skills
+```
+
+`--skill NAME` (repeatable) exports a subset; omitted, every enabled, selectable skill is exported, each with its own frontmatter description and any companion file it depends on (e.g. `wizard`'s `template.sh`). The result has zero dependency on this stack — it's the exact same discipline this project's own skills are curated from ([`mattpocock/skills`](https://github.com/mattpocock/skills), [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills), and for design [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable), [`emilkowalski/skills`](https://github.com/emilkowalski/skills), [`leonxlnx/taste-skill`](https://github.com/leonxlnx/taste-skill)), just packaged for standalone use.
+
 ## Capabilities
 
 The orchestration prompt used to route through Code Review Graph, Graphify, CodeGraph, Context7 and RTK unconditionally, with no check that any of them were actually installed — and RTK and CodeGraph were never once verified present anywhere in the codebase. A capability that isn't there appears nowhere in the prompt: not a status line, not a context-order entry, not a budget cap. The model never learns it exists, so it never routes through it and never burns a retry finding out it can't.
@@ -164,7 +178,14 @@ Detection is by binary presence alone, exactly like the builder/reviewer provide
 
 The bundled skill router includes compact, trigger-gated adaptations of selected
 workflows from [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills):
-source-driven development, deprecation/migration, and observability. Their full
+source-driven development, deprecation/migration, and observability. Design work
+draws on every skill in [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable)
+(`frontend-design`, primary for Figma-linked tasks),
+[`emilkowalski/skills`](https://github.com/emilkowalski/skills) (motion, Apple-style
+interaction, UI variants, library picks, Sonner, Swift) and
+[`leonxlnx/taste-skill`](https://github.com/leonxlnx/taste-skill) (anti-slop frontend,
+aesthetic styles, image-first concepts, brand kits). All but `frontend-design` stay
+dormant until a task names them. Their full
 upstream prompts are deliberately not injected; the stack keeps its own context
 caps, routing, gates and zero-footprint lifecycle.
 

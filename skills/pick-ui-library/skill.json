@@ -1,0 +1,31 @@
+{
+  "name": "pick-ui-library",
+  "version": 1,
+  "category": "tooling",
+  "cost": "low",
+  "priority": 90,
+  "task_types": [
+    "feature",
+    "design"
+  ],
+  "triggers": [
+    "pick a ui library",
+    "which library should",
+    "ui library",
+    "component library",
+    "qué librería usar",
+    "librería de ui"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "identify the task",
+    "check installed dependencies",
+    "recommend one library",
+    "flag mismatches"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/pick-ui-library/SKILL.md",
+    "adaptation": "curated"
+  }
+}

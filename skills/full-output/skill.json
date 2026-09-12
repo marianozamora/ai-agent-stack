@@ -1,0 +1,29 @@
+{
+  "name": "full-output",
+  "version": 1,
+  "category": "efficiency",
+  "cost": "low",
+  "priority": 25,
+  "task_types": [],
+  "triggers": [
+    "full output",
+    "complete file",
+    "no placeholders",
+    "don't truncate",
+    "sin placeholders",
+    "archivo completo",
+    "no truncar"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "lock deliverable count",
+    "build every deliverable",
+    "cross-check against the request",
+    "pause at a clean boundary"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/output-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

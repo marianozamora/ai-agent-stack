@@ -1,0 +1,5 @@
+Read-only: find places that should animate and reject everything that shouldn't; never edit source. Recon the stack, motion libraries, existing easing/duration tokens and the product's personality, and map how often each surface is seen.
+
+Sweep for feedback gaps (pressables without `:active`), teleporting state (conditional renders, snapping accordions, list items appearing with no bridge), a missing spatial story (panels unrelated to their trigger, toasts exiting a different edge), all-at-once group entrances, gesture seams without physics, and flat rare moments (first run, empty, success).
+
+Every candidate must pass four gates: frequency (keyboard or 100+/day: reject), a named purpose, a budget under 300ms for UI, and function (data being read or acted on doesn't move for style). Report at most 5-7 opportunities as `# | Location | Today | Purpose | Frequency | Suggested motion` with exact curves and durations, then 2-5 rejected candidates with the gate that killed each, then a one-paragraph verdict naming the highest-leverage change.

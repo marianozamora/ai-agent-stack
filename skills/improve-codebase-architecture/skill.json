@@ -1,0 +1,30 @@
+{
+  "name": "improve-codebase-architecture",
+  "version": 1,
+  "category": "quality",
+  "cost": "medium",
+  "priority": 65,
+  "task_types": [
+    "architecture"
+  ],
+  "triggers": [
+    "architecture review",
+    "architecture audit",
+    "deepening opportunities",
+    "revisión de arquitectura",
+    "auditoría de arquitectura"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "scope from hot spots",
+    "apply deletion test",
+    "render before/after report",
+    "grill the chosen candidate",
+    "sync domain model and ADRs"
+  ],
+  "provenance": {
+    "source": "mattpocock-skills",
+    "path": "skills/engineering/improve-codebase-architecture/SKILL.md",
+    "adaptation": "curated"
+  }
+}

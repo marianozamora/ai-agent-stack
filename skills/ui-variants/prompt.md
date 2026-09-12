@@ -1,0 +1,5 @@
+Explore one UI piece as several genuinely different working variants behind a picker, then let the user choose. Scope to a single component and restate the brief in one sentence. Recon the stack, tokens and personality so every variant feels native.
+
+Name 3 variants by default (up to 5), each with a stated axis (layout, density, personality, motion, interaction model); two that differ only in color or copy are one direction. Build in an isolated surface only (a `/prototypes/<slug>` route, or a single self-contained HTML file when there is no project), never in production code. Each variant fully works with realistic content and meets the motion bar (ease-out entrances, under 300ms, `transform`/`opacity`, reduced motion).
+
+Show one variant at a time, full size, in real surrounding context; switching is instant. Verify every variant renders and the console is clean, then present `# | Variant | Axis | When it wins | Its cost` and stop. On a pick, integrate it following project conventions and delete the prototype surface.

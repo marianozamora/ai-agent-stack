@@ -1,0 +1,34 @@
+{
+  "name": "write-swift",
+  "version": 1,
+  "category": "implementation",
+  "cost": "medium",
+  "priority": 60,
+  "task_types": [
+    "bug",
+    "feature",
+    "architecture"
+  ],
+  "triggers": [
+    "swift",
+    "swiftui",
+    "swift concurrency",
+    "sendable",
+    "actor reentrancy",
+    "swift testing"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "value types first",
+    "visible failure paths",
+    "main actor until profiled",
+    "generics before existentials",
+    "measure then optimize",
+    "migrate per target"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/write-swift/SKILL.md",
+    "adaptation": "curated"
+  }
+}

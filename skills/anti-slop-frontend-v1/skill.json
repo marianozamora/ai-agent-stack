@@ -1,0 +1,30 @@
+{
+  "name": "anti-slop-frontend-v1",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 20,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "triggers": [
+    "taste skill v1",
+    "taste-skill v1",
+    "anti-slop v1"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "fixed dials",
+    "verify dependencies",
+    "bias-corrected typography and color",
+    "full interaction states",
+    "performance guardrails",
+    "pre-flight check"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/taste-skill-v1/SKILL.md",
+    "adaptation": "curated"
+  }
+}

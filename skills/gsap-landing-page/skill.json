@@ -1,0 +1,30 @@
+{
+  "name": "gsap-landing-page",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "triggers": [
+    "gsap",
+    "scrolltrigger",
+    "aida"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "seeded design plan",
+    "aida structure",
+    "wide hero",
+    "gapless bento",
+    "scroll choreography",
+    "label and contrast sweep"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/gpt-tasteskill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

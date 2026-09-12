@@ -1,0 +1,32 @@
+{
+  "name": "stitch-design-md",
+  "version": 1,
+  "category": "design",
+  "cost": "low",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature",
+    "planning"
+  ],
+  "triggers": [
+    "google stitch",
+    "stitch design",
+    "design.md"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "define atmosphere",
+    "map palette with roles",
+    "typography rules",
+    "component stylings",
+    "layout and responsive rules",
+    "motion",
+    "anti-patterns"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/stitch-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}
