@@ -254,12 +254,12 @@ assert "--output-schema" in args and "--ephemeral" in args
 out = args[args.index("--output-last-message") + 1]
 open(out, "w").write(json.dumps({"status": "PASS", "evidence": ["ok"], "findings": [], "summary_markdown": ""}))
 print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 1}}))
-print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 2, "output_tokens": 1}}))
+print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 2, "cached_input_tokens": 2, "output_tokens": 1}}))
 ''')
         result = providers.run_codex_json(codex, Path('.'), self.review_dir, 'cleanup', 'the prompt',
                                           validators.SCHEMA, _checker)
         self.assertEqual(result['status'], 'PASS')
-        self.assertEqual(result['usage'], {'input_tokens': 5, 'output_tokens': 2})
+        self.assertEqual(result['usage'], {'input_tokens': 5, 'cached_input_tokens': 2, 'output_tokens': 2})
         self.assertTrue((self.review_dir / 'cleanup-events.jsonl').is_file())
 
     def test_nonzero_exit_raises(self):

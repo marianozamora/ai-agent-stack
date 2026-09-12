@@ -24,6 +24,13 @@ class HelpersTests(unittest.TestCase):
         self.assertEqual(report['usage']['cost_usd']['reported_attempts'], 1)
         self.assertIsNone(report['usage']['input_tokens']['reported_total'])
 
+    def test_billable_tokens_excludes_cache_hits(self):
+        self.assertEqual(workflow.billable_tokens({'input_tokens': 100, 'cached_input_tokens': 80, 'output_tokens': 5}), 25)
+        self.assertEqual(workflow.billable_tokens({'input_tokens': 10, 'output_tokens': 5}), 15)
+        self.assertEqual(workflow.billable_tokens({'input_tokens': 10, 'cached_input_tokens': 50}), 0)
+        self.assertEqual(workflow.billable_tokens(None), 0)
+        self.assertEqual(workflow.usage_from_verdict({'usage': {'cached_input_tokens': 4}}), {'cached_input_tokens': 4})
+
     def test_normalize_finding_folds_paths_lines_and_hex(self):
         a = workflow.normalize_finding('Leaked token 9f2c1a4b7d30ffab in src/auth.py:42')
         b = workflow.normalize_finding('Leaked token 00112233445566aa in src/auth.py:107')

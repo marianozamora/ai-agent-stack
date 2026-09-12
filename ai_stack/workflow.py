@@ -34,7 +34,8 @@ def execute(command, cwd, env, output, timeout):
         return 130 if isinstance(exc, KeyboardInterrupt) else 124
 
 
-ORDER = ('cleanup', 'checks', 'regression', 'contract', 'review', 'security',
+# Deterministic gates first: a failing test must stop the run before a model-judged gate spends anything.
+ORDER = ('checks', 'regression', 'contract', 'cleanup', 'review', 'security',
          'ponytail', 'design', 'summary', 'provenance')
 
 
@@ -144,12 +145,24 @@ def usage_from_verdict(verdict):
     usage = verdict.get('usage', {}) if isinstance(verdict, dict) else {}
     result = {}
     if isinstance(usage, dict):
-        for key in ('input_tokens', 'output_tokens', 'cost_usd'):
+        for key in ('input_tokens', 'cached_input_tokens', 'output_tokens', 'cost_usd'):
             value = usage.get(key)
             expected = type(value) is int if key.endswith('tokens') else type(value) in (int, float)
             if expected and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0:
                 result[key] = value
     return result
+
+
+def billable_tokens(usage):
+    """Tokens counted against a budget: reported input minus its cache hits, plus output.
+
+    Codex reports cache hits inside input_tokens; re-sent context read from cache is most of
+    an agentic gate's input, so counting it as fresh overstates spend several times over.
+    """
+    if not isinstance(usage, dict):
+        return 0
+    fresh = usage.get('input_tokens', 0) - min(usage.get('cached_input_tokens', 0), usage.get('input_tokens', 0))
+    return fresh + usage.get('output_tokens', 0)
 
 
 _PATH_TOKEN = re.compile(r'\b([\w-]+(?:/[\w.-]+)+)\b')
@@ -174,8 +187,8 @@ def _shared_scope_hint(texts: Iterable[str]):
 
 
 def _usage_totals(entries):
-    """Reported input+output tokens per entry that carried any usage at all."""
-    return [e['usage'].get('input_tokens', 0) + e['usage'].get('output_tokens', 0)
+    """Budget-counted tokens per entry that carried any usage at all."""
+    return [billable_tokens(e['usage'])
             for e in entries if isinstance(e.get('usage'), dict) and e['usage']]
 
 
@@ -523,8 +536,7 @@ def summarize(rows):
         if row.get('status') in ('PR_READY', 'BUDGET_EXCEEDED') or not isinstance(row.get('usage'), dict):
             return False
         budget = row.get('usage_budget')
-        spent = row['usage'].get('input_tokens', 0) + row['usage'].get('output_tokens', 0)
-        return bool(budget) and spent >= budget
+        return bool(budget) and billable_tokens(row['usage']) >= budget
 
     budget_exceeded = sum(stopped_on_budget(row) for row in pipelines)
     return {
