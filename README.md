@@ -98,11 +98,11 @@ Every gate result is bound to a fingerprint of the repository, index, base, plan
 The default gate order is:
 
 ```text
-cleanup → checks → regression → contract → review → security
-        → ponytail → design → summary → provenance
+checks → regression → contract → cleanup → review → security
+       → ponytail → design → summary → provenance
 ```
 
-Review, security and design are included according to profile, risk and task inputs.
+Review, security and design are included according to profile, risk and task inputs. The deterministic gates run first, so a failing test stops the run before any model-judged gate spends tokens, and `ai pipeline` refuses to start at all while the PR contract has no acceptance criteria.
 
 ## Profiles
 
@@ -112,7 +112,7 @@ Review, security and design are included according to profile, risk and task inp
 | `standard` | 2 | 8 | 10 | 3 | 2 | 120,000 tokens | $1.50 |
 | `strict` | 3 | 12 | 15 | 5 | 2 | 250,000 tokens | $3.00 |
 
-Strict means stronger evidence and review, not unlimited context or agent debate. `retries` is enforced per gate — a gate that keeps failing against the same issue stops with `NEEDS_HUMAN` instead of spending another model call. The token and cost budgets are both checked by `ai pipeline`; the cost budget binds only where a provider actually reports `cost_usd`. `--allow-overrun` continues past any of the three.
+Strict means stronger evidence and review, not unlimited context or agent debate. `retries` is enforced per gate — a gate that keeps failing against the same issue stops with `NEEDS_HUMAN` instead of spending another model call. The token and cost budgets are both checked by `ai pipeline`, counting every gate attempt including failed ones; the token budget excludes input the provider reports as served from cache; the cost budget binds only where a provider actually reports `cost_usd`. `--allow-overrun` continues past any of the three.
 
 ## Skills
 

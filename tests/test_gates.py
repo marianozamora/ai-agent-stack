@@ -41,6 +41,12 @@ def _git(repo, *args):
     subprocess.run(['git', *args], cwd=repo, check=True, capture_output=True)
 
 
+def _accept(state):
+    """cmd_pipeline refuses a contract with no acceptance criteria before any gate runs."""
+    contract = core.task_state(state) / 'contracts/current-pr.yml'
+    contract.write_text(contract.read_text().replace('acceptance: []', 'acceptance: ["fixture criterion"]'))
+
+
 def _sandbox(tc):
     """Build an isolated git repo + redirected external state for `tc`.
 
@@ -550,6 +556,7 @@ class RunGateFingerprintReuseTests(unittest.TestCase):
         lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
         self.task = core.task_state(self.state)
         self.plan = gates.current_plan(self.state)
+        _accept(self.state)
 
     def _args(self):
         # 'checks' is always in GATES[:7], so it's required regardless of profile.
@@ -631,6 +638,7 @@ class PipelineValidatorConfigChangeTests(unittest.TestCase):
     def setUp(self):
         self.root, self.state = _sandbox(self)
         lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        _accept(self.state)
         self.config = {'version': 1, 'validators': {
             'checks': {'command': ['true'], 'adapter': 'exit-code', 'evidence': 'ok', 'timeout': 30},
             'regression': {'command': ['true'], 'adapter': 'exit-code', 'evidence': 'ok', 'timeout': 30}}}
@@ -679,6 +687,7 @@ class RetryBudgetTests(unittest.TestCase):
         lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
         self.task = core.task_state(self.state)
         self.plan = gates.current_plan(self.state)
+        _accept(self.state)
         # fast profile: retries == 1, so attempt 1 and one retry may run.
         self.assertEqual(self.plan['caps']['retries'], 1)
 

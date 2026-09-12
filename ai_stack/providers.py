@@ -152,7 +152,7 @@ def run_codex_json(executable:str,root:Path,review_dir:Path,name:str,prompt:str,
                 if isinstance(event,dict) and event.get('type')=='turn.completed':
                     reported=event.get('usage',{})
                     if isinstance(reported,dict):
-                        for key in ('input_tokens','output_tokens'):
+                        for key in ('input_tokens','cached_input_tokens','output_tokens'):
                             reported_value=reported.get(key)
                             if type(reported_value) is int and reported_value>=0:
                                 usage[key]=usage.get(key,0)+reported_value

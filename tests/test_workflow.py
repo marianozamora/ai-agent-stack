@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -569,13 +570,18 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
             if name == failing:
                 script = 'raise SystemExit(2)'
             self.ai('validators','set',name,'--',sys.executable,'-c',script)
+        self.accept()
+
+    def accept(self, criteria=('app.txt keeps a trailing newline',)):
+        contract = Path(self.ai('path').strip()) / 'contracts/current-pr.yml'
+        contract.write_text(re.sub(r'(?m)^acceptance:.*$', 'acceptance: '+json.dumps(list(criteria)), contract.read_text()))
 
     def test_pipeline_preflight_success_resume_and_metrics(self):
         self.plan()
         self.assertIn('configure validators',self.ai('pipeline',ok=False))
         self.configure_pipeline()
         preview=json.loads(self.ai('pipeline','--dry-run'))
-        self.assertEqual(preview['order'][0],'cleanup')
+        self.assertEqual(preview['order'][:4],['checks','regression','contract','cleanup'])
         self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],0)
         self.assertIn('PR_READY',self.ai('pipeline'))
         report=json.loads(self.ai('metrics','--json'))
@@ -671,16 +677,47 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertIn('crossed at:  cleanup', output)
         self.assertIn('not run:', output)
         report = json.loads(self.ai('metrics', '--json'))
-        self.assertEqual(report['gate_attempts'], 1)
+        # checks, regression and contract run (and report 12 input tokens each) before cleanup.
+        self.assertEqual(report['gate_attempts'], 4)
         self.assertEqual(report['pipeline_budget_exceeded'], 1)
-        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 30000)
+        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 30036)
+
+    def test_pipeline_refuses_an_empty_contract_before_any_gate_runs(self):
+        self.plan()
+        self.configure_pipeline()
+        self.accept(criteria=())
+        output = self.ai('pipeline', ok=False)
+        self.assertIn('no acceptance criteria; no gate was run', output)
+        self.assertEqual(json.loads(self.ai('metrics', '--json'))['gate_attempts'], 0)
+
+    def test_a_failing_gates_usage_counts_against_the_budget(self):
+        self.plan()
+        self.configure_pipeline()
+        self.ai('validators', 'set', 'contract', '--', sys.executable, '-c',
+                'import json; print(json.dumps({"status":"FAIL","evidence":["fixture"],'
+                '"usage":{"input_tokens":5000,"output_tokens":7}}))')
+        self.ai('pipeline', ok=False)
+        run = json.loads((Path(self.ai('path').strip()) / 'state/pipeline-run.json').read_text())
+        self.assertEqual(run['usage']['input_tokens'], 5024)
+        self.assertEqual(run['usage']['output_tokens'], 13)
+
+    def test_cached_input_does_not_count_against_the_budget(self):
+        self.plan()
+        self.configure_pipeline()
+        cached = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
+                  '"usage":{"input_tokens":100000,"cached_input_tokens":90000,"output_tokens":1000}}))')
+        self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', cached)
+        output = self.ai('pipeline')
+        self.assertIn('PR_READY', output)
+        self.assertIn('(90000 cached)', output)
+        self.assertNotIn('BUDGET_EXCEEDED', output)
 
     def test_pipeline_stops_on_failure_and_config_changes_invalidate(self):
         self.plan()
         self.configure_pipeline(failing='checks')
         self.ai('pipeline',ok=False)
         report=json.loads(self.ai('metrics','--json'))
-        self.assertEqual(report['gate_attempts'],2)
+        self.assertEqual(report['gate_attempts'],1)
         self.assertEqual(report['gate_failures'],1)
         self.assertEqual(report['pipeline_successes'],0)
         self.configure_pipeline()
@@ -705,7 +742,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.ai('validators','set','cleanup','--',sys.executable,'-c',
                 'open("app.txt","w").write("changed"); print(\'{"status":"PASS","evidence":["fixture"]}\')')
         self.assertIn('changed during gate',self.ai('pipeline',ok=False))
-        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],1)
+        self.assertEqual(json.loads(self.ai('metrics','--json'))['gate_attempts'],4)
         (self.repo/'auth').mkdir()
         (self.repo/'auth/token.py').write_text('token = 1')
         output=self.ai('pipeline',ok=False)
@@ -759,7 +796,7 @@ if mode=='exit': sys.exit(2)
         self.assertEqual(config['validators']['checks']['adapter'],'exit-code')
         self.assertIn('PR_READY',self.ai('pipeline'))
         self.assertEqual((task/'review/calls').read_text().splitlines(),
-                         ['cleanup','contract','ponytail','summary','provenance'])
+                         ['contract','cleanup','ponytail','summary','provenance'])
         self.assertTrue((task/'state/pr-summary.md').is_file())
         report=json.loads(self.ai('metrics','--json'))
         self.assertEqual(report['usage']['input_tokens']['reported_total'],50)
@@ -778,20 +815,26 @@ if mode=='exit': sys.exit(2)
             with self.subTest(mode=mode):
                 self.env['FAKE_VERDICT']=mode
                 self.ai('pipeline',ok=False)
-                record=json.loads((task/'gates/cleanup.json').read_text())
+                record=json.loads((task/'gates/contract.json').read_text())
                 self.assertFalse(record['passed'])
-        self.assertEqual(set((task/'review/calls').read_text().splitlines()),{'cleanup'})
+        self.assertEqual(set((task/'review/calls').read_text().splitlines()),{'contract'})
 
     def test_bundled_contract_requires_criteria_and_gates(self):
         task=self.bundled_pipeline()
         self.assertIn('through ai pipeline',self.ai('validate','contract',ok=False))
         self.ai('gate','contract','--',sys.executable,str(ROOT/'ai_stack/cli.py'),'validate','contract',ok=False)
         contract=task/'contracts/current-pr.yml'
-        contract.write_text('objective: fixture\nacceptance: []\n')
-        self.ai('pipeline',ok=False)
+        # A block-list header with no items is as empty as `[]`.
+        contract.write_text('objective: fixture\nacceptance:\nmust_not_change: []\n')
+        self.assertIn('no gate was run',self.ai('pipeline',ok=False))
+        self.assertFalse((task/'review/calls').exists())
+        # The gate keeps its own check for a direct `ai gate contract`, still without a model call.
+        for name in ('checks','regression'):
+            self.ai('gate',name,'--',sys.executable,'-c','pass')
+        self.ai('gate','contract','--',sys.executable,str(ROOT/'ai_stack/cli.py'),'validate','contract',ok=False)
         record=json.loads((task/'gates/contract.json').read_text())
         self.assertIn('no acceptance criteria',Path(record['log']).read_text())
-        self.assertEqual((task/'review/calls').read_text().splitlines(),['cleanup'])
+        self.assertFalse((task/'review/calls').exists())
 
     def test_bundled_conditional_review_security_and_design(self):
         task=self.bundled_pipeline(design=True)

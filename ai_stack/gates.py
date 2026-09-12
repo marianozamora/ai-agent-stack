@@ -1,12 +1,12 @@
 from __future__ import annotations
-import argparse, hashlib, json, os, re, shutil, sys, tempfile, time, uuid
+import argparse, hashlib, json, os, shutil, sys, tempfile, time, uuid
 from pathlib import Path
 from detect import proposal, render
 from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import consecutive_gate_failures, gate_attempt_number, record_metric
 from prompts import prompt_slot, variant_text
-from workflow import contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
+from workflow import billable_tokens, contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
 from providers import builder as get_builder, reviewer as get_reviewer
 from validators import INSTRUCTIONS, SCHEMA, check_verdict, intact_record
@@ -155,7 +155,7 @@ def cmd_validate(args):
         design=task/'contracts/current-design.yml'
         if not contract.is_file(): raise ValueError('PR contract is missing.')
         if args.name=='design' and not design.is_file(): raise ValueError('Design contract is missing.')
-        if args.name=='contract' and re.search(r'^acceptance:\s*\[\s*\]\s*$',contract.read_text(),re.M):
+        if args.name=='contract' and not contract_list_field(contract.read_text(),'acceptance'):
             raise ValueError('PR contract has no acceptance criteria; populate it before validation.')
         active_reviewer=get_reviewer(state)
         # This check stays here (not inside the reviewer) so a caller can name the
@@ -243,18 +243,24 @@ def cmd_pipeline(args):
     if args.dry_run:
         print(json.dumps({'order':required,'validators':{name:config[name] for name in required}},indent=2))
         return
+    task=task_state(state)
+    contract=task/'contracts/current-pr.yml'
+    # Free to check here, and otherwise only discovered by the contract gate after
+    # every earlier gate has already spent its model call.
+    if not contract.is_file() or not contract_list_field(contract.read_text(),'acceptance'):
+        raise SystemExit('NEEDS_HUMAN: the PR contract has no acceptance criteria; no gate was run.\n'
+                         f'  edit {contract} and check it with `ai clarify`.')
     budget=plan['caps'].get('usage_tokens')
     card=confidence_card(root,state,plan['scope']['base'],plan['profile'],scope=plan['scope'],risk=plan['risk'])
     if budget and card['projected_usage_tokens']>budget:
         print(f"Note: projected usage from prior runs ({card['projected_usage_tokens']} tokens, n-backed) "
               f"exceeds this profile's budget ({budget}); consider a stricter profile. Continuing.")
     cost_budget=plan['caps'].get('usage_cost_usd')
-    task=task_state(state)
     started=time.monotonic(); status='FAILED'; executed=[]; skipped=[]
     overrun:dict={'gate':None,'tokens':0,'dimension':None,'spent':0,'budget':None}
-    usage_total={'input_tokens':0,'output_tokens':0,'cost_usd':0.0}
+    usage_total={'input_tokens':0,'cached_input_tokens':0,'output_tokens':0,'cost_usd':0.0}
     allow_overrun=getattr(args,'allow_overrun',False)
-    def spend(): return usage_total['input_tokens']+usage_total['output_tokens']
+    def spend(): return billable_tokens(usage_total)
     def crossed():
         """Which budget this spend has reached, if any. Tokens first: it is the one
         every provider reports, so it names the overrun whenever both are crossed."""
@@ -291,9 +297,13 @@ def cmd_pipeline(args):
                 # (just load_json/dict lookups), so recomputing it inside cmd_gate/
                 # run_gate would walk and hash the entire worktree a second time for
                 # no different answer. `after` is still always computed fresh.
-                cmd_gate(argparse.Namespace(name=name,allow_overrun=allow_overrun,**item),fingerprint)
-                fresh=load_json(task/'gates'/(name+'.json'),{})
-                for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
+                try: cmd_gate(argparse.Namespace(name=name,allow_overrun=allow_overrun,**item),fingerprint)
+                finally:
+                    # A failing gate exits through here, and its model call was spent all the same.
+                    # A record with the old log is one this attempt never wrote (e.g. a retry refusal).
+                    fresh=load_json(task/'gates'/(name+'.json'),{})
+                    if fresh.get('log')!=record.get('log'):
+                        for key in usage_total: usage_total[key]+=fresh.get('usage',{}).get(key,0)
                 # Check after the gate too, so the gate that actually crossed the budget
                 # is the one named, not the innocent one that would have come next.
                 if (reached:=crossed()): overrun={'gate':name,**reached}
@@ -309,8 +319,10 @@ def cmd_pipeline(args):
             'overrun_gate':overrun['gate'],'overrun_dimension':overrun['dimension'],
             'remaining':[name for name in required if name not in executed and name not in skipped],
             'finished_at':time.time()})
-        if spend(): print(f"Usage: {usage_total['input_tokens']} input / {usage_total['output_tokens']} output tokens"
-                          +(f' (budget {budget})' if budget else '')
+        if spend(): print(f"Usage: {usage_total['input_tokens']} input"
+                          +(f" ({usage_total['cached_input_tokens']} cached)" if usage_total['cached_input_tokens'] else '')
+                          +f" / {usage_total['output_tokens']} output tokens"
+                          +(f'; {spend()} counted against budget {budget}' if budget else '')
                           +(f"; ${usage_total['cost_usd']:.4f}"
                             +(f' (budget ${cost_budget:.2f})' if cost_budget else '') if usage_total['cost_usd'] else ''))
 
