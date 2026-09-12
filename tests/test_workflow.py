@@ -558,7 +558,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertEqual(by_id['payments-migration']['strict']['risk'], 'HIGH')
         self.assertEqual(by_id['ui-copy']['fast']['risk'], 'LOW')
         self.assertEqual(by_id['ui-copy']['strict']['risk'], 'MEDIUM')
-        for profile, tokens in (('fast', 40000), ('standard', 120000), ('strict', 250000)):
+        for profile, tokens in (('fast', 160000), ('standard', 230000), ('strict', 300000)):
             self.assertEqual(by_id['ui-copy'][profile]['usage_tokens'], tokens)
         self.assertEqual(by_id['onboarding-design']['standard']['task_type'], 'design')
         self.assertEqual(by_id['sdk-docs']['fast']['skills'], ['source-driven-development'])
@@ -669,7 +669,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.plan()
         self.configure_pipeline()
         big_script = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
-                      '"usage":{"input_tokens":30000,"output_tokens":20000}}))')
+                      '"usage":{"input_tokens":150000,"output_tokens":20000}}))')
         self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', big_script)
         output = self.ai('pipeline', ok=False)
         self.assertIn('BUDGET_EXCEEDED', output)
@@ -680,7 +680,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         # checks, regression and contract run (and report 12 input tokens each) before cleanup.
         self.assertEqual(report['gate_attempts'], 4)
         self.assertEqual(report['pipeline_budget_exceeded'], 1)
-        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 30036)
+        self.assertEqual(report['pipeline_usage']['input_tokens']['reported_total'], 150036)
 
     def test_pipeline_refuses_an_empty_contract_before_any_gate_runs(self):
         self.plan()
@@ -1039,7 +1039,7 @@ if mode=='exit': sys.exit(2)
 
     def test_pipeline_cost_budget_stops_before_the_token_budget_does(self):
         # 'standard' caps usage_cost_usd at $1.50 (ai_stack/core.py context_caps);
-        # keep tokens far under its 120000 budget so only cost trips the stop.
+        # keep tokens far under its 230000 budget so only cost trips the stop.
         # A non-fast profile always requires 'review' too (required_gates).
         self.plan('--profile', 'standard')
         self.configure_pipeline()
@@ -1077,7 +1077,7 @@ if mode=='exit': sys.exit(2)
         self.ai('validators', 'set', 'review', '--', sys.executable, '-c',
                 'import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"]}))')
         both_script = ('import json; print(json.dumps({"status":"PASS","evidence":["fixture validated"],'
-                       '"usage":{"input_tokens":100000,"output_tokens":30000,"cost_usd":2.00}}))')
+                       '"usage":{"input_tokens":220000,"output_tokens":30000,"cost_usd":2.00}}))')
         self.ai('validators', 'set', 'cleanup', '--', sys.executable, '-c', both_script)
         output = self.ai('pipeline', ok=False)
         self.assertIn('BUDGET_EXCEEDED', output)

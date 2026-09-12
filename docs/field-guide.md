@@ -55,9 +55,9 @@ number below is enforced, not advisory.
 
 | Profile | Skills | Raw files | Review files | Findings | Context7 queries | Review rounds | Retries | Token budget | Cost budget |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `fast` | 1 | 4 | 5 | 3 | 1 | 0 | 1 | 40,000 tok | $0.50 |
-| `standard` | 2 | 8 | 10 | 3 | 3 | 1 | 2 | 120,000 tok | $1.50 |
-| `strict` | 3 | 12 | 15 | 5 | 5 | 1 | 2 | 250,000 tok | $3.00 |
+| `fast` | 1 | 4 | 5 | 3 | 1 | 0 | 1 | 160,000 tok | $0.50 |
+| `standard` | 2 | 8 | 10 | 3 | 3 | 1 | 2 | 230,000 tok | $1.50 |
+| `strict` | 3 | 12 | 15 | 5 | 5 | 1 | 2 | 300,000 tok | $3.00 |
 
 `retries` is a per-gate streak cap: once a gate has failed that many times in
 a row without passing, `ai gate`/`ai pipeline` stop with `NEEDS_HUMAN` rather
