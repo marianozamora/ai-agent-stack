@@ -1,10 +1,29 @@
 # AI Agent Stack
 
+[![CI](https://github.com/marianozamora/ai-agent-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/marianozamora/ai-agent-stack/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-86%25-green)](#development)
+[![Version](https://img.shields.io/badge/version-0.9.4-blue)](VERSION)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+
 A zero-footprint, token-aware workflow for using Claude Code and Codex over existing repositories.
 
 The stack prepares bounded implementation context, records fresh validation evidence and certifies whether a change is ready for human review. Framework state stays outside the repository being changed.
 
 Current release: see [`VERSION`](VERSION). Changes between releases are recorded in [`CHANGELOG.md`](CHANGELOG.md).
+
+**At a glance**
+
+| | |
+|---|---|
+| Runtime dependencies | none — Python 3.10+ standard library only |
+| Bundled skills | 17, resolved in a repo-over-stack cascade |
+| Test suite | 976 tests, 390 subtests (`tests/`) |
+| Line coverage | 86% overall (`coverage report`), CI-enforced floor 81%; `ai_stack/skills.py` at 96% |
+| Codebase | ~5,800 lines across [`ai_stack/`](ai_stack) |
+| License | [MIT](LICENSE) |
+
+Coverage and test counts are measured against the full suite, including the subprocess-heavy end-to-end tests that only run after merge (see [Development](#development)); re-measure locally with `coverage run -m pytest -q && coverage combine && coverage report -m` rather than trusting these numbers to stay current forever.
 
 ## Quickstart
 
