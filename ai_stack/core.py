@@ -1,5 +1,5 @@
 from __future__ import annotations
-import contextlib, hashlib, json, os, re, subprocess, sys, tempfile, time
+import contextlib, hashlib, json, os, re, subprocess, sys, tempfile, time, unicodedata
 from pathlib import Path
 from typing import Any
 from workflow import ORDER
@@ -580,13 +580,23 @@ def classify(scope:dict, profile:str)->dict:
     return {"risk":risk,"reason":reason,"security":security}
 
 
+def fold(text:str)->str:
+    """Lowercase with accents stripped, so `migración` and `migracion` match the same keyword."""
+    return ''.join(c for c in unicodedata.normalize('NFKD',(text or '').lower()) if not unicodedata.combining(c))
+
+
 def classify_task(task:str,figma:str|None=None)->str:
-    t=(task or '').lower()
+    t=fold(task)
     if figma or 'figma.com/' in t: return 'design'
-    if re.search(r'\b(bug|regression|exception|crash|failing|fails|failure|broken|incorrect|timeout|403|401|500)\b',t): return 'bug'
-    if re.search(r'\b(migrate|migration|redesign|architecture|refactor|multi[- ]repo|rewrite|replace|deprecate)\b',t): return 'architecture'
-    if re.search(r'\b(prototype|spike|proof of concept|poc|feasibility|can we|whether)\b',t): return 'prototype'
-    if re.search(r'\b(ticket|tickets|epic|break down|decompose|roadmap)\b',t): return 'planning'
+    if re.search(r'\b(bugs?|regression|exception|crash|failing|fails|failure|broken|incorrect|timeout|403|401|500|fix|fixes'
+                 r'|fallos?|fallan?|roto|rota|rompe|excepcion|arregla|arreglar|corrige|corregir|incorrect[oa])\b',t): return 'bug'
+    if re.search(r'\b(migrate|migration|redesign|architecture|refactor|multi[- ]repo|rewrite|replace|deprecate'
+                 r'|migra|migrar|migracion|redisena|rediseno|arquitectura|refactoriza|refactorizar|reescribe|reescribir'
+                 r'|reemplaza|reemplazar|obsolet[oa])\b',t): return 'architecture'
+    if re.search(r'\b(prototype|spike|proof of concept|poc|feasibility|can we|whether'
+                 r'|prototipo|prueba de concepto|viabilidad|podemos)\b',t): return 'prototype'
+    if re.search(r'\b(ticket|tickets|epic|break down|decompose|roadmap|epicas?|desglosa|desglosar|descomponer|hoja de ruta)\b',t):
+        return 'planning'
     return 'feature'
 
 

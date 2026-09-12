@@ -4,10 +4,29 @@
   "category": "elicitation",
   "cost": "medium",
   "priority": 55,
-  "task_types": ["planning", "design"],
-  "triggers": ["grill me", "grill this", "grill-me", "stress-test this plan", "stress test this decision", "pressure-test"],
+  "task_types": [
+    "feature",
+    "planning",
+    "design"
+  ],
+  "triggers": [
+    "grill me",
+    "grill this",
+    "grill-me",
+    "stress-test this plan",
+    "stress test this decision",
+    "pressure-test",
+    "cuestiona este plan",
+    "ponme a prueba"
+  ],
   "requires_trigger": true,
-  "stages": ["map design tree", "ask frontier round", "wait for answers", "recompute frontier", "confirm shared understanding"],
+  "stages": [
+    "map design tree",
+    "ask frontier round",
+    "wait for answers",
+    "recompute frontier",
+    "confirm shared understanding"
+  ],
   "provenance": {
     "source": "mattpocock-skills",
     "path": "skills/productivity/grilling/SKILL.md",

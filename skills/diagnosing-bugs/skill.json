@@ -7,13 +7,20 @@
   "task_types": [
     "bug"
   ],
+  "primary_for": [
+    "bug"
+  ],
   "triggers": [
     "bug",
     "regression",
     "failing test",
     "exception",
     "crash",
-    "timeout"
+    "timeout",
+    "fallo",
+    "falla",
+    "excepción",
+    "se rompe"
   ],
   "stages": [
     "reproduce",

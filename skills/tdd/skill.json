@@ -11,7 +11,10 @@
   "triggers": [
     "test",
     "behavior",
-    "regression"
+    "regression",
+    "prueba",
+    "comportamiento",
+    "regresión"
   ],
   "always_consider": true,
   "stages": [

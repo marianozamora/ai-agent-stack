@@ -122,8 +122,11 @@ Skills resolve in a cascade, most specific first: a repository's own skills shad
 
 ```bash
 ai skill list                       # [repo] marks a skill this repository added
+ai skill list --task "migra el módulo de pagos"   # task type, recommendation, and why each skill scored
 ai skill create house-style --repo --category quality --prompt '...'
 ```
+
+Routing reads only `skills/registry.json`: triggers match whole words (with plain inflections and accents folded, in English or Spanish), `task_types` and `primary_for` add type bonuses, and `requires_trigger` keeps specialist skills out unless a trigger matches.
 
 A repo-scoped skill lives in that repository's external state, not in the checkout, and may deliberately reuse a bundled skill's name to replace it here without forking the stack. Shadowing replaces the whole definition rather than merging fields.
 

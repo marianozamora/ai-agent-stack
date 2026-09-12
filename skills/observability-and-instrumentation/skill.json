@@ -4,10 +4,35 @@
   "category": "reliability",
   "cost": "low",
   "priority": 80,
-  "task_types": ["feature", "architecture", "design"],
-  "triggers": ["observability", "telemetry", "opentelemetry", "tracing", "structured logging", "metrics", "slo", "alerting"],
+  "task_types": [
+    "feature",
+    "architecture",
+    "design"
+  ],
+  "triggers": [
+    "observability",
+    "telemetry",
+    "opentelemetry",
+    "tracing",
+    "structured logging",
+    "metrics",
+    "slo",
+    "alerting",
+    "observabilidad",
+    "telemetría",
+    "trazas",
+    "métricas",
+    "alertas",
+    "logs estructurados"
+  ],
   "requires_trigger": true,
-  "stages": ["state diagnostic question", "choose signal", "instrument boundary", "verify emission", "define response"],
+  "stages": [
+    "state diagnostic question",
+    "choose signal",
+    "instrument boundary",
+    "verify emission",
+    "define response"
+  ],
   "provenance": {
     "source": "addyosmani-agent-skills",
     "path": "skills/observability-and-instrumentation/SKILL.md",

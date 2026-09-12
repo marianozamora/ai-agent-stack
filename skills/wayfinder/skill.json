@@ -7,11 +7,17 @@
   "task_types": [
     "architecture"
   ],
+  "primary_for": [
+    "architecture"
+  ],
   "triggers": [
     "architecture",
     "migration",
     "redesign",
-    "multi-repo"
+    "multi-repo",
+    "arquitectura",
+    "migración",
+    "rediseño"
   ],
   "stages": [
     "open decisions",
