@@ -200,7 +200,7 @@ The framework must not add tracked AI configuration, contracts, metrics, graph o
 
 ## Agent pipeline
 
-Builder → deterministic checks → Regression → CRG impact → conditional Codex adversarial/security review → Cleanup → checks → provenance gate → Ponytail → optional design fidelity → PR summary.
+Builder → deterministic checks → Regression → contract → CRG impact → conditional Codex adversarial/security review → optional design fidelity → PR summary → one combined Cleanup/Ponytail/provenance review.
 
 Cleanup modifies only non-behavioral residue. Ponytail is read-only and judges project conventions before generic SOLID/FP preferences.
 
@@ -308,8 +308,11 @@ and inherits the enclosing gate's process group, so its timeout terminates the
 reviewer and its child tools. Structured output is validated independently of
 process success. Summary creation is performed by the wrapper outside the
 checkout, before provenance review; both gate records include the summary
-artifact hash. Missing prerequisites stop bundled validators before model
-execution. Reviewer completion events supply token counts, while missing cost
+artifact hash. Cleanup, ponytail and provenance share one reviewer call that
+returns a verdict per gate: the first of them to run makes the call, and the
+other two consume their stored verdict once, keyed to the evidence fingerprint,
+the prerequisite records and the summary hash. Missing prerequisites stop bundled
+validators before model execution. Reviewer completion events supply token counts, while missing cost
 data remains unreported. `ai validators install` adds missing semantic commands
 without replacing custom validators.
 

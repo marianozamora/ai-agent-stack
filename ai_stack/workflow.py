@@ -35,8 +35,10 @@ def execute(command, cwd, env, output, timeout):
 
 
 # Deterministic gates first: a failing test must stop the run before a model-judged gate spends anything.
-ORDER = ('checks', 'regression', 'contract', 'cleanup', 'review', 'security',
-         'ponytail', 'design', 'summary', 'provenance')
+# cleanup/ponytail/provenance share one reviewer call, so they sit together after summary:
+# provenance must see the generated PR summary.
+ORDER = ('checks', 'regression', 'contract', 'review', 'security', 'design',
+         'summary', 'cleanup', 'ponytail', 'provenance')
 
 
 def validate_config(config):

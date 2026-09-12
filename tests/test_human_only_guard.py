@@ -199,6 +199,7 @@ class RegressionGuardAstTests(unittest.TestCase):
         'cmd_handoff': 'writes a handoff note for a human, not gate/validator input',
         'cmd_pipeline': 'orchestrates gates, does not curate what they are told',
         'cmd_ready': 'writes readiness state derived from gate results, not an input to them',
+        'cmd_validate': "runs only inside its own gate; stores the bundled reviewer's verdicts, not curated input",
         'cmd_clarify': 'records clarifying Q&A for the current task, not curated rules',
         'cmd_benchmark': 'writes benchmark run output, not gate/validator input',
         'cmd_profile': 'writes the deep repo profile cache, a detection artifact not curation',

@@ -35,6 +35,7 @@ import crg  # noqa: E402
 import gates  # noqa: E402
 import lifecycle  # noqa: E402
 import providers  # noqa: E402
+import validators  # noqa: E402
 
 
 def _git(repo, *args):
@@ -502,7 +503,7 @@ class CmdValidateGuardTests(unittest.TestCase):
         # Past the codex-binary check (which() stubbed to a real path, never
         # spawned): with the PR contract removed the next guard fires.
         (core.task_state(self.state) / 'contracts' / 'current-pr.yml').unlink()
-        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), \
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), mock.patch.object(gates, 'required_gates', return_value=['cleanup']), \
                 mock.patch.object(gates.shutil, 'which', return_value='/usr/bin/true'):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
@@ -513,7 +514,7 @@ class CmdValidateGuardTests(unittest.TestCase):
         self._plan()
         # 'cleanup' has no prerequisite gate records, so execution reaches the
         # shutil.which('codex') check next.
-        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), \
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), mock.patch.object(gates, 'required_gates', return_value=['cleanup']), \
                 mock.patch.object(gates.shutil, 'which', return_value=None):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
@@ -526,7 +527,7 @@ class CmdValidateGuardTests(unittest.TestCase):
         core.save_json(self.state / 'repo.json',
                        {'providers': {'reviewer': 'command', 'reviewer_command': ['/no/such/reviewer-xyz']}})
         self._plan()
-        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), \
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), mock.patch.object(gates, 'required_gates', return_value=['cleanup']), \
                 mock.patch.object(gates.shutil, 'which', return_value=None):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
@@ -536,13 +537,70 @@ class CmdValidateGuardTests(unittest.TestCase):
     def test_unknown_configured_reviewer_is_needs_human_not_a_crash(self):
         core.save_json(self.state / 'repo.json', {'providers': {'reviewer': 'nonexistent'}})
         self._plan()
-        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}):
+        with mock.patch.dict(os.environ, {'AI_GATE': 'cleanup'}), mock.patch.object(gates, 'required_gates', return_value=['cleanup']):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
                 gates.cmd_validate(argparse.Namespace(name='cleanup'))
         verdict = json.loads(buf.getvalue())
         self.assertEqual(verdict['status'], 'NEEDS_HUMAN')
         self.assertIn('Unknown reviewer', verdict['findings'][0])
+
+
+class BundledValidatorTests(unittest.TestCase):
+    """cleanup, ponytail and provenance are judged by one reviewer call; each gate still
+    records its own verdict, and a stored verdict is used at most once."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
+        self.task = core.task_state(self.state)
+        self.calls = []
+        passing = {'status': 'PASS', 'evidence': ['app.txt:1 inspected'], 'findings': [], 'summary_markdown': ''}
+
+        def verdict(root, review_dir, name, prompt, schema, checker, timeout):
+            self.calls.append((name, prompt))
+            return {**checker({gate: dict(passing) for gate in schema['required']}),
+                    'usage': {'input_tokens': 9, 'output_tokens': 1}}
+        reviewer = types.SimpleNamespace(name='codex', probe_binary='codex', verdict=verdict)
+        for patch in (mock.patch.object(gates, 'required_gates', return_value=list(validators.BUNDLE)),
+                      mock.patch.object(gates, 'get_reviewer', return_value=reviewer),
+                      mock.patch.object(gates.shutil, 'which', return_value='/usr/bin/true')):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _validate(self, name):
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {'AI_GATE': name}), contextlib.redirect_stdout(buf):
+            gates.cmd_validate(argparse.Namespace(name=name))
+        return json.loads(buf.getvalue().strip().splitlines()[-1])
+
+    def test_one_call_serves_all_three_gates(self):
+        first = self._validate('cleanup')
+        self.assertEqual(first['usage'], {'input_tokens': 9, 'output_tokens': 1})
+        for name in ('ponytail', 'provenance'):
+            self.assertNotIn('usage', self._validate(name))
+        self.assertEqual(len(self.calls), 1)
+        name, prompt = self.calls[0]
+        self.assertEqual(name, 'bundle')
+        self.assertIn('Validate gates: cleanup, ponytail, provenance', prompt)
+        self.assertIn('## provenance\n' + validators.INSTRUCTIONS['provenance'], prompt)
+
+    def test_a_rerun_gate_asks_the_reviewer_again(self):
+        self._validate('cleanup')
+        self._validate('ponytail')
+        self._validate('ponytail')
+        self.assertEqual(len(self.calls), 2)
+
+    def test_a_changed_summary_invalidates_the_stored_verdicts(self):
+        self._validate('cleanup')
+        (self.task / 'state/pr-summary.md').write_text('# a different draft\n')
+        self._validate('provenance')
+        self.assertEqual(len(self.calls), 2)
+
+    def test_a_response_missing_a_gate_is_rejected(self):
+        passing = {'status': 'PASS', 'evidence': ['x'], 'findings': [], 'summary_markdown': ''}
+        with self.assertRaises(ValueError):
+            validators.check_bundle({'cleanup': passing}, validators.BUNDLE)
 
 
 class RunGateFingerprintReuseTests(unittest.TestCase):
