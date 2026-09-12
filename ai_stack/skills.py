@@ -210,13 +210,30 @@ def cmd_skill(args):
         return
     if args.skill_cmd=='dry-run':
         caps=context_caps(args.profile)
+        # The same budget build_prompt() splits across every selected skill (lifecycle.py);
+        # shown here against just this one skill, so a skill alone over budget is visible
+        # before it ever loses a slot-sharing truncation race against another.
+        budget=max(2000,caps['context_chars']//3)
+        p=resolve_skill_file(state,name,'prompt.md')
+        body=p.read_text().strip() if p is not None else None
         print('SKILL DRY RUN')
         print('  name:       ',name)
         print('  category:   ',registry[name].get('category'))
         print('  cost:       ',registry[name].get('cost'))
+        print('  origin:     ',registry[name].get('origin'))
         print('  max skills: ',caps['skills'])
         print('  stages:     ', ' -> '.join(registry[name].get('stages',[])))
         print('  repo writes: NO')
+        if body is None:
+            print('  prompt:      missing (no prompt.md found for this skill)')
+            return
+        print(f'  prompt size: {len(body)} chars (skill context budget for {args.profile}: {budget} chars,'
+              f' shared across up to {caps["skills"]} selected skill(s))')
+        if len(body)>budget:
+            print(f'  NOTE: this prompt alone exceeds the budget and would be truncated by'
+                  f' {len(body)-budget} chars if selected.')
+        print('  prompt:')
+        print(body)
         return
 
 

@@ -884,6 +884,8 @@ if mode=='exit': sys.exit(2)
         dry_run = self.ai('skill', 'dry-run', 'handoff')
         self.assertIn('SKILL DRY RUN', dry_run)
         self.assertIn('repo writes: NO', dry_run)
+        self.assertIn('prompt size:', dry_run)
+        self.assertIn('prompt:', dry_run)
 
         self.assertIn('Unknown skill', self.ai('skill', 'explain', 'not-a-real-skill', ok=False))
 
