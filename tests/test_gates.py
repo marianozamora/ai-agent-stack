@@ -547,20 +547,23 @@ class CmdValidateGuardTests(unittest.TestCase):
 
 
 class BundledValidatorTests(unittest.TestCase):
-    """cleanup, ponytail and provenance are judged by one reviewer call; each gate still
-    records its own verdict, and a stored verdict is used at most once."""
+    """summary, cleanup, ponytail and provenance are judged by one reviewer call; each gate
+    still records its own verdict, and a stored verdict is used at most once."""
 
     def setUp(self):
         self.root, self.state = _sandbox(self)
         lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
         self.task = core.task_state(self.state)
         self.calls = []
-        passing = {'status': 'PASS', 'evidence': ['app.txt:1 inspected'], 'findings': [], 'summary_markdown': ''}
+        passing = {'status': 'PASS', 'evidence': ['app.txt:1 inspected'], 'findings': []}
 
         def verdict(root, review_dir, name, prompt, schema, checker, timeout):
             self.calls.append((name, prompt))
-            return {**checker({gate: dict(passing) for gate in schema['required']}),
-                    'usage': {'input_tokens': 9, 'output_tokens': 1}}
+            # Every bundle response needs a real summary_markdown under 'summary' specifically
+            # (check_verdict rejects an empty one on PASS), regardless of which gate triggered.
+            per_gate = {gate: {**passing, 'summary_markdown': '# fixture summary' if gate == 'summary' else ''}
+                        for gate in schema['required']}
+            return {**checker(per_gate), 'usage': {'input_tokens': 9, 'output_tokens': 1}}
         reviewer = types.SimpleNamespace(name='codex', probe_binary='codex', verdict=verdict)
         for patch in (mock.patch.object(gates, 'required_gates', return_value=list(validators.BUNDLE)),
                       mock.patch.object(gates, 'get_reviewer', return_value=reviewer),
@@ -574,27 +577,33 @@ class BundledValidatorTests(unittest.TestCase):
             gates.cmd_validate(argparse.Namespace(name=name))
         return json.loads(buf.getvalue().strip().splitlines()[-1])
 
-    def test_one_call_serves_all_three_gates(self):
-        first = self._validate('cleanup')
+    def test_one_call_serves_all_four_gates(self):
+        # 'summary' is always bundle[0] and, in a real pipeline run, always the trigger --
+        # it writes state/pr-summary.md before cleanup/ponytail/provenance ever consume their
+        # stored verdicts. This is also the regression check for keying the cache on that
+        # file's hash: doing so used to self-invalidate the very next bundle member.
+        first = self._validate('summary')
         self.assertEqual(first['usage'], {'input_tokens': 9, 'output_tokens': 1})
-        for name in ('ponytail', 'provenance'):
+        self.assertEqual(first['summary_markdown'], '# fixture summary')
+        for name in ('cleanup', 'ponytail', 'provenance'):
             self.assertNotIn('usage', self._validate(name))
         self.assertEqual(len(self.calls), 1)
         name, prompt = self.calls[0]
         self.assertEqual(name, 'bundle')
-        self.assertIn('Validate gates: cleanup, ponytail, provenance', prompt)
+        self.assertIn('Validate gates: summary, cleanup, ponytail, provenance', prompt)
         self.assertIn('## provenance\n' + validators.INSTRUCTIONS['provenance'], prompt)
+        self.assertIn("summary_markdown you return under the 'summary' key IS the generated PR", prompt)
+
+    def test_any_member_can_trigger_the_call(self):
+        self._validate('cleanup')
+        for name in ('summary', 'ponytail', 'provenance'):
+            self.assertNotIn('usage', self._validate(name))
+        self.assertEqual(len(self.calls), 1)
 
     def test_a_rerun_gate_asks_the_reviewer_again(self):
         self._validate('cleanup')
         self._validate('ponytail')
         self._validate('ponytail')
-        self.assertEqual(len(self.calls), 2)
-
-    def test_a_changed_summary_invalidates_the_stored_verdicts(self):
-        self._validate('cleanup')
-        (self.task / 'state/pr-summary.md').write_text('# a different draft\n')
-        self._validate('provenance')
         self.assertEqual(len(self.calls), 2)
 
     def test_a_response_missing_a_gate_is_rejected(self):
