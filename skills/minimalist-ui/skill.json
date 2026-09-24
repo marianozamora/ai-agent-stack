@@ -1,0 +1,32 @@
+{
+  "name": "minimalist-ui",
+  "version": 1,
+  "category": "design",
+  "cost": "low",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "triggers": [
+    "minimalist ui",
+    "minimalist design",
+    "warm monochrome",
+    "notion-style",
+    "ui minimalista",
+    "diseño minimalista"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "macro-whitespace first",
+    "editorial type hierarchy",
+    "warm monochrome palette",
+    "flat bordered components",
+    "quiet motion"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/minimalist-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

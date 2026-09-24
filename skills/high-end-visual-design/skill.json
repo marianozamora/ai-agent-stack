@@ -1,0 +1,35 @@
+{
+  "name": "high-end-visual-design",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "triggers": [
+    "high-end design",
+    "high-end website",
+    "agency-level",
+    "premium website",
+    "luxury website",
+    "double-bezel",
+    "sitio premium",
+    "nivel agencia"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "choose vibe and layout archetype",
+    "scaffold whitespace and type",
+    "double-bezel architecture",
+    "choreograph motion",
+    "performance guardrails",
+    "pre-output checklist"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/soft-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

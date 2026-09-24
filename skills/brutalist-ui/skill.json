@@ -1,0 +1,32 @@
+{
+  "name": "brutalist-ui",
+  "version": 1,
+  "category": "design",
+  "cost": "low",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "triggers": [
+    "brutalist",
+    "brutalism",
+    "swiss industrial",
+    "crt terminal",
+    "terminal aesthetic",
+    "brutalista"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "pick one archetype",
+    "typographic structure",
+    "single hazard accent",
+    "rigid compartmentalized grid",
+    "analog texture"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/brutalist-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

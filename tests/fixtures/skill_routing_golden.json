@@ -664,16 +664,16 @@
     "figma": "https://figma.com/file/abc",
     "type": "design",
     "fast": [
-      "prototype"
+      "frontend-design"
     ],
     "standard": [
-      "prototype",
-      "codebase-design"
+      "frontend-design",
+      "prototype"
     ],
     "strict": [
+      "frontend-design",
       "prototype",
-      "codebase-design",
-      "tdd"
+      "codebase-design"
     ]
   },
   {
@@ -681,16 +681,16 @@
     "figma": "https://figma.com/file/xyz",
     "type": "design",
     "fast": [
-      "prototype"
+      "frontend-design"
     ],
     "standard": [
-      "prototype",
-      "codebase-design"
+      "frontend-design",
+      "prototype"
     ],
     "strict": [
+      "frontend-design",
       "prototype",
-      "codebase-design",
-      "tdd"
+      "codebase-design"
     ]
   },
   {
@@ -956,6 +956,867 @@
       "tdd"
     ],
     "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "polish the ui and visual hierarchy of the pricing landing page",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "frontend-design"
+    ],
+    "standard": [
+      "frontend-design",
+      "tdd"
+    ],
+    "strict": [
+      "frontend-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "mejora la jerarquía visual y la tipografía de la página de aterrizaje",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "frontend-design"
+    ],
+    "standard": [
+      "frontend-design",
+      "tdd"
+    ],
+    "strict": [
+      "frontend-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "our dashboard looks generic, run a ui audit",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "redesign-audit"
+    ],
+    "standard": [
+      "redesign-audit",
+      "tdd"
+    ],
+    "strict": [
+      "redesign-audit",
+      "tdd"
+    ]
+  },
+  {
+    "task": "haz una auditoría de ui porque la app se ve genérica",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "redesign-audit"
+    ],
+    "standard": [
+      "redesign-audit",
+      "tdd"
+    ],
+    "strict": [
+      "redesign-audit",
+      "tdd"
+    ]
+  },
+  {
+    "task": "audit the dependency licenses",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "add a spring animation to the settings drawer",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "motion-design"
+    ],
+    "standard": [
+      "motion-design",
+      "tdd"
+    ],
+    "strict": [
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "animar la entrada del modal de pagos",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "motion-design"
+    ],
+    "standard": [
+      "motion-design",
+      "tdd"
+    ],
+    "strict": [
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "move the drawer open state into the store",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "review the animations in the toast component",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "review-animations"
+    ],
+    "standard": [
+      "review-animations",
+      "motion-design"
+    ],
+    "strict": [
+      "review-animations",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "revisar las animaciones del menú de usuario",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "review-animations"
+    ],
+    "standard": [
+      "review-animations",
+      "motion-design"
+    ],
+    "strict": [
+      "review-animations",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "review the toast component api",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "build an awwwards portfolio site for a photographer",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "anti-slop-frontend"
+    ],
+    "standard": [
+      "anti-slop-frontend",
+      "tdd"
+    ],
+    "strict": [
+      "anti-slop-frontend",
+      "tdd"
+    ]
+  },
+  {
+    "task": "build a gsap scrolltrigger landing for the launch",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "gsap-landing-page"
+    ],
+    "standard": [
+      "gsap-landing-page",
+      "tdd"
+    ],
+    "strict": [
+      "gsap-landing-page",
+      "tdd"
+    ]
+  },
+  {
+    "task": "write a design.md for google stitch",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "stitch-design-md"
+    ],
+    "standard": [
+      "stitch-design-md",
+      "tdd"
+    ],
+    "strict": [
+      "stitch-design-md",
+      "tdd"
+    ]
+  },
+  {
+    "task": "give me the complete file with no placeholders",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd",
+      "full-output"
+    ],
+    "strict": [
+      "tdd",
+      "full-output"
+    ]
+  },
+  {
+    "task": "turn this mockup to code for the homepage",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "image-to-code"
+    ],
+    "standard": [
+      "image-to-code",
+      "tdd"
+    ],
+    "strict": [
+      "image-to-code",
+      "tdd"
+    ]
+  },
+  {
+    "task": "generate a mobile app concept for a fitness tracker",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "mobile-screen-concepts"
+    ],
+    "standard": [
+      "mobile-screen-concepts",
+      "tdd"
+    ],
+    "strict": [
+      "mobile-screen-concepts",
+      "tdd"
+    ]
+  },
+  {
+    "task": "create website mockup images for a coffee roaster",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "web-section-concepts"
+    ],
+    "standard": [
+      "web-section-concepts",
+      "tdd"
+    ],
+    "strict": [
+      "web-section-concepts",
+      "tdd"
+    ]
+  },
+  {
+    "task": "make the docs site a minimalist ui",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "minimalist-ui"
+    ],
+    "standard": [
+      "minimalist-ui",
+      "tdd"
+    ],
+    "strict": [
+      "minimalist-ui",
+      "tdd"
+    ]
+  },
+  {
+    "task": "give the dashboard a brutalist terminal aesthetic",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "brutalist-ui"
+    ],
+    "standard": [
+      "brutalist-ui",
+      "tdd"
+    ],
+    "strict": [
+      "brutalist-ui",
+      "tdd"
+    ]
+  },
+  {
+    "task": "create a brand kit for the new coffee brand",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "brand-kit"
+    ],
+    "standard": [
+      "brand-kit",
+      "tdd"
+    ],
+    "strict": [
+      "brand-kit",
+      "tdd"
+    ]
+  },
+  {
+    "task": "make the homepage feel agency-level and high-end",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "high-end-visual-design"
+    ],
+    "standard": [
+      "high-end-visual-design",
+      "tdd"
+    ],
+    "strict": [
+      "high-end-visual-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "which library should we use for drag and drop",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "pick-ui-library"
+    ],
+    "standard": [
+      "pick-ui-library",
+      "source-driven-development"
+    ],
+    "strict": [
+      "pick-ui-library",
+      "source-driven-development",
+      "tdd"
+    ]
+  },
+  {
+    "task": "what could be animated in the onboarding flow",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "find-animation-opportunities"
+    ],
+    "standard": [
+      "find-animation-opportunities",
+      "motion-design"
+    ],
+    "strict": [
+      "find-animation-opportunities",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "improve the animations across the web app",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "improve-animations"
+    ],
+    "standard": [
+      "improve-animations",
+      "motion-design"
+    ],
+    "strict": [
+      "improve-animations",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "explore ui variants for the pricing card",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "ui-variants"
+    ],
+    "standard": [
+      "ui-variants",
+      "tdd"
+    ],
+    "strict": [
+      "ui-variants",
+      "tdd"
+    ]
+  },
+  {
+    "task": "fix the swift concurrency warning in the sync service",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "write-swift"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "write-swift",
+      "tdd"
+    ]
+  },
+  {
+    "task": "the sonner toasts appear twice",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "sonner"
+    ],
+    "standard": [
+      "sonner",
+      "tdd"
+    ],
+    "strict": [
+      "sonner",
+      "tdd"
+    ]
+  },
+  {
+    "task": "make the bottom sheet feel apple-style with rubber-banding",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "apple-design"
+    ],
+    "standard": [
+      "apple-design",
+      "tdd"
+    ],
+    "strict": [
+      "apple-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "what's it called when a popover grows from its button",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "animation-vocabulary"
+    ],
+    "standard": [
+      "animation-vocabulary",
+      "tdd"
+    ],
+    "strict": [
+      "animation-vocabulary",
+      "tdd"
+    ]
+  },
+  {
+    "task": "add press feedback with reanimated in the expo app",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "animate-expo"
+    ],
+    "standard": [
+      "animate-expo",
+      "tdd"
+    ],
+    "strict": [
+      "animate-expo",
+      "tdd"
+    ]
+  },
+  {
+    "task": "do a design engineering pass on the command menu",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "design-engineering"
+    ],
+    "standard": [
+      "design-engineering",
+      "tdd"
+    ],
+    "strict": [
+      "design-engineering",
+      "tdd"
+    ]
+  },
+  {
+    "task": "crea una identidad de marca para la cafetería del barrio",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "brand-kit"
+    ],
+    "standard": [
+      "brand-kit",
+      "tdd"
+    ],
+    "strict": [
+      "brand-kit",
+      "tdd"
+    ]
+  },
+  {
+    "task": "cómo se llama esta animación del menú lateral",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "animation-vocabulary"
+    ],
+    "standard": [
+      "animation-vocabulary",
+      "motion-design"
+    ],
+    "strict": [
+      "animation-vocabulary",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "genera un mockup móvil de la app de finanzas",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "mobile-screen-concepts"
+    ],
+    "standard": [
+      "mobile-screen-concepts",
+      "tdd"
+    ],
+    "strict": [
+      "mobile-screen-concepts",
+      "tdd"
+    ]
+  },
+  {
+    "task": "genera el archivo completo sin placeholders para el módulo",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd",
+      "full-output"
+    ],
+    "strict": [
+      "tdd",
+      "full-output"
+    ]
+  },
+  {
+    "task": "Implement AIDA-compliant consent logging",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "Update DESIGN.md with the new module boundaries",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd",
+      "codebase-design"
+    ],
+    "strict": [
+      "tdd",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "Add a Swift package manifest check to CI",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "Fix the timeout in the expo push notification service",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "The toaster integration test fails on CI",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Fix the animation frame loop in the physics engine",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "motion-design"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Refactor the high-end tier pricing logic",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "wayfinder"
+    ],
+    "standard": [
+      "wayfinder",
+      "codebase-design"
+    ],
+    "strict": [
+      "wayfinder",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "Stream the full output of the build log instead of truncating",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "Write a design system RFC for the backend event schema",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "tdd"
+    ],
+    "standard": [
+      "tdd"
+    ],
+    "strict": [
+      "tdd"
+    ]
+  },
+  {
+    "task": "El sitio de marketing devuelve 500 en /pricing",
+    "figma": null,
+    "type": "bug",
+    "fast": [
+      "diagnosing-bugs"
+    ],
+    "standard": [
+      "diagnosing-bugs",
+      "tdd"
+    ],
+    "strict": [
+      "diagnosing-bugs",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Add a spring animation to the modal",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "motion-design"
+    ],
+    "standard": [
+      "motion-design",
+      "tdd"
+    ],
+    "strict": [
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Build a landing page with GSAP and ScrollTrigger",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "gsap-landing-page"
+    ],
+    "standard": [
+      "gsap-landing-page",
+      "tdd"
+    ],
+    "strict": [
+      "gsap-landing-page",
+      "tdd",
+      "frontend-design"
+    ]
+  },
+  {
+    "task": "Animate the button press with reanimated in our Expo app",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "animate-expo"
+    ],
+    "standard": [
+      "animate-expo",
+      "motion-design"
+    ],
+    "strict": [
+      "animate-expo",
+      "motion-design",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Refactor this SwiftUI view to use Swift concurrency",
+    "figma": null,
+    "type": "architecture",
+    "fast": [
+      "write-swift"
+    ],
+    "standard": [
+      "write-swift",
+      "wayfinder"
+    ],
+    "strict": [
+      "write-swift",
+      "wayfinder",
+      "codebase-design"
+    ]
+  },
+  {
+    "task": "Set up the sonner toaster in the layout",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "sonner"
+    ],
+    "standard": [
+      "sonner",
+      "tdd"
+    ],
+    "strict": [
+      "sonner",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Create a DESIGN.md for Google Stitch",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "stitch-design-md"
+    ],
+    "standard": [
+      "stitch-design-md",
+      "tdd"
+    ],
+    "strict": [
+      "stitch-design-md",
+      "tdd"
+    ]
+  },
+  {
+    "task": "Make the dashboard look less generic",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "redesign-audit"
+    ],
+    "standard": [
+      "redesign-audit",
+      "tdd"
+    ],
+    "strict": [
+      "redesign-audit",
+      "tdd"
+    ]
+  },
+  {
+    "task": "se ve menos genérica la app, hazle una auditoría",
+    "figma": null,
+    "type": "feature",
+    "fast": [
+      "redesign-audit"
+    ],
+    "standard": [
+      "redesign-audit",
+      "tdd"
+    ],
+    "strict": [
+      "redesign-audit",
       "tdd"
     ]
   }

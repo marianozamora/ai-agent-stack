@@ -17,8 +17,8 @@ Current release: see [`VERSION`](VERSION). Changes between releases are recorded
 | | |
 |---|---|
 | Runtime dependencies | none — Python 3.10+ standard library only |
-| Bundled skills | 21, resolved in a repo-over-stack cascade |
-| Test suite | 976 tests, 390 subtests (`tests/`) |
+| Bundled skills | 46, resolved in a repo-over-stack cascade |
+| Test suite | 1223 tests, 851 subtests (`tests/`) |
 | Line coverage | 86% overall (`coverage report`), CI-enforced floor 81%; `ai_stack/skills.py` at 96% |
 | Codebase | ~5,800 lines across [`ai_stack/`](ai_stack) |
 | License | [MIT](LICENSE) |
@@ -177,7 +177,7 @@ ai skill export --out /path/to/project/.claude/skills
 python3 scripts/export_skills.py --out /path/to/project/.claude/skills
 ```
 
-`--skill NAME` (repeatable) exports a subset; omitted, every enabled, selectable skill is exported, each with its own frontmatter description and any companion file it depends on (e.g. `wizard`'s `template.sh`). The result has zero dependency on this stack — it's the exact same discipline this project's own skills are curated from ([`mattpocock/skills`](https://github.com/mattpocock/skills), [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills)), just packaged for standalone use.
+`--skill NAME` (repeatable) exports a subset; omitted, every enabled, selectable skill is exported, each with its own frontmatter description and any companion file it depends on (e.g. `wizard`'s `template.sh`). The result has zero dependency on this stack — it's the exact same discipline this project's own skills are curated from ([`mattpocock/skills`](https://github.com/mattpocock/skills), [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills), and for design [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable), [`emilkowalski/skills`](https://github.com/emilkowalski/skills), [`leonxlnx/taste-skill`](https://github.com/leonxlnx/taste-skill)), just packaged for standalone use.
 
 ## Capabilities
 
@@ -194,7 +194,14 @@ Detection is by binary presence alone, exactly like the builder/reviewer provide
 
 The bundled skill router includes compact, trigger-gated adaptations of selected
 workflows from [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills):
-source-driven development, deprecation/migration, and observability. Their full
+source-driven development, deprecation/migration, and observability. Design work
+draws on every skill in [`pbakaus/impeccable`](https://github.com/pbakaus/impeccable)
+(`frontend-design`, primary for Figma-linked tasks),
+[`emilkowalski/skills`](https://github.com/emilkowalski/skills) (motion, Apple-style
+interaction, UI variants, library picks, Sonner, Swift) and
+[`leonxlnx/taste-skill`](https://github.com/leonxlnx/taste-skill) (anti-slop frontend,
+aesthetic styles, image-first concepts, brand kits). All but `frontend-design` stay
+dormant until a task names them. Their full
 upstream prompts are deliberately not injected; the stack keeps its own context
 caps, routing, gates and zero-footprint lifecycle.
 

@@ -1,0 +1,5 @@
+Build and review UI with a design engineer's craft bar: unseen details compound, and good defaults beat options. When reviewing UI code, always use one `Before | After | Why` markdown table, one row per issue.
+
+Check for: `transition: all` (name the properties); `scale(0)` entrances (start at 0.95 + opacity 0); ease-in on UI (ease-out or a strong custom curve); trigger-anchored `transform-origin` for popovers (modals stay centered); no animation on keyboard actions; UI durations of 150-250ms; hover motion gated by `(hover: hover) and (pointer: fine)`; transitions instead of keyframes for rapidly triggered elements; full `transform` strings instead of Motion `x`/`y` under load; `:active` press feedback; 30-80ms staggers.
+
+Build components the Sonner way: minimal setup, excellent defaults, edge cases handled invisibly (pause timers on hidden tabs, capture the pointer during drag), motion cohesive with the component's personality, and asymmetric timing (slow where the user decides, fast where the system responds). Review motion again in slow motion and with fresh eyes the next day.

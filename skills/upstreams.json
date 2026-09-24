@@ -80,6 +80,161 @@
           "prompt_sha256": "9063f25f67a000fa2831538ee848afad3c5a43ad1330141568e4431031d30ec0"
         }
       }
+    },
+    "pbakaus-impeccable": {
+      "repository": "https://github.com/pbakaus/impeccable.git",
+      "ref": "main",
+      "commit": "cb56ed6c19a07329a9fa0cd4e657bee040156593",
+      "license": "Apache-2.0",
+      "license_file": "UPSTREAM_LICENSES.md",
+      "integration": "curated adaptations; upstream prompts are not loaded at runtime",
+      "skills": {
+        "frontend-design": {
+          "path": ".claude/skills/impeccable/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "9d65ef376bbd300e316d848ff01e4ca5896edf34e66b5c76d15945bfd2c20112"
+        }
+      }
+    },
+    "emilkowalski-skills": {
+      "repository": "https://github.com/emilkowalski/skills.git",
+      "ref": "main",
+      "commit": "d23d7f88a2e21c9e4b1418c7abe420f5c1052ba7",
+      "license": "MIT",
+      "license_file": "UPSTREAM_LICENSES.md",
+      "integration": "curated adaptations; upstream prompts are not loaded at runtime",
+      "skills": {
+        "motion-design": {
+          "path": "skills/animate/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "35debb21346ef65d0bebeeaff9dde31ef7e0e0fd719d4abfb5686f365e698d39"
+        },
+        "review-animations": {
+          "path": "skills/review-animations/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "6e4aa741b3dfbf287ffac6d4dd2737ed179136c9158c43fea842d1c9411df08f"
+        },
+        "pick-ui-library": {
+          "path": "skills/pick-ui-library/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "2f3207e7c51dee43eebc1e55d488a9fcce840b96ebe35713aaa703ee953fb9c8"
+        },
+        "find-animation-opportunities": {
+          "path": "skills/find-animation-opportunities/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "6a7865170df6d711196c27a61bd873557055933ef131db55a4eb5b2be304205b"
+        },
+        "improve-animations": {
+          "path": "skills/improve-animations/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "33d32b07ac192bff2e7935a8d7ef40d05528938df673b3df58467ea4a22e012e"
+        },
+        "ui-variants": {
+          "path": "skills/prototype/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "e0e571f76aca5a489b72f6dab45f4af0cd25ddccd2a280b7b9b559638763bdd8"
+        },
+        "write-swift": {
+          "path": "skills/write-swift/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "9bbe246a8df40413161f17a7fc430622fb37905c4cfb415637ec27394709d0da"
+        },
+        "sonner": {
+          "path": "skills/ask-sonner/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "9d52298a17ed723a6f72657d9716d814245307aafd7143bfbac8d14d2055039d"
+        },
+        "apple-design": {
+          "path": "skills/apple-design/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "1f12770c2de39465574f52c6a80881552af630c68f0ef35bb6df70edd5d428c1"
+        },
+        "animation-vocabulary": {
+          "path": "skills/animation-vocabulary/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "8df10145fb6f7c62e6333c5ed7e361cf74c5420be8b0578f2b24085a51e9ef2d"
+        },
+        "animate-expo": {
+          "path": "skills/animate-expo/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "20028c0f7377f4f18e794ad9be5e15b071e043c9b086bf97de7e586772f0681a"
+        },
+        "design-engineering": {
+          "path": "skills/emil-design-eng/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "4a0df14678453748ebf62029bc21b869ec96b97603a261e79265bc9f7113a526"
+        }
+      }
+    },
+    "leonxlnx-taste-skill": {
+      "repository": "https://github.com/leonxlnx/taste-skill.git",
+      "ref": "main",
+      "commit": "ccbc15639c97057cbfcf32ecebc38ef716e4bb37",
+      "license": "MIT",
+      "license_file": "UPSTREAM_LICENSES.md",
+      "integration": "curated adaptations; upstream prompts are not loaded at runtime",
+      "skills": {
+        "redesign-audit": {
+          "path": "skills/redesign-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "1c4a825143aed78b7175a0a14edd9b6e5dc83559e8517b51212d7a5bf414af12"
+        },
+        "anti-slop-frontend": {
+          "path": "skills/taste-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "e192764ef88d785f53b1384464a973101cb626ae5602bfde4dc8ad53fd474e78"
+        },
+        "gsap-landing-page": {
+          "path": "skills/gpt-tasteskill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "f8e77d10fb6982ca6a54fcf9aac1e04c87a4cb1c6de19a9002685fa1448b5df7"
+        },
+        "stitch-design-md": {
+          "path": "skills/stitch-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "881b15555a2ec8b98194bb215ea33a9daa38673d001a480c843e386e33796786"
+        },
+        "full-output": {
+          "path": "skills/output-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "0ebc4c4ba0f4450d00b9c671ac3bdc7d3e4dc6a4c91e8ea96351b711e83b3dcc"
+        },
+        "image-to-code": {
+          "path": "skills/image-to-code-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "e95dc79ec3886079067d0c812d4d2ff52cd94fe87dd8b18df225023d3102e111"
+        },
+        "mobile-screen-concepts": {
+          "path": "skills/imagegen-frontend-mobile/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "c43a34fb890fe0bb9a0f063c3baa56da0b3b78a5bcb46c909f012de7abb19010"
+        },
+        "web-section-concepts": {
+          "path": "skills/imagegen-frontend-web/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "d5c19982b9ea5d35eeb05cddf08d97da1cdd129000ee06f4ad05108df34a22ef"
+        },
+        "minimalist-ui": {
+          "path": "skills/minimalist-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "4713dc78392cd186720860457ede39b092b017df8d8e0613a3ecad488b60ce7b"
+        },
+        "brutalist-ui": {
+          "path": "skills/brutalist-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "c0106bbcd08c784a8c9f8118f10c221c1b70d64df0ba84f7e3f667a921fbab9b"
+        },
+        "brand-kit": {
+          "path": "skills/brandkit/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "62977ea2b255273843cf709009e5fb5d6ce79923737904c47686b58260fd9fd4"
+        },
+        "high-end-visual-design": {
+          "path": "skills/soft-skill/SKILL.md",
+          "adaptation": "curated",
+          "prompt_sha256": "44d112113b0b3eb42461cca8ccb07d807c57b02b85cf1f196567d9cab5272529"
+        }
+      }
     }
   }
 }

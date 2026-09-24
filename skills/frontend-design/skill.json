@@ -1,0 +1,43 @@
+{
+  "name": "frontend-design",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 85,
+  "task_types": [
+    "design"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "landing page",
+    "ui design",
+    "ux design",
+    "visual hierarchy",
+    "typography",
+    "ui design system",
+    "design tokens",
+    "empty state",
+    "ui polish",
+    "polish the ui",
+    "página de aterrizaje",
+    "diseño de interfaz",
+    "jerarquía visual",
+    "tipografía",
+    "sistema de diseño ui"
+  ],
+  "stages": [
+    "name the surface mode",
+    "read product and design context",
+    "honor the brief",
+    "preserve or replace deliberately",
+    "cover real states",
+    "bounded verification pass"
+  ],
+  "provenance": {
+    "source": "pbakaus-impeccable",
+    "path": ".claude/skills/impeccable/SKILL.md",
+    "adaptation": "curated"
+  }
+}

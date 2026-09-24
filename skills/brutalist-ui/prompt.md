@@ -1,0 +1,5 @@
+Build a raw, mechanical interface. Pick ONE mode and never mix them: **Swiss industrial print** (light matte paper `#F4F4F0`, carbon ink `#111`, monolithic uppercase grotesk headers) or **tactical terminal** (dark `#0A0A0A`, phosphor `#EAEAEA`, monospace-dominant dense data, at most one terminal-green element). Both use a single hazard red (`#E61919`) as the only accent.
+
+Type is the structure: macro headers at `clamp(4rem, 10vw, 15rem)`, tracking -0.03 to -0.06em, leading 0.85-0.95, uppercase; micro data in mono at 10-14px with wide tracking, uppercase. Layout: rigid CSS grid, visible 1-2px dividers (`gap: 1px` over a contrasting background), zero border-radius, bimodal density (packed metadata beside vast negative space).
+
+Decoration is utilitarian: ASCII framing (`[ UNIT / D-01 ]`, `>>>`), crosshairs at grid intersections, registration marks. No gradients, soft shadows or translucency; texture only via halftone, scanlines or a low-opacity noise layer. Use semantic tags (`<data>`, `<samp>`, `<kbd>`, `<dl>`).

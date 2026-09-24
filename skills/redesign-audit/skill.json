@@ -1,0 +1,42 @@
+{
+  "name": "redesign-audit",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 70,
+  "task_types": [
+    "design",
+    "feature",
+    "architecture"
+  ],
+  "triggers": [
+    "design audit",
+    "ui audit",
+    "looks generic",
+    "look less generic",
+    "looks less generic",
+    "looks templated",
+    "ai slop",
+    "generic ui",
+    "premium look",
+    "redesign the ui",
+    "auditoría de diseño",
+    "auditoría de ui",
+    "se ve genérico",
+    "se ve genérica",
+    "se ve menos genérica"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "scan stack and styling",
+    "diagnose generic patterns",
+    "fix lowest-risk first",
+    "verify after each step",
+    "report per category"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/redesign-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "animate-expo",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 68,
+  "task_types": [
+    "design",
+    "feature",
+    "bug"
+  ],
+  "triggers": [
+    "expo animation",
+    "react native animation",
+    "reanimated",
+    "gesture handler",
+    "expo-haptics",
+    "animación en react native"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "frequency gate",
+    "name the purpose",
+    "cheapest tool",
+    "properties",
+    "timing or spring",
+    "stay on the ui thread",
+    "press and haptics",
+    "reduced motion"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/animate-expo/SKILL.md",
+    "adaptation": "curated"
+  }
+}
