@@ -607,7 +607,7 @@ def classify_task(task:str,figma:str|None=None)->str:
     return 'feature'
 
 
-AUTO_FAST_TASK_TYPES={'feature','bug','prototype'}
+AUTO_FAST_TASK_TYPES={'feature','bug','prototype','design'}
 
 
 def resolve_profile(explicit:str|None,scope:dict,task:str,figma:str|None=None)->tuple[str,str|None]:
@@ -624,7 +624,9 @@ def resolve_profile(explicit:str|None,scope:dict,task:str,figma:str|None=None)->
     if explicit is not None: return explicit,None
     risk=classify(scope,'standard')
     small=scope['file_count']<6 and scope['changed_lines']<160
-    if (small and risk['risk']=='LOW' and not risk['security']
+    # Figma-linked work adds the design gate and must match a spec, so it keeps `standard`.
+    figma_linked=bool(figma) or 'figma.com/' in fold(task or '')
+    if (small and risk['risk']=='LOW' and not risk['security'] and not figma_linked
             and classify_task(task,figma) in AUTO_FAST_TASK_TYPES):
         return 'fast','small low-risk change'
     return 'standard',None
