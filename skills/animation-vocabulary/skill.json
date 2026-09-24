@@ -8,6 +8,9 @@
     "design",
     "feature"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "what's it called when",
     "what is it called when",

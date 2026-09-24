@@ -9,6 +9,9 @@
     "feature",
     "design"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "review the animation",
     "review animation",

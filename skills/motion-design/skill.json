@@ -9,6 +9,9 @@
     "feature",
     "bug"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "animation",
     "animate",

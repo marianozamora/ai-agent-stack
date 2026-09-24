@@ -8,6 +8,9 @@
     "design",
     "feature"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "image to code",
     "image-to-code",

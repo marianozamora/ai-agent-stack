@@ -9,6 +9,9 @@
     "design",
     "feature"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "ui variants",
     "design variants",

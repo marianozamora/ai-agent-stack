@@ -9,6 +9,9 @@
     "feature",
     "architecture"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "design audit",
     "ui audit",

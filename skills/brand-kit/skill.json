@@ -9,6 +9,9 @@
     "feature",
     "planning"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "brand kit",
     "brandkit",

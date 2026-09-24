@@ -670,6 +670,9 @@
         "feature",
         "bug"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "animation",
         "animate",
@@ -711,6 +714,9 @@
         "feature",
         "design"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "review the animation",
         "review animation",
@@ -745,6 +751,9 @@
         "feature",
         "design"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "pick a ui library",
         "which library should",
@@ -774,6 +783,9 @@
       "task_types": [
         "design",
         "feature"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "animation opportunities",
@@ -808,6 +820,9 @@
         "feature",
         "bug"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "improve the animation",
         "improve animation",
@@ -839,6 +854,9 @@
         "prototype",
         "design",
         "feature"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "ui variants",
@@ -931,6 +949,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "apple design",
         "apple-style",
@@ -966,6 +987,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "what's it called when",
         "what is it called when",
@@ -995,6 +1019,9 @@
         "design",
         "feature",
         "bug"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "expo animation",
@@ -1030,6 +1057,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "design engineering",
         "design engineer",
@@ -1058,6 +1088,9 @@
         "design",
         "feature",
         "architecture"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "design audit",
@@ -1099,6 +1132,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "anti-slop",
         "design read",
@@ -1133,6 +1169,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "gsap",
         "scrolltrigger",
@@ -1163,6 +1202,9 @@
         "design",
         "feature",
         "planning"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "google stitch",
@@ -1222,6 +1264,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "image to code",
         "image-to-code",
@@ -1253,6 +1298,9 @@
         "design",
         "feature",
         "prototype"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "mobile app concept",
@@ -1288,6 +1336,9 @@
         "feature",
         "prototype"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "website mockup",
         "website concept",
@@ -1319,6 +1370,9 @@
         "design",
         "feature"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "minimalist ui",
         "minimalist design",
@@ -1349,6 +1403,9 @@
       "task_types": [
         "design",
         "feature"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "brutalist",
@@ -1382,6 +1439,9 @@
         "feature",
         "planning"
       ],
+      "primary_for": [
+        "design"
+      ],
       "triggers": [
         "brand kit",
         "brandkit",
@@ -1414,6 +1474,9 @@
       "task_types": [
         "design",
         "feature"
+      ],
+      "primary_for": [
+        "design"
       ],
       "triggers": [
         "high-end design",

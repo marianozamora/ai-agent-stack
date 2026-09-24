@@ -9,6 +9,9 @@
     "feature",
     "planning"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "google stitch",
     "stitch design",

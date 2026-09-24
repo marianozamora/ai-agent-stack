@@ -9,6 +9,9 @@
     "feature",
     "bug"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "expo animation",
     "react native animation",

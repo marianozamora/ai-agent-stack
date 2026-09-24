@@ -634,29 +634,35 @@
   {
     "task": "new feature: dark mode toggle",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
-      "tdd"
+      "frontend-design"
     ],
     "standard": [
-      "tdd"
+      "frontend-design",
+      "prototype"
     ],
     "strict": [
-      "tdd"
+      "frontend-design",
+      "prototype",
+      "codebase-design"
     ]
   },
   {
     "task": "nueva funcionalidad: modo oscuro",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
-      "tdd"
+      "frontend-design"
     ],
     "standard": [
-      "tdd"
+      "frontend-design",
+      "prototype"
     ],
     "strict": [
-      "tdd"
+      "frontend-design",
+      "prototype",
+      "codebase-design"
     ]
   },
   {
@@ -962,65 +968,69 @@
   {
     "task": "polish the ui and visual hierarchy of the pricing landing page",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "frontend-design"
     ],
     "standard": [
       "frontend-design",
-      "tdd"
+      "prototype"
     ],
     "strict": [
       "frontend-design",
-      "tdd"
+      "prototype",
+      "codebase-design"
     ]
   },
   {
     "task": "mejora la jerarquía visual y la tipografía de la página de aterrizaje",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "frontend-design"
     ],
     "standard": [
       "frontend-design",
-      "tdd"
+      "prototype"
     ],
     "strict": [
       "frontend-design",
-      "tdd"
+      "prototype",
+      "codebase-design"
     ]
   },
   {
     "task": "our dashboard looks generic, run a ui audit",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "redesign-audit"
     ],
     "standard": [
       "redesign-audit",
-      "tdd"
+      "frontend-design"
     ],
     "strict": [
       "redesign-audit",
-      "tdd"
+      "frontend-design",
+      "prototype"
     ]
   },
   {
     "task": "haz una auditoría de ui porque la app se ve genérica",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "redesign-audit"
     ],
     "standard": [
       "redesign-audit",
-      "tdd"
+      "frontend-design"
     ],
     "strict": [
       "redesign-audit",
-      "tdd"
+      "frontend-design",
+      "prototype"
     ]
   },
   {
@@ -1246,17 +1256,18 @@
   {
     "task": "make the docs site a minimalist ui",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "minimalist-ui"
     ],
     "standard": [
       "minimalist-ui",
-      "tdd"
+      "frontend-design"
     ],
     "strict": [
       "minimalist-ui",
-      "tdd"
+      "frontend-design",
+      "prototype"
     ]
   },
   {
@@ -1361,17 +1372,18 @@
   {
     "task": "explore ui variants for the pricing card",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "ui-variants"
     ],
     "standard": [
       "ui-variants",
-      "tdd"
+      "frontend-design"
     ],
     "strict": [
       "ui-variants",
-      "tdd"
+      "frontend-design",
+      "prototype"
     ]
   },
   {
@@ -1708,18 +1720,18 @@
   {
     "task": "Build a landing page with GSAP and ScrollTrigger",
     "figma": null,
-    "type": "feature",
+    "type": "design",
     "fast": [
       "gsap-landing-page"
     ],
     "standard": [
       "gsap-landing-page",
-      "tdd"
+      "frontend-design"
     ],
     "strict": [
       "gsap-landing-page",
-      "tdd",
-      "frontend-design"
+      "frontend-design",
+      "prototype"
     ]
   },
   {

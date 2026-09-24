@@ -8,6 +8,9 @@
     "feature",
     "design"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "pick a ui library",
     "which library should",

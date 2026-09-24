@@ -9,6 +9,9 @@
     "feature",
     "prototype"
   ],
+  "primary_for": [
+    "design"
+  ],
   "triggers": [
     "website mockup",
     "website concept",

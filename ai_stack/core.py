@@ -590,6 +590,13 @@ def classify_task(task:str,figma:str|None=None)->str:
     if figma or 'figma.com/' in t: return 'design'
     if re.search(r'\b(bugs?|regression|exception|crash|failing|fails|failure|broken|incorrect|timeout|403|401|500|fix|fixes'
                  r'|fallos?|fallan?|roto|rota|rompe|excepcion|arregla|arreglar|corrige|corregir|incorrect[oa])\b',t): return 'bug'
+    # UI-specific terms only -- bare `design`/`layout`/`style` stay out on purpose (a "design
+    # doc", a memory layout, or code style is not UI work); checked before `architecture` so a
+    # UI redesign (redesign/rediseña + a UI term) routes to `design` instead of `architecture`.
+    if re.search(r'\b(ui|ux|user interface|landing page|look and feel|visual design|visual hierarchy'
+                 r'|polish the ui|typography|dark mode|looks? generic|micro[- ]interactions?'
+                 r'|interfaz de usuario|interfaz grafica|diseno visual|pagina de aterrizaje|modo oscuro'
+                 r'|se ve generic[oa]|jerarquia visual|tipografia)\b',t): return 'design'
     if re.search(r'\b(migrate|migration|redesign|architecture|refactor|multi[- ]repo|rewrite|replace|deprecate'
                  r'|migra|migrar|migracion|redisena|rediseno|arquitectura|refactoriza|refactorizar|reescribe|reescribir'
                  r'|reemplaza|reemplazar|obsolet[oa])\b',t): return 'architecture'
