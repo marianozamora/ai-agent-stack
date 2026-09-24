@@ -1,0 +1,27 @@
+{
+  "name": "sonner",
+  "version": 1,
+  "category": "tooling",
+  "cost": "low",
+  "priority": 60,
+  "task_types": [
+    "bug",
+    "feature"
+  ],
+  "triggers": [
+    "sonner",
+    "sonner toaster"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "one toaster",
+    "pick the call",
+    "styling ladder",
+    "troubleshoot by symptom"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/ask-sonner/SKILL.md",
+    "adaptation": "curated"
+  }
+}

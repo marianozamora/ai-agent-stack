@@ -71,6 +71,7 @@ class CoreHelpersTests(unittest.TestCase):
         small_feature = {'files': ['src/ui/footer.tsx'], 'file_count': 1, 'changed_lines': 20}
         self.assertEqual(core.resolve_profile(None, small_feature, 'agrega un footer'), ('fast', 'small low-risk change'))
         self.assertEqual(core.resolve_profile(None, small_feature, 'fix broken footer link'), ('fast', 'small low-risk change'))
+        self.assertEqual(core.resolve_profile(None, small_feature, 'polish the footer ui'), ('fast', 'small low-risk change'))
 
         # Explicit choice always wins, downgrade or not.
         self.assertEqual(core.resolve_profile('standard', small_feature, 'agrega un footer'), ('standard', None))
@@ -81,6 +82,7 @@ class CoreHelpersTests(unittest.TestCase):
         self.assertEqual(core.resolve_profile(None, {'files': ['a.py'] * 7, 'file_count': 7, 'changed_lines': 5}, 'small change')[0], 'standard')
         self.assertEqual(core.resolve_profile(None, small_feature, 'refactor the footer component')[0], 'standard')
         self.assertEqual(core.resolve_profile(None, small_feature, 'redesign footer', 'https://figma.com/x')[0], 'standard')
+        self.assertEqual(core.resolve_profile(None, small_feature, 'match https://figma.com/x in the footer')[0], 'standard')
 
     def test_context_caps_scale_with_profile(self):
         fast, standard, strict = (core.context_caps(p) for p in ('fast', 'standard', 'strict'))

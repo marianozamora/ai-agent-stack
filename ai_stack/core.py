@@ -590,6 +590,13 @@ def classify_task(task:str,figma:str|None=None)->str:
     if figma or 'figma.com/' in t: return 'design'
     if re.search(r'\b(bugs?|regression|exception|crash|failing|fails|failure|broken|incorrect|timeout|403|401|500|fix|fixes'
                  r'|fallos?|fallan?|roto|rota|rompe|excepcion|arregla|arreglar|corrige|corregir|incorrect[oa])\b',t): return 'bug'
+    # UI-specific terms only -- bare `design`/`layout`/`style` stay out on purpose (a "design
+    # doc", a memory layout, or code style is not UI work); checked before `architecture` so a
+    # UI redesign (redesign/rediseña + a UI term) routes to `design` instead of `architecture`.
+    if re.search(r'\b(ui|ux|user interface|landing page|look and feel|visual design|visual hierarchy'
+                 r'|polish the ui|typography|dark mode|looks? generic|micro[- ]interactions?'
+                 r'|interfaz de usuario|interfaz grafica|diseno visual|pagina de aterrizaje|modo oscuro'
+                 r'|se ve generic[oa]|jerarquia visual|tipografia)\b',t): return 'design'
     if re.search(r'\b(migrate|migration|redesign|architecture|refactor|multi[- ]repo|rewrite|replace|deprecate'
                  r'|migra|migrar|migracion|redisena|rediseno|arquitectura|refactoriza|refactorizar|reescribe|reescribir'
                  r'|reemplaza|reemplazar|obsolet[oa])\b',t): return 'architecture'
@@ -600,7 +607,7 @@ def classify_task(task:str,figma:str|None=None)->str:
     return 'feature'
 
 
-AUTO_FAST_TASK_TYPES={'feature','bug','prototype'}
+AUTO_FAST_TASK_TYPES={'feature','bug','prototype','design'}
 
 
 def resolve_profile(explicit:str|None,scope:dict,task:str,figma:str|None=None)->tuple[str,str|None]:
@@ -617,7 +624,9 @@ def resolve_profile(explicit:str|None,scope:dict,task:str,figma:str|None=None)->
     if explicit is not None: return explicit,None
     risk=classify(scope,'standard')
     small=scope['file_count']<6 and scope['changed_lines']<160
-    if (small and risk['risk']=='LOW' and not risk['security']
+    # Figma-linked work adds the design gate and must match a spec, so it keeps `standard`.
+    figma_linked=bool(figma) or 'figma.com/' in fold(task or '')
+    if (small and risk['risk']=='LOW' and not risk['security'] and not figma_linked
             and classify_task(task,figma) in AUTO_FAST_TASK_TYPES):
         return 'fast','small low-risk change'
     return 'standard',None

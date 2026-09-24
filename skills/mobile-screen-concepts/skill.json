@@ -1,0 +1,38 @@
+{
+  "name": "mobile-screen-concepts",
+  "version": 1,
+  "category": "design",
+  "cost": "high",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature",
+    "prototype"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "mobile app concept",
+    "app screen concept",
+    "mobile mockup",
+    "app mockup",
+    "onboarding screens",
+    "mockup móvil",
+    "pantallas de la app"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "platform mode",
+    "infer screen count",
+    "lock a design bible",
+    "order a believable flow",
+    "generate every screen",
+    "quality check"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/imagegen-frontend-mobile/SKILL.md",
+    "adaptation": "curated"
+  }
+}

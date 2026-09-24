@@ -22,7 +22,7 @@
         "timeout",
         "fallo",
         "falla",
-        "excepci\u00f3n",
+        "excepción",
         "se rompe"
       ],
       "stages": [
@@ -45,7 +45,7 @@
         "handoff",
         "continue tomorrow",
         "switch model",
-        "continuar ma\u00f1ana",
+        "continuar mañana",
         "traspaso"
       ],
       "stages": [
@@ -117,8 +117,8 @@
         "redesign",
         "multi-repo",
         "arquitectura",
-        "migraci\u00f3n",
-        "redise\u00f1o"
+        "migración",
+        "rediseño"
       ],
       "stages": [
         "open decisions",
@@ -142,7 +142,7 @@
         "regression",
         "prueba",
         "comportamiento",
-        "regresi\u00f3n"
+        "regresión"
       ],
       "always_consider": true,
       "stages": [
@@ -193,7 +193,7 @@
         "epic",
         "decompose",
         "break down",
-        "\u00e9pica",
+        "épica",
         "desglosa",
         "descomponer"
       ],
@@ -237,10 +237,10 @@
         "sdk",
         "dependency version",
         "api version",
-        "documentaci\u00f3n oficial",
-        "librer\u00eda",
+        "documentación oficial",
+        "librería",
         "biblioteca",
-        "versi\u00f3n de la api"
+        "versión de la api"
       ],
       "requires_trigger": true,
       "stages": [
@@ -273,7 +273,7 @@
         "obsoleta",
         "migra",
         "migrar",
-        "migraci\u00f3n"
+        "migración"
       ],
       "requires_trigger": true,
       "stages": [
@@ -309,9 +309,9 @@
         "slo",
         "alerting",
         "observabilidad",
-        "telemetr\u00eda",
+        "telemetría",
         "trazas",
-        "m\u00e9tricas",
+        "métricas",
         "alertas",
         "logs estructurados"
       ],
@@ -450,7 +450,7 @@
         "wizard",
         "aprovisiona",
         "credenciales",
-        "configuraci\u00f3n manual"
+        "configuración manual"
       ],
       "requires_trigger": true,
       "stages": [
@@ -512,7 +512,7 @@
         "review this branch",
         "review my pr",
         "revisar el pr",
-        "revisi\u00f3n de c\u00f3digo"
+        "revisión de código"
       ],
       "requires_trigger": true,
       "stages": [
@@ -574,7 +574,7 @@
         "questionnaire",
         "async questionnaire",
         "cuestionario",
-        "encuesta as\u00edncrona"
+        "encuesta asíncrona"
       ],
       "requires_trigger": true,
       "stages": [
@@ -601,8 +601,8 @@
         "architecture review",
         "architecture audit",
         "deepening opportunities",
-        "revisi\u00f3n de arquitectura",
-        "auditor\u00eda de arquitectura"
+        "revisión de arquitectura",
+        "auditoría de arquitectura"
       ],
       "requires_trigger": true,
       "stages": [
@@ -615,6 +615,891 @@
       "provenance": {
         "source": "mattpocock-skills",
         "path": "skills/engineering/improve-codebase-architecture/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "frontend-design": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 85,
+      "task_types": [
+        "design"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "landing page",
+        "ui design",
+        "ux design",
+        "visual hierarchy",
+        "typography",
+        "ui design system",
+        "design tokens",
+        "empty state",
+        "ui polish",
+        "polish the ui",
+        "página de aterrizaje",
+        "diseño de interfaz",
+        "jerarquía visual",
+        "tipografía",
+        "sistema de diseño ui"
+      ],
+      "stages": [
+        "name the surface mode",
+        "read product and design context",
+        "honor the brief",
+        "preserve or replace deliberately",
+        "cover real states",
+        "bounded verification pass"
+      ],
+      "provenance": {
+        "source": "pbakaus-impeccable",
+        "path": ".claude/skills/impeccable/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "motion-design": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 65,
+      "task_types": [
+        "design",
+        "feature",
+        "bug"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "animation",
+        "animate",
+        "animating",
+        "motion design",
+        "micro-interaction",
+        "microinteraction",
+        "easing",
+        "spring animation",
+        "page transition",
+        "css transition",
+        "animación",
+        "animar",
+        "microinteracción"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "frequency gate",
+        "name the purpose",
+        "cheapest tool",
+        "gpu-only properties",
+        "easing and duration",
+        "interruption and exit",
+        "reduced motion and hover gating"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/animate/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "review-animations": {
+      "enabled": true,
+      "category": "quality",
+      "cost": "low",
+      "priority": 80,
+      "task_types": [
+        "bug",
+        "feature",
+        "design"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "review the animation",
+        "review animation",
+        "animation review",
+        "motion review",
+        "audit the motion",
+        "animation audit",
+        "revisar las animaciones",
+        "revisar animaciones",
+        "revisión de animaciones"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "measure against ten standards",
+        "escalate on sight",
+        "rank remedies",
+        "before/after table",
+        "block or approve"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/review-animations/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "pick-ui-library": {
+      "enabled": true,
+      "category": "tooling",
+      "cost": "low",
+      "priority": 90,
+      "task_types": [
+        "feature",
+        "design"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "pick a ui library",
+        "which library should",
+        "ui library",
+        "component library",
+        "qué librería usar",
+        "librería de ui"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "identify the task",
+        "check installed dependencies",
+        "recommend one library",
+        "flag mismatches"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/pick-ui-library/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "find-animation-opportunities": {
+      "enabled": true,
+      "category": "design",
+      "cost": "low",
+      "priority": 70,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "animation opportunities",
+        "what could be animated",
+        "feel more alive",
+        "where to animate",
+        "oportunidades de animación",
+        "qué podemos animar"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "recon",
+        "sweep seams",
+        "four-question gate",
+        "report opportunities",
+        "report rejections",
+        "verdict"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/find-animation-opportunities/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "improve-animations": {
+      "enabled": true,
+      "category": "quality",
+      "cost": "medium",
+      "priority": 72,
+      "task_types": [
+        "design",
+        "feature",
+        "bug"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "improve the animation",
+        "improve animation",
+        "animation roadmap",
+        "animation plan",
+        "mejorar las animaciones",
+        "mejorar animaciones"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "recon",
+        "audit eight categories",
+        "vet and prioritize",
+        "wait for selection",
+        "write self-contained plans"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/improve-animations/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "ui-variants": {
+      "enabled": true,
+      "category": "exploration",
+      "cost": "medium",
+      "priority": 75,
+      "task_types": [
+        "prototype",
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "ui variants",
+        "design variants",
+        "variant picker",
+        "explore variants",
+        "variantes de diseño",
+        "variantes de ui"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "scope one piece",
+        "recon tokens",
+        "name divergent directions",
+        "build isolated picker",
+        "verify and hand off",
+        "promote the pick"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/prototype/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "write-swift": {
+      "enabled": true,
+      "category": "implementation",
+      "cost": "medium",
+      "priority": 60,
+      "task_types": [
+        "bug",
+        "feature",
+        "architecture"
+      ],
+      "triggers": [
+        "swiftui",
+        "swift concurrency",
+        "sendable",
+        "actor reentrancy",
+        "swift testing",
+        "swift code"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "value types first",
+        "visible failure paths",
+        "main actor until profiled",
+        "generics before existentials",
+        "measure then optimize",
+        "migrate per target"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/write-swift/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "sonner": {
+      "enabled": true,
+      "category": "tooling",
+      "cost": "low",
+      "priority": 60,
+      "task_types": [
+        "bug",
+        "feature"
+      ],
+      "triggers": [
+        "sonner",
+        "sonner toaster"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "one toaster",
+        "pick the call",
+        "styling ladder",
+        "troubleshoot by symptom"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/ask-sonner/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "apple-design": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 60,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "apple design",
+        "apple-style",
+        "fluid interface",
+        "rubber-banding",
+        "rubber band",
+        "velocity handoff",
+        "momentum projection",
+        "estilo apple"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "instant response",
+        "direct manipulation",
+        "interruptible springs",
+        "velocity and momentum",
+        "spatial consistency",
+        "materials and depth",
+        "accessibility and type"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/apple-design/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "animation-vocabulary": {
+      "enabled": true,
+      "category": "design",
+      "cost": "tiny",
+      "priority": 80,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "what's it called when",
+        "what is it called when",
+        "animation term",
+        "animation vocabulary",
+        "cómo se llama esta animación",
+        "cómo se llama el efecto"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "read for sensation",
+        "name the term",
+        "disambiguate alternates"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/animation-vocabulary/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "animate-expo": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 68,
+      "task_types": [
+        "design",
+        "feature",
+        "bug"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "expo animation",
+        "react native animation",
+        "reanimated",
+        "gesture handler",
+        "expo-haptics",
+        "animación en react native"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "frequency gate",
+        "name the purpose",
+        "cheapest tool",
+        "properties",
+        "timing or spring",
+        "stay on the ui thread",
+        "press and haptics",
+        "reduced motion"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/animate-expo/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "design-engineering": {
+      "enabled": true,
+      "category": "quality",
+      "cost": "medium",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "design engineering",
+        "design engineer",
+        "ingeniería de diseño"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "craft review",
+        "before/after table",
+        "animation checklist",
+        "component principles",
+        "fresh-eyes pass"
+      ],
+      "provenance": {
+        "source": "emilkowalski-skills",
+        "path": "skills/emil-design-eng/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "redesign-audit": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 70,
+      "task_types": [
+        "design",
+        "feature",
+        "architecture"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "design audit",
+        "ui audit",
+        "looks generic",
+        "look less generic",
+        "looks less generic",
+        "looks templated",
+        "ai slop",
+        "generic ui",
+        "premium look",
+        "redesign the ui",
+        "auditoría de diseño",
+        "auditoría de ui",
+        "se ve genérico",
+        "se ve genérica",
+        "se ve menos genérica"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "scan stack and styling",
+        "diagnose generic patterns",
+        "fix lowest-risk first",
+        "verify after each step",
+        "report per category"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/redesign-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "anti-slop-frontend": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 60,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "anti-slop",
+        "design read",
+        "portfolio site",
+        "marketing site",
+        "awwwards",
+        "design dials",
+        "sitio de portafolio",
+        "diseño del sitio de marketing"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "design read",
+        "set the three dials",
+        "choose a design system",
+        "detect redesign mode",
+        "sweep ai tells",
+        "pre-flight check"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/taste-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "gsap-landing-page": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "gsap",
+        "scrolltrigger",
+        "aida landing page",
+        "aida structure"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "seeded design plan",
+        "aida structure",
+        "wide hero",
+        "gapless bento",
+        "scroll choreography",
+        "label and contrast sweep"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/gpt-tasteskill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "stitch-design-md": {
+      "enabled": true,
+      "category": "design",
+      "cost": "low",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature",
+        "planning"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "google stitch",
+        "stitch design",
+        "stitch design.md"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "define atmosphere",
+        "map palette with roles",
+        "typography rules",
+        "component stylings",
+        "layout and responsive rules",
+        "motion",
+        "anti-patterns"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/stitch-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "full-output": {
+      "enabled": true,
+      "category": "efficiency",
+      "cost": "low",
+      "priority": 25,
+      "task_types": [],
+      "triggers": [
+        "full output mode",
+        "complete file",
+        "no placeholders",
+        "don't truncate",
+        "sin placeholders",
+        "archivo completo",
+        "no truncar"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "lock deliverable count",
+        "build every deliverable",
+        "cross-check against the request",
+        "pause at a clean boundary"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/output-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "image-to-code": {
+      "enabled": true,
+      "category": "design",
+      "cost": "high",
+      "priority": 60,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "image to code",
+        "image-to-code",
+        "screenshot to code",
+        "mockup to code",
+        "imagen a código",
+        "captura a código"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "infer sections",
+        "generate one image per section",
+        "deep image analysis",
+        "extract the design spec",
+        "implement without drift"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/image-to-code-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "mobile-screen-concepts": {
+      "enabled": true,
+      "category": "design",
+      "cost": "high",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature",
+        "prototype"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "mobile app concept",
+        "app screen concept",
+        "mobile mockup",
+        "app mockup",
+        "onboarding screens",
+        "mockup móvil",
+        "pantallas de la app"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "platform mode",
+        "infer screen count",
+        "lock a design bible",
+        "order a believable flow",
+        "generate every screen",
+        "quality check"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/imagegen-frontend-mobile/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "web-section-concepts": {
+      "enabled": true,
+      "category": "design",
+      "cost": "high",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature",
+        "prototype"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "website mockup",
+        "website concept",
+        "section images",
+        "design comps",
+        "mockup web",
+        "concepto de sitio web"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "infer section count",
+        "commit to one image per section",
+        "lock one brand world",
+        "vary composition per section",
+        "clarity check"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/imagegen-frontend-web/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "minimalist-ui": {
+      "enabled": true,
+      "category": "design",
+      "cost": "low",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "minimalist ui",
+        "minimalist design",
+        "warm monochrome",
+        "notion-style",
+        "ui minimalista",
+        "diseño minimalista"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "macro-whitespace first",
+        "editorial type hierarchy",
+        "warm monochrome palette",
+        "flat bordered components",
+        "quiet motion"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/minimalist-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "brutalist-ui": {
+      "enabled": true,
+      "category": "design",
+      "cost": "low",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "brutalist",
+        "brutalism",
+        "swiss industrial",
+        "crt terminal",
+        "terminal aesthetic",
+        "brutalista"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "pick one archetype",
+        "typographic structure",
+        "single hazard accent",
+        "rigid compartmentalized grid",
+        "analog texture"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/brutalist-skill/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "brand-kit": {
+      "enabled": true,
+      "category": "design",
+      "cost": "high",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature",
+        "planning"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "brand kit",
+        "brandkit",
+        "brand identity",
+        "logo concept",
+        "brand guidelines",
+        "identidad de marca",
+        "manual de marca"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "brand strategy",
+        "core metaphor",
+        "logo concept",
+        "board layout",
+        "consistent touchpoints",
+        "final quality check"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/brandkit/SKILL.md",
+        "adaptation": "curated"
+      }
+    },
+    "high-end-visual-design": {
+      "enabled": true,
+      "category": "design",
+      "cost": "medium",
+      "priority": 55,
+      "task_types": [
+        "design",
+        "feature"
+      ],
+      "primary_for": [
+        "design"
+      ],
+      "triggers": [
+        "high-end design",
+        "high-end website",
+        "agency-level",
+        "premium website",
+        "luxury website",
+        "double-bezel",
+        "sitio premium",
+        "nivel agencia"
+      ],
+      "requires_trigger": true,
+      "stages": [
+        "choose vibe and layout archetype",
+        "scaffold whitespace and type",
+        "double-bezel architecture",
+        "choreograph motion",
+        "performance guardrails",
+        "pre-output checklist"
+      ],
+      "provenance": {
+        "source": "leonxlnx-taste-skill",
+        "path": "skills/soft-skill/SKILL.md",
         "adaptation": "curated"
       }
     }

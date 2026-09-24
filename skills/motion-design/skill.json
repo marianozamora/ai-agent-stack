@@ -1,0 +1,45 @@
+{
+  "name": "motion-design",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 65,
+  "task_types": [
+    "design",
+    "feature",
+    "bug"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "animation",
+    "animate",
+    "animating",
+    "motion design",
+    "micro-interaction",
+    "microinteraction",
+    "easing",
+    "spring animation",
+    "page transition",
+    "css transition",
+    "animación",
+    "animar",
+    "microinteracción"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "frequency gate",
+    "name the purpose",
+    "cheapest tool",
+    "gpu-only properties",
+    "easing and duration",
+    "interruption and exit",
+    "reduced motion and hover gating"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/animate/SKILL.md",
+    "adaptation": "curated"
+  }
+}

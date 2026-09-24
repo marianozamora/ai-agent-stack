@@ -1,0 +1,35 @@
+{
+  "name": "image-to-code",
+  "version": 1,
+  "category": "design",
+  "cost": "high",
+  "priority": 60,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "image to code",
+    "image-to-code",
+    "screenshot to code",
+    "mockup to code",
+    "imagen a código",
+    "captura a código"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "infer sections",
+    "generate one image per section",
+    "deep image analysis",
+    "extract the design spec",
+    "implement without drift"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/image-to-code-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

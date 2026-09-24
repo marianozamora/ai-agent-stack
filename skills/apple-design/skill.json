@@ -1,0 +1,39 @@
+{
+  "name": "apple-design",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 60,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "apple design",
+    "apple-style",
+    "fluid interface",
+    "rubber-banding",
+    "rubber band",
+    "velocity handoff",
+    "momentum projection",
+    "estilo apple"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "instant response",
+    "direct manipulation",
+    "interruptible springs",
+    "velocity and momentum",
+    "spatial consistency",
+    "materials and depth",
+    "accessibility and type"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/apple-design/SKILL.md",
+    "adaptation": "curated"
+  }
+}

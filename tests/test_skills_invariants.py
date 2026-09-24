@@ -134,6 +134,47 @@ class ClassifyTaskUnitTests(unittest.TestCase):
     def test_prototype_wins_over_planning(self):
         self.assertEqual(core.classify_task('prototype the epic breakdown'), 'prototype')
 
+    def test_bug_wins_over_design(self):
+        self.assertEqual(core.classify_task('Fix the broken button styling'), 'bug')
+
+    def test_design_detected_from_ui_text_without_figma(self):
+        self.assertEqual(core.classify_task('Polish the UI of the onboarding flow'), 'design')
+
+    def test_design_wins_over_architecture_for_a_ui_redesign(self):
+        self.assertEqual(
+            core.classify_task('Redesign the UI of the settings page, it looks generic'), 'design')
+        self.assertEqual(
+            core.classify_task('Rediseña la landing page, se ve genérica'), 'design')
+
+    def test_bare_redesign_or_refactor_stays_architecture(self):
+        self.assertEqual(core.classify_task('Redesign the auth module'), 'architecture')
+        self.assertEqual(core.classify_task('Refactor the auth module'), 'architecture')
+
+    def test_bare_design_word_does_not_trigger_design(self):
+        # A "design doc" / "design system RFC" is not UI work -- `design` alone must not match.
+        self.assertEqual(
+            core.classify_task('Write a design system RFC for the backend event schema'), 'feature')
+        self.assertEqual(core.classify_task('grill me on the design'), 'feature')
+
+    def test_ambiguous_words_do_not_trigger_design(self):
+        # `layout` (memory layout) and `style` (code style) are excluded on purpose.
+        self.assertEqual(core.classify_task('Optimize the memory layout of the cache'), 'feature')
+        # English `interfaces`, an infra `landing zone`, or a module's `interfaz` are code, not UI.
+        self.assertEqual(core.classify_task('Add Go interfaces for the repository layer'), 'feature')
+        self.assertEqual(core.classify_task('Set up the AWS landing zone with Terraform'), 'feature')
+        self.assertEqual(core.classify_task('Define la interfaz del módulo de pagos'), 'feature')
+
+    DESIGN_KEYWORDS_EN = ['ui', 'ux', 'user interface', 'landing page', 'look and feel', 'visual design',
+                           'visual hierarchy', 'polish the ui', 'typography', 'dark mode', 'looks generic',
+                           'micro-interaction']
+    DESIGN_KEYWORDS_ES = ['interfaz de usuario', 'interfaz gráfica', 'diseño visual', 'página de aterrizaje', 'modo oscuro',
+                           'se ve generica', 'se ve generico', 'jerarquía visual', 'tipografía']
+
+    def test_every_design_keyword_classifies_as_design(self):
+        for word in self.DESIGN_KEYWORDS_EN + self.DESIGN_KEYWORDS_ES:
+            with self.subTest(word=word):
+                self.assertEqual(core.classify_task(f'we should update the {word} here'), 'design')
+
     SPANISH_KEYWORDS = {
         'bug': ['fallos', 'fallan', 'roto', 'rota', 'rompe', 'excepcion', 'arregla', 'arreglar',
                 'corrige', 'corregir', 'incorrecto', 'incorrecta'],

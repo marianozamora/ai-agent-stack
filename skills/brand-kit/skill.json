@@ -1,0 +1,38 @@
+{
+  "name": "brand-kit",
+  "version": 1,
+  "category": "design",
+  "cost": "high",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature",
+    "planning"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "brand kit",
+    "brandkit",
+    "brand identity",
+    "logo concept",
+    "brand guidelines",
+    "identidad de marca",
+    "manual de marca"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "brand strategy",
+    "core metaphor",
+    "logo concept",
+    "board layout",
+    "consistent touchpoints",
+    "final quality check"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/brandkit/SKILL.md",
+    "adaptation": "curated"
+  }
+}

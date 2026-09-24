@@ -1,0 +1,37 @@
+{
+  "name": "ui-variants",
+  "version": 1,
+  "category": "exploration",
+  "cost": "medium",
+  "priority": 75,
+  "task_types": [
+    "prototype",
+    "design",
+    "feature"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "ui variants",
+    "design variants",
+    "variant picker",
+    "explore variants",
+    "variantes de diseño",
+    "variantes de ui"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "scope one piece",
+    "recon tokens",
+    "name divergent directions",
+    "build isolated picker",
+    "verify and hand off",
+    "promote the pick"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/prototype/SKILL.md",
+    "adaptation": "curated"
+  }
+}

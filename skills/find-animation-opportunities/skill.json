@@ -1,0 +1,36 @@
+{
+  "name": "find-animation-opportunities",
+  "version": 1,
+  "category": "design",
+  "cost": "low",
+  "priority": 70,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "animation opportunities",
+    "what could be animated",
+    "feel more alive",
+    "where to animate",
+    "oportunidades de animación",
+    "qué podemos animar"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "recon",
+    "sweep seams",
+    "four-question gate",
+    "report opportunities",
+    "report rejections",
+    "verdict"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/find-animation-opportunities/SKILL.md",
+    "adaptation": "curated"
+  }
+}

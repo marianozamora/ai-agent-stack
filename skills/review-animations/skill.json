@@ -1,0 +1,39 @@
+{
+  "name": "review-animations",
+  "version": 1,
+  "category": "quality",
+  "cost": "low",
+  "priority": 80,
+  "task_types": [
+    "bug",
+    "feature",
+    "design"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "review the animation",
+    "review animation",
+    "animation review",
+    "motion review",
+    "audit the motion",
+    "animation audit",
+    "revisar las animaciones",
+    "revisar animaciones",
+    "revisión de animaciones"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "measure against ten standards",
+    "escalate on sight",
+    "rank remedies",
+    "before/after table",
+    "block or approve"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/review-animations/SKILL.md",
+    "adaptation": "curated"
+  }
+}

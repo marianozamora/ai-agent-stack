@@ -1,0 +1,36 @@
+{
+  "name": "web-section-concepts",
+  "version": 1,
+  "category": "design",
+  "cost": "high",
+  "priority": 55,
+  "task_types": [
+    "design",
+    "feature",
+    "prototype"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "website mockup",
+    "website concept",
+    "section images",
+    "design comps",
+    "mockup web",
+    "concepto de sitio web"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "infer section count",
+    "commit to one image per section",
+    "lock one brand world",
+    "vary composition per section",
+    "clarity check"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/imagegen-frontend-web/SKILL.md",
+    "adaptation": "curated"
+  }
+}

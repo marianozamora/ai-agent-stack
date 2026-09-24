@@ -1,0 +1,38 @@
+{
+  "name": "anti-slop-frontend",
+  "version": 1,
+  "category": "design",
+  "cost": "medium",
+  "priority": 60,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "anti-slop",
+    "design read",
+    "portfolio site",
+    "marketing site",
+    "awwwards",
+    "design dials",
+    "sitio de portafolio",
+    "diseño del sitio de marketing"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "design read",
+    "set the three dials",
+    "choose a design system",
+    "detect redesign mode",
+    "sweep ai tells",
+    "pre-flight check"
+  ],
+  "provenance": {
+    "source": "leonxlnx-taste-skill",
+    "path": "skills/taste-skill/SKILL.md",
+    "adaptation": "curated"
+  }
+}

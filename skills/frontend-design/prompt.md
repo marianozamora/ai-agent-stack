@@ -1,0 +1,5 @@
+Design or refine a frontend surface with a clear point of view, not safe defaults. First name the mode from the surface, not the product: **Persuade** (landing, pricing: earn the action), **Operate** (app UI, dashboards, settings: scanability, consistency and native expectations outrank expression), **Read** (docs, articles: structure for comprehension), **Experience** (portfolio, gallery: the work leads, the interface recedes).
+
+Read existing PRODUCT.md/DESIGN.md, tokens and the running UI before editing; a missing DESIGN.md does not make a project greenfield. The brief wins: honor pinned fonts, palettes and eras over your own taste. Refinement preserves the incumbent identity, copy and everything out of scope; redesign keeps product truth and function but replaces the look — never split the difference. Ask before changing factual copy or adding claims. Cover real states (empty, loading, error, long text, small screens) and accessibility.
+
+Verify in bounded passes: build fully, inspect desktop and mobile once, fix everything found in one batch, confirm at most once more, then stop.

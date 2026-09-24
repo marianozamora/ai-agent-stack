@@ -1,0 +1,33 @@
+{
+  "name": "animation-vocabulary",
+  "version": 1,
+  "category": "design",
+  "cost": "tiny",
+  "priority": 80,
+  "task_types": [
+    "design",
+    "feature"
+  ],
+  "primary_for": [
+    "design"
+  ],
+  "triggers": [
+    "what's it called when",
+    "what is it called when",
+    "animation term",
+    "animation vocabulary",
+    "cómo se llama esta animación",
+    "cómo se llama el efecto"
+  ],
+  "requires_trigger": true,
+  "stages": [
+    "read for sensation",
+    "name the term",
+    "disambiguate alternates"
+  ],
+  "provenance": {
+    "source": "emilkowalski-skills",
+    "path": "skills/animation-vocabulary/SKILL.md",
+    "adaptation": "curated"
+  }
+}
