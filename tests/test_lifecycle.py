@@ -149,6 +149,26 @@ class LifecycleSandboxTests(unittest.TestCase):
         os.chdir(self.repo)
         self.addCleanup(os.chdir, old_cwd)
 
+    # --- builder model by profile ------------------------------------
+    def _planrun(self, profile):
+        builder = mock.Mock()
+        builder.name = 'claude'
+        args = argparse.Namespace(task='small change', profile=profile, base='HEAD', figma=None,
+                                  no_figma=True, skill=None, ticket_file=None)
+        with mock.patch.object(lifecycle, 'get_builder', return_value=builder), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            lifecycle.cmd_planrun(args, launch=True)
+        return builder.launch.call_args.kwargs['model'], out.getvalue()
+
+    def test_fast_task_launches_the_builder_on_the_fast_model(self):
+        model, out = self._planrun('fast')
+        self.assertEqual(model, 'sonnet')
+        self.assertIn('claude --model sonnet (fast profile)', out)
+
+    def test_standard_task_launches_the_builder_on_its_default_model(self):
+        model, _ = self._planrun('standard')
+        self.assertIsNone(model)
+
     # --- ensure_contract ---------------------------------------------
     def test_ensure_contract_creates_pr_contract(self):
         state = Path(self.tmp.name) / 'st1'

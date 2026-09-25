@@ -149,6 +149,8 @@ Review, security and design are included according to profile, risk and task inp
 | `standard` | 2 | 8 | 10 | 3 | 2 | 230,000 tokens | $1.50 |
 | `strict` | 3 | 12 | 15 | 5 | 2 | 300,000 tokens | $3.00 |
 
+`fast` also launches the builder on a cheaper model (`claude --model sonnet`) and caps the reviewer's reasoning effort at `medium`; `standard` and `strict` use your defaults. Override per repository with `ai providers set --fast-builder-model` / `--fast-reviewer-effort` (`''` turns either off).
+
 Strict means stronger evidence and review, not unlimited context or agent debate. `retries` is enforced per gate — a gate that keeps failing against the same issue stops with `NEEDS_HUMAN` instead of spending another model call. The token and cost budgets are both checked by `ai pipeline`, counting every gate attempt including failed ones; the token budget excludes input the provider reports as served from cache; the cost budget binds only where a provider actually reports `cost_usd`. `--allow-overrun` continues past any of the three.
 
 ## Skills

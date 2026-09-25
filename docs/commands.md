@@ -1015,5 +1015,7 @@ usage: ai providers doctor [-h]
 usage: ai providers set [-h] [--builder {claude}] [--reviewer {codex,command}]
                         [--reviewer-model REVIEWER_MODEL]
                         [--reviewer-effort GATE=LEVEL]
+                        [--fast-builder-model FAST_BUILDER_MODEL]
+                        [--fast-reviewer-effort FAST_REVIEWER_EFFORT]
                         ...
 ```

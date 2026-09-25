@@ -7,7 +7,7 @@ from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
 from metrics import record_metric
 from prompts import assign_prompt_variants
-from providers import builder as get_builder
+from providers import builder as get_builder, builder_model
 from skills import load_skill_context, select_skills
 from tools import ctx7_cmd
 from workflow import analyze_ticket_text, ticket_snapshot
@@ -225,7 +225,9 @@ def cmd_planrun(args,launch:bool):
         active_builder=get_builder(state)
         env=crg_env(state)
         env['AI_TASK_ID']=load_json(task_state(state)/'task.json',{})['id']
-        active_builder.launch(prompt,root,env)  # replaces this process; never returns on success
+        model=builder_model(state,plan['profile'])
+        if model: print('  builder:    ',f"{active_builder.name} --model {model} ({plan['profile']} profile)")
+        active_builder.launch(prompt,root,env,model=model)  # replaces this process; never returns on success
 
 
 def cmd_ticket(args):
