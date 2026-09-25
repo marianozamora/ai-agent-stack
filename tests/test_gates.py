@@ -111,6 +111,15 @@ class EvidenceFingerprintTests(unittest.TestCase):
         (self.root / 'app.txt').write_text('edited in working tree\n')
         self.assertNotEqual(base, self.fp())
 
+    def test_reviewer_effort_change_changes_fingerprint(self):
+        # A different effort is a different judge: a PASS given at 'low' must not read
+        # as fresh once the repository asks for 'high'.
+        base = self.fp()
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'reviewer_effort': {'cleanup': 'high'}}
+        core.save_json(self.state / 'repo.json', meta)
+        self.assertNotEqual(base, self.fp())
+
     def test_stack_version_change_changes_fingerprint(self):
         # A stack upgrade reships the bundled validator instructions, so evidence a
         # prior version's prompts produced must not still read as fresh.
@@ -554,11 +563,12 @@ class BundledValidatorTests(unittest.TestCase):
         self.root, self.state = _sandbox(self)
         lifecycle.build_prompt(self.root, self.state, 'small change', 'fast', 'HEAD', None)
         self.task = core.task_state(self.state)
-        self.calls = []
+        self.calls = []; self.efforts = []
         passing = {'status': 'PASS', 'evidence': ['app.txt:1 inspected'], 'findings': []}
 
-        def verdict(root, review_dir, name, prompt, schema, checker, timeout):
+        def verdict(root, review_dir, name, prompt, schema, checker, timeout, effort=None):
             self.calls.append((name, prompt))
+            self.efforts.append(effort)
             # Every bundle response needs a real summary_markdown under 'summary' specifically
             # (check_verdict rejects an empty one on PASS), regardless of which gate triggered.
             per_gate = {gate: {**passing, 'summary_markdown': '# fixture summary' if gate == 'summary' else ''}
@@ -606,10 +616,69 @@ class BundledValidatorTests(unittest.TestCase):
         self._validate('ponytail')
         self.assertEqual(len(self.calls), 2)
 
+    def test_the_bundle_call_uses_the_highest_effort_any_member_needs(self):
+        # summary/cleanup/provenance are 'low', ponytail 'medium': one shared call must
+        # not shortchange ponytail. An empty CODEX_HOME means no user default to cap them.
+        with mock.patch.dict(os.environ, {'CODEX_HOME': str(self.root.parent / 'no-codex')}):
+            self._validate('cleanup')
+        self.assertEqual(self.efforts, ['medium'])
+
+    def test_a_failed_gate_is_rereviewed_against_its_prior_findings(self):
+        core.save_json(self.task / 'gates' / 'cleanup.json',
+                       {'passed': False, 'verdict': {'status': 'FAIL', 'findings': ['debug print at app.txt:1']}})
+        self._validate('cleanup')
+        prompt = self.calls[0][1]
+        self.assertIn('Re-review:', prompt)
+        self.assertIn('- [cleanup] debug print at app.txt:1', prompt)
+        self.assertIn('do not raise new non-blocking issues', prompt)
+
+    def test_a_needs_human_record_is_not_a_prior_finding(self):
+        # A missing CLI or a timeout says nothing about the code; re-reviewing against it
+        # would only narrow a review that never happened.
+        core.save_json(self.task / 'gates' / 'cleanup.json',
+                       {'passed': False, 'verdict': {'status': 'NEEDS_HUMAN', 'findings': ['Codex CLI missing']}})
+        self._validate('cleanup')
+        self.assertNotIn('Re-review:', self.calls[0][1])
+
+    def test_first_pass_is_told_not_to_hold_findings_back(self):
+        self._validate('cleanup')
+        self.assertIn('rather than leaving any for a later round', self.calls[0][1])
+
+    def test_contract_changed_files_and_diff_are_inlined(self):
+        (self.root / 'app.txt').write_text('edited\n')
+        self._validate('cleanup')
+        prompt = self.calls[0][1]
+        self.assertIn('--- Changed files ---\napp.txt\n', prompt)
+        self.assertIn('--- PR contract ---', prompt)
+        self.assertIn('--- git diff HEAD ---', prompt)
+        self.assertIn('+edited', prompt)
+
     def test_a_response_missing_a_gate_is_rejected(self):
         passing = {'status': 'PASS', 'evidence': ['x'], 'findings': [], 'summary_markdown': ''}
         with self.assertRaises(ValueError):
             validators.check_bundle({'cleanup': passing}, validators.BUNDLE)
+
+
+class InlineEvidenceTests(unittest.TestCase):
+    """inline_evidence() must never push a prompt over its context budget."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        self.plan = {'scope': {'base': 'HEAD'}}
+        self.contract = self.root.parent / 'contract.yml'
+        self.contract.write_text('objective: x\nacceptance:\n  - y\n')
+
+    def test_nothing_fits_returns_empty(self):
+        (self.root / 'app.txt').write_text('edited\n')
+        self.assertEqual(gates.inline_evidence(self.root, self.plan, self.contract, 50), '')
+
+    def test_an_oversized_diff_is_dropped_whole_but_the_file_list_stays(self):
+        (self.root / 'app.txt').write_text('x' * 5000 + '\n')
+        text = gates.inline_evidence(self.root, self.plan, self.contract, 1000)
+        self.assertIn('--- Changed files ---\napp.txt', text)
+        self.assertIn('--- PR contract ---', text)
+        self.assertNotIn('--- git diff', text)
+        self.assertLessEqual(len(text), 1000)
 
 
 class RunGateFingerprintReuseTests(unittest.TestCase):

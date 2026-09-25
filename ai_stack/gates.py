@@ -8,7 +8,7 @@ from metrics import consecutive_gate_failures, gate_attempt_number, record_metri
 from prompts import prompt_slot, variant_text
 from workflow import billable_tokens, contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
-from providers import builder as get_builder, reviewer as get_reviewer
+from providers import builder as get_builder, gate_effort, review_settings, reviewer as get_reviewer
 from validators import BUNDLE, INSTRUCTIONS, SCHEMA, bundle_schema, check_bundle, check_verdict, intact_record
 
 
@@ -19,11 +19,13 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
     # who judged it. Swapping the reviewer via `ai providers`, or upgrading the stack
     # (which reships the bundled validator instructions), otherwise leaves a prior
     # review/security/ponytail PASS looking fresh to `ai pipeline --resume` even though
-    # a different model under different instructions produced it.
+    # a different model under different instructions produced it. The reviewer's model
+    # and per-gate effort are part of "who judged it" for the same reason.
     for value in (safe_head(root), run(['git','rev-parse','--verify',plan['scope']['base']],cwd=root),
                   run(['git','ls-files','--stage'],cwd=root), run(['git','diff','--binary','HEAD'],cwd=root),
                   json.dumps(plan,sort_keys=True), VERSION,
-                  get_builder(state).name, get_reviewer(state).name):
+                  get_builder(state).name, get_reviewer(state).name,
+                  json.dumps(review_settings(state),sort_keys=True)):
         digest.update(value.encode()); digest.update(b'\0')
     # Tracked paths are already pinned above, exactly and completely: HEAD names every
     # committed blob, `ls-files --stage` carries each tracked path's name, mode and blob
@@ -129,6 +131,47 @@ class ContractViolation(Exception):
     def __init__(self,violations): super().__init__('must_not_change violated'); self.violations=violations
 
 
+PRIOR_FINDING_CHARS=300
+
+
+def prior_findings(task:Path,names)->list[tuple[str,str]]:
+    """Findings from each named gate's last recorded FAIL, for a re-review.
+
+    Only a reviewer FAIL counts: a NEEDS_HUMAN (a missing CLI, a timeout) found nothing
+    about the code, and a passing record means the gate already converged.
+    """
+    found=[]
+    for name in names:
+        verdict=load_json(task/'gates'/f'{name}.json',{}).get('verdict')
+        if not isinstance(verdict,dict) or verdict.get('status')!='FAIL': continue
+        for text in verdict.get('findings') or []:
+            if isinstance(text,str) and text.strip(): found.append((name,text.strip()[:PRIOR_FINDING_CHARS]))
+    return found
+
+
+def inline_evidence(root:Path,plan:dict,contract:Path,room:int)->str:
+    """The contract and change set, inlined so the reviewer need not spend turns fetching them.
+
+    Every reviewer turn re-sends the whole conversation (~15k tokens of baseline alone),
+    and a typical review spent four of its turns reading exactly this. Sized to `room`,
+    the context budget left after the prompt proper, so it can never push a prompt over
+    budget. Cheapest first -- file list, contract, then the diff -- each dropped when it
+    no longer fits; the diff only ever whole, since a truncated diff reads as a smaller change.
+    """
+    base=plan['scope']['base']
+    files=collect_scope(root,base)['files']
+    parts=[]
+    diff=run(['git','diff',base],cwd=root,check=False)
+    header='\nInlined below so you need not re-read them (untracked files are listed, not diffed):\n'
+    blocks=[('Changed files',"\n".join(files)),('PR contract',contract.read_text(errors='replace')),
+            (f'git diff {base}',diff)]
+    room-=len(header)+64
+    for title,body in blocks:
+        block=f'--- {title} ---\n{body}\n'
+        if body and len(block)<=room: parts.append(block); room-=len(block)
+    return header+''.join(parts) if parts else ''
+
+
 def cmd_validate(args):
     try:
         if os.environ.get('AI_GATE')!=args.name:
@@ -182,7 +225,8 @@ Inspect git diff against the base AND untracked files, then relevant callers/tes
 Use CodeGraph first when .codegraph exists. Require concrete locations/evidence.
 Do not infer PASS from another model's claim. If evidence cannot be obtained,
 return NEEDS_HUMAN. No unresolved blockers are allowed with PASS.
-At most {plan['caps']['findings']} findings per gate. Return only the requested JSON schema.
+At most {plan['caps']['findings']} findings per gate: report everything this pass finds now, merging
+related issues into one finding, rather than leaving any for a later round. Return only the requested JSON schema.
 summary_markdown must be empty except for the summary gate. Do not publish the draft.
 
 Repository: {root}
@@ -197,6 +241,15 @@ Summary artifact: {task/'state/pr-summary.md'}
 Fresh gate evidence (read referenced logs as needed):
 {json.dumps(records)}
 '''
+        judged=bundle if args.name in bundle else [args.name]
+        rereview=prior_findings(task,judged)
+        if rereview:
+            context+=('\nRe-review: these gates failed before with the findings below and the code has '
+                      'changed since. Verify each prior finding first. FAIL only for a prior finding that '
+                      'is still unresolved or a new blocker; do not raise new non-blocking issues the '
+                      'previous pass did not report.\n'
+                      +'\n'.join(f'- [{gate}] {text}' for gate,text in rereview)+'\n')
+        effort=gate_effort(review_settings(state),judged)
         # Inherit the gate process group: its timeout kills the reviewer and child
         # tools. The public entry point requires ai gate, which owns execution and
         # freshness, so no timeout is passed here.
@@ -218,17 +271,19 @@ Fresh gate evidence (read referenced logs as needed):
                               'has been written to disk yet.\n' if 'summary' in bundle else '')
                 prompt=(f"Validate gates: {', '.join(bundle)}\nReturn one verdict per gate under its own key, "
                         f"each judged only against its own instruction.{summary_note}\n\n{sections}\n\n{context}")
+                prompt+=inline_evidence(root,plan,contract,plan['caps']['context_chars']-len(prompt))
                 enforce_budget(prompt,plan['caps']['context_chars'],'validator context')
                 result=active_reviewer.verdict(root,task/'review','bundle',prompt,bundle_schema(bundle),
-                                               lambda value: check_bundle(value,bundle),None)
+                                               lambda value: check_bundle(value,bundle),None,effort=effort)
                 verdict=result[args.name]
                 if 'usage' in result: verdict['usage']=result['usage']
                 save_json(cache,{'key':key,'verdicts':{name:result[name] for name in bundle if name!=args.name}})
         else:
             prompt=f'Validate gate: {args.name}\n{instruction(args.name)}\n\n{context}'
+            prompt+=inline_evidence(root,plan,contract,plan['caps']['context_chars']-len(prompt))
             enforce_budget(prompt,plan['caps']['context_chars'],'validator context')
             verdict=active_reviewer.verdict(root,task/'review',args.name,prompt,SCHEMA,
-                                            lambda value: check_verdict(value,args.name),None)
+                                            lambda value: check_verdict(value,args.name),None,effort=effort)
         if verdict['status']=='PASS' and args.name=='summary':
             summary=verdict['summary_markdown']
             enforce_budget(summary,plan['caps']['handoff_chars'],'PR summary')
