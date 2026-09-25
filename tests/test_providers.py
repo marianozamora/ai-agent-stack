@@ -73,6 +73,15 @@ class ClaudeBuilderTests(unittest.TestCase):
             builder.launch('the prompt', Path('/repo'), env)
         execvpe.assert_called_once_with('/usr/local/bin/claude', ['/usr/local/bin/claude', 'the prompt'], env)
 
+    def test_launch_passes_a_model_before_the_prompt(self):
+        builder = providers.ClaudeBuilder()
+        with mock.patch.object(providers.shutil, 'which', return_value='/usr/local/bin/claude'), \
+                mock.patch.object(providers.sys.stdin, 'isatty', return_value=True), \
+                mock.patch.object(providers.os, 'execvpe') as execvpe:
+            builder.launch('the prompt', Path('/repo'), {}, model='sonnet')
+        execvpe.assert_called_once_with(
+            '/usr/local/bin/claude', ['/usr/local/bin/claude', '--model', 'sonnet', 'the prompt'], {})
+
     def test_launch_refuses_without_a_tty_instead_of_hanging(self):
         # Regression: execvpe replaces this process with an interactive Claude session.
         # Without a real terminal to talk to (a script, CI, a pipe), it used to hang
@@ -460,6 +469,71 @@ class ReviewSettingsTests(unittest.TestCase):
         self.assertEqual((reviewer.model, reviewer.effort), ('m1', 'high'))
 
 
+class FastProfileTests(unittest.TestCase):
+    """builder_model() and review_settings(..., 'fast'): cheaper only for fast tasks."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='fast-profile-')
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name) / 'codex'
+        self.home.mkdir()
+        self.state = Path(self.tmp.name) / 'state'
+        self.state.mkdir()
+        envp = mock.patch.dict(os.environ, {'CODEX_HOME': str(self.home)})
+        envp.start()
+        self.addCleanup(envp.stop)
+
+    def _config(self, text):
+        (self.home / 'config.toml').write_text(text)
+
+    def _providers(self, **settings):
+        core.save_json(self.state / 'repo.json', {'providers': settings})
+
+    def test_builder_model_is_sonnet_for_fast_only(self):
+        self.assertEqual(providers.builder_model(self.state, 'fast'), 'sonnet')
+        for profile in ('standard', 'strict', None):
+            self.assertIsNone(providers.builder_model(self.state, profile))
+
+    def test_builder_model_repository_override_and_off(self):
+        self._providers(fast_builder_model='haiku')
+        self.assertEqual(providers.builder_model(self.state, 'fast'), 'haiku')
+        self._providers(fast_builder_model='')
+        self.assertIsNone(providers.builder_model(self.state, 'fast'))
+
+    def test_fast_caps_the_default_effort_and_leaves_other_profiles_alone(self):
+        self._config('model_reasoning_effort = "high"\n')
+        self.assertEqual(providers.review_settings(self.state, 'fast')['effort'], 'medium')
+        self.assertEqual(providers.review_settings(self.state, 'standard')['effort'], 'high')
+        self.assertEqual(providers.review_settings(self.state)['effort'], 'high')
+
+    def test_fast_never_raises_a_lower_default(self):
+        self._config('model_reasoning_effort = "low"\n')
+        self.assertEqual(providers.review_settings(self.state, 'fast')['effort'], 'low')
+
+    def test_fast_without_a_user_default_uses_the_cap(self):
+        self.assertEqual(providers.review_settings(self.state, 'fast')['effort'], 'medium')
+
+    def test_gate_ceilings_are_measured_against_the_capped_default(self):
+        # contract's 'medium' is no reduction below a 'medium' fast default.
+        self._config('model_reasoning_effort = "high"\n')
+        gates = providers.review_settings(self.state, 'fast')['gate_effort']
+        self.assertNotIn('contract', gates)
+        self.assertEqual(gates['cleanup'], 'low')
+
+    def test_fast_reviewer_effort_override_and_off(self):
+        self._config('model_reasoning_effort = "high"\n')
+        self._providers(fast_reviewer_effort='low')
+        self.assertEqual(providers.review_settings(self.state, 'fast')['effort'], 'low')
+        self._providers(fast_reviewer_effort='')
+        self.assertEqual(providers.review_settings(self.state, 'fast')['effort'], 'high')
+
+    def test_reviewer_factory_is_profile_aware(self):
+        self._config('model_reasoning_effort = "high"\n')
+        with mock.patch.object(providers, 'configured', return_value={'reviewer': 'codex'}):
+            self.assertEqual(providers.reviewer(self.state, 'fast').effort, 'medium')
+            self.assertEqual(providers.reviewer(self.state, 'standard').effort, 'high')
+
+
 class CmdProvidersTests(unittest.TestCase):
     """cmd_providers(args) via a real git repo + redirected external state,
     matching the pattern in tests/test_repo.py::RepoSandboxTests."""
@@ -534,6 +608,20 @@ class CmdProvidersTests(unittest.TestCase):
         meta = core.load_json(self.state() / 'repo.json', {})
         self.assertNotIn('reviewer_model', meta['providers'])
         self.assertEqual(meta['providers']['reviewer_effort'], {'cleanup': 'high'})
+
+    def test_set_fast_settings_persist_turn_off_and_restore(self):
+        self._run(self._ns('set', fast_builder_model='haiku', fast_reviewer_effort=''))
+        meta = core.load_json(self.state() / 'repo.json', {})
+        self.assertEqual(meta['providers']['fast_builder_model'], 'haiku')
+        self.assertEqual(meta['providers']['fast_reviewer_effort'], '')
+        self._run(self._ns('set', fast_builder_model='default', fast_reviewer_effort='default'))
+        meta = core.load_json(self.state() / 'repo.json', {})
+        self.assertNotIn('fast_builder_model', meta['providers'])
+        self.assertNotIn('fast_reviewer_effort', meta['providers'])
+
+    def test_show_reports_the_fast_profile_settings(self):
+        out = self._run(self._ns(None))
+        self.assertIn('Fast profile: builder model sonnet', out)
 
     def test_set_reviewer_effort_rejects_a_spec_without_equals(self):
         with self.assertRaises(SystemExit):

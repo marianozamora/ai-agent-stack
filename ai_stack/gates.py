@@ -25,7 +25,7 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict)->str:
                   run(['git','ls-files','--stage'],cwd=root), run(['git','diff','--binary','HEAD'],cwd=root),
                   json.dumps(plan,sort_keys=True), VERSION,
                   get_builder(state).name, get_reviewer(state).name,
-                  json.dumps(review_settings(state),sort_keys=True)):
+                  json.dumps(review_settings(state,plan.get('profile')),sort_keys=True)):
         digest.update(value.encode()); digest.update(b'\0')
     # Tracked paths are already pinned above, exactly and completely: HEAD names every
     # committed blob, `ls-files --stage` carries each tracked path's name, mode and blob
@@ -206,7 +206,7 @@ def cmd_validate(args):
         if args.name=='design' and not design.is_file(): raise ValueError('Design contract is missing.')
         if args.name=='contract' and not contract_list_field(contract.read_text(),'acceptance'):
             raise ValueError('PR contract has no acceptance criteria; populate it before validation.')
-        active_reviewer=get_reviewer(state)
+        active_reviewer=get_reviewer(state,plan['profile'])
         # This check stays here (not inside the reviewer) so a caller can name the
         # exact binary it is missing before ever constructing a prompt for it, and
         # so the check is independent of which reviewer is configured.
@@ -249,7 +249,7 @@ Fresh gate evidence (read referenced logs as needed):
                       'is still unresolved or a new blocker; do not raise new non-blocking issues the '
                       'previous pass did not report.\n'
                       +'\n'.join(f'- [{gate}] {text}' for gate,text in rereview)+'\n')
-        effort=gate_effort(review_settings(state),judged)
+        effort=gate_effort(review_settings(state,plan['profile']),judged)
         # Inherit the gate process group: its timeout kills the reviewer and child
         # tools. The public entry point requires ai gate, which owns execution and
         # freshness, so no timeout is passed here.

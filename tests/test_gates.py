@@ -120,6 +120,13 @@ class EvidenceFingerprintTests(unittest.TestCase):
         core.save_json(self.state / 'repo.json', meta)
         self.assertNotEqual(base, self.fp())
 
+    def test_fast_reviewer_effort_change_changes_a_fast_fingerprint(self):
+        base = self.fp()
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'fast_reviewer_effort': 'low'}
+        core.save_json(self.state / 'repo.json', meta)
+        self.assertNotEqual(base, self.fp())
+
     def test_stack_version_change_changes_fingerprint(self):
         # A stack upgrade reships the bundled validator instructions, so evidence a
         # prior version's prompts produced must not still read as fresh.
@@ -647,6 +654,10 @@ class BundledValidatorTests(unittest.TestCase):
                        {'passed': False, 'verdict': {'status': 'NEEDS_HUMAN', 'findings': ['Codex CLI missing']}})
         self._validate('cleanup')
         self.assertNotIn('Re-review:', self.calls[0][1])
+
+    def test_the_reviewer_is_built_for_the_task_profile(self):
+        self._validate('cleanup')
+        gates.get_reviewer.assert_called_with(self.state, 'fast')
 
     def test_first_pass_is_told_not_to_hold_findings_back(self):
         self._validate('cleanup')
