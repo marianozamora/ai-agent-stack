@@ -616,9 +616,17 @@ class BundledValidatorTests(unittest.TestCase):
         self._validate('ponytail')
         self.assertEqual(len(self.calls), 2)
 
-    def test_the_bundle_call_uses_the_highest_effort_any_member_needs(self):
-        # summary/cleanup/provenance are 'low', ponytail 'medium': one shared call must
-        # not shortchange ponytail. An empty CODEX_HOME means no user default to cap them.
+    def test_the_bundle_call_keeps_the_default_effort_ponytail_needs(self):
+        # summary/cleanup/provenance are 'low' but ponytail has no entry: the one shared
+        # call must not shortchange it, so it runs at the default (None).
+        with mock.patch.dict(os.environ, {'CODEX_HOME': str(self.root.parent / 'no-codex')}):
+            self._validate('cleanup')
+        self.assertEqual(self.efforts, [None])
+
+    def test_lowering_ponytail_lets_the_bundle_run_at_the_highest_member_effort(self):
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'reviewer_effort': {'ponytail': 'medium'}}
+        core.save_json(self.state / 'repo.json', meta)
         with mock.patch.dict(os.environ, {'CODEX_HOME': str(self.root.parent / 'no-codex')}):
             self._validate('cleanup')
         self.assertEqual(self.efforts, ['medium'])

@@ -213,11 +213,13 @@ def reviewer(state:Path)->Any:
 
 
 EFFORT_ORDER=('minimal','low','medium','high','xhigh')
-# Ceilings, not floors: a gate never reasons harder than the user's own default. The
-# bundle gates are mechanical (residue, attribution, a summary draft) and were spending
-# the same `high` effort as a security review; review/security/design are absent on
-# purpose and keep the default.
-GATE_EFFORT={'summary':'low','cleanup':'low','provenance':'low','ponytail':'medium','contract':'medium'}
+# Ceilings, not floors: a gate never reasons harder than the user's own default.
+# review/security/design and ponytail are absent on purpose and keep the default:
+# measured on a 24k-line diff, ponytail at `high` caught a real payment-settlement bug
+# in both rounds that it never surfaced at `medium`. Since ponytail shares one call
+# with summary/cleanup/provenance, that call runs at the default too; their `low`
+# entries take effect only if a repository lowers ponytail itself (--reviewer-effort).
+GATE_EFFORT={'summary':'low','cleanup':'low','provenance':'low','contract':'medium'}
 
 
 def codex_user_defaults(home:Path|None=None)->dict:

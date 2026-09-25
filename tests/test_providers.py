@@ -431,7 +431,7 @@ class ReviewSettingsTests(unittest.TestCase):
     def test_gate_effort_only_ever_lowers_the_user_default(self):
         self._config('model_reasoning_effort = "low"\n')
         settings = providers.review_settings(self.state)
-        # 'low' default: cleanup's 'low' is no reduction and ponytail's 'medium' would raise it.
+        # 'low' default: cleanup's 'low' is no reduction and contract's 'medium' would raise it.
         self.assertEqual(settings['gate_effort'], {})
         self._config('model_reasoning_effort = "high"\n')
         settings = providers.review_settings(self.state)
