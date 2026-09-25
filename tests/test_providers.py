@@ -111,7 +111,8 @@ class CodexReviewerTests(unittest.TestCase):
             result = reviewer.verdict(Path('/repo'), Path('/repo/review'), 'cleanup', 'prompt',
                                       validators.SCHEMA, _checker, 300)
         run.assert_called_once_with('/usr/bin/codex', Path('/repo'), Path('/repo/review'),
-                                    'cleanup', 'prompt', validators.SCHEMA, _checker, 300)
+                                    'cleanup', 'prompt', validators.SCHEMA, _checker, 300,
+                                    model=None, effort=None)
         self.assertEqual(result, _pass())
 
     def test_probe_binary_matches_executable(self):
@@ -303,6 +304,19 @@ open(out, "w").write(json.dumps({"status": "FAIL", "evidence": [], "findings": [
                                      validators.SCHEMA, _checker, timeout=0.2)
         self.assertIn('timed out', str(caught.exception))
 
+    def test_ignores_user_config_and_passes_model_and_effort_explicitly(self):
+        codex = self._fake_codex('''import json, sys
+args = sys.argv
+assert "--ignore-user-config" in args
+assert args[args.index("-m") + 1] == "m1"
+assert \'model_reasoning_effort="low"\' in args
+out = args[args.index("--output-last-message") + 1]
+open(out, "w").write(json.dumps({"status": "PASS", "evidence": ["ok"], "findings": [], "summary_markdown": ""}))
+''')
+        result = providers.run_codex_json(codex, Path('.'), self.review_dir, 'cleanup', 'p',
+                                          validators.SCHEMA, _checker, model='m1', effort='low')
+        self.assertEqual(result['status'], 'PASS')
+
     def test_malformed_usage_events_are_ignored_not_fatal(self):
         codex = self._fake_codex('''import json, sys
 out = sys.argv[sys.argv.index("--output-last-message") + 1]
@@ -388,6 +402,64 @@ class FactoryTests(unittest.TestCase):
         self.assertIn('Unknown reviewer', str(caught.exception))
 
 
+class ReviewSettingsTests(unittest.TestCase):
+    """codex_user_defaults(), review_settings() and gate_effort()."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='review-settings-')
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name) / 'codex'
+        self.home.mkdir()
+        self.state = Path(self.tmp.name) / 'state'
+        self.state.mkdir()
+        envp = mock.patch.dict(os.environ, {'CODEX_HOME': str(self.home)})
+        envp.start()
+        self.addCleanup(envp.stop)
+
+    def _config(self, text):
+        (self.home / 'config.toml').write_text(text)
+
+    def test_reads_only_top_level_string_keys(self):
+        self._config('model = "m1"  # comment\nmodel_reasoning_effort = "high"\n'
+                     '[profiles.x]\nmodel = "other"\n')
+        self.assertEqual(providers.codex_user_defaults(),
+                         {'model': 'm1', 'model_reasoning_effort': 'high'})
+
+    def test_missing_config_is_no_defaults(self):
+        self.assertEqual(providers.codex_user_defaults(), {})
+
+    def test_gate_effort_only_ever_lowers_the_user_default(self):
+        self._config('model_reasoning_effort = "low"\n')
+        settings = providers.review_settings(self.state)
+        # 'low' default: cleanup's 'low' is no reduction and ponytail's 'medium' would raise it.
+        self.assertEqual(settings['gate_effort'], {})
+        self._config('model_reasoning_effort = "high"\n')
+        settings = providers.review_settings(self.state)
+        self.assertEqual(settings['gate_effort'], providers.GATE_EFFORT)
+        self.assertEqual(settings['effort'], 'high')
+
+    def test_repository_overrides_win_exactly(self):
+        self._config('model = "m1"\nmodel_reasoning_effort = "medium"\n')
+        core.save_json(self.state / 'repo.json', {'providers': {
+            'reviewer_model': 'm2', 'reviewer_effort': {'cleanup': 'high', 'review': 'low'}}})
+        settings = providers.review_settings(self.state)
+        self.assertEqual(settings['model'], 'm2')
+        self.assertEqual(settings['gate_effort']['cleanup'], 'high')
+        self.assertEqual(settings['gate_effort']['review'], 'low')
+
+    def test_gate_effort_takes_the_highest_and_defers_to_a_default_member(self):
+        settings = {'gate_effort': {'summary': 'low', 'ponytail': 'medium'}}
+        self.assertEqual(providers.gate_effort(settings, ['summary', 'ponytail']), 'medium')
+        self.assertEqual(providers.gate_effort(settings, ['summary']), 'low')
+        self.assertIsNone(providers.gate_effort(settings, ['summary', 'review']))
+
+    def test_reviewer_factory_carries_model_and_effort(self):
+        self._config('model = "m1"\nmodel_reasoning_effort = "high"\n')
+        with mock.patch.object(providers, 'configured', return_value={'reviewer': 'codex'}):
+            reviewer = providers.reviewer(self.state)
+        self.assertEqual((reviewer.model, reviewer.effort), ('m1', 'high'))
+
+
 class CmdProvidersTests(unittest.TestCase):
     """cmd_providers(args) via a real git repo + redirected external state,
     matching the pattern in tests/test_repo.py::RepoSandboxTests."""
@@ -441,7 +513,8 @@ class CmdProvidersTests(unittest.TestCase):
     def test_show_json_matches_configured(self):
         out = self._run(self._ns('show', json=True))
         payload = json.loads(out)
-        self.assertEqual(payload, providers.configured(self.state()))
+        self.assertEqual(payload, {**providers.configured(self.state()),
+                                   'review': providers.review_settings(self.state())})
 
     def test_set_builder_persists_and_merges_with_existing_settings(self):
         self._run(self._ns('set', reviewer='command', reviewer_command=['--', '/bin/echo']))
@@ -451,6 +524,20 @@ class CmdProvidersTests(unittest.TestCase):
         # The earlier `set --reviewer command` call must survive an unrelated later set.
         self.assertEqual(meta['providers']['reviewer'], 'command')
         self.assertEqual(meta['providers']['reviewer_command'], ['/bin/echo'])
+
+    def test_set_reviewer_model_and_effort_persist_and_clear(self):
+        self._run(self._ns('set', reviewer_model='m2', reviewer_effort=['cleanup=high', 'review=low']))
+        meta = core.load_json(self.state() / 'repo.json', {})
+        self.assertEqual(meta['providers']['reviewer_model'], 'm2')
+        self.assertEqual(meta['providers']['reviewer_effort'], {'cleanup': 'high', 'review': 'low'})
+        self._run(self._ns('set', reviewer_model='', reviewer_effort=['review=']))
+        meta = core.load_json(self.state() / 'repo.json', {})
+        self.assertNotIn('reviewer_model', meta['providers'])
+        self.assertEqual(meta['providers']['reviewer_effort'], {'cleanup': 'high'})
+
+    def test_set_reviewer_effort_rejects_a_spec_without_equals(self):
+        with self.assertRaises(SystemExit):
+            self._run(self._ns('set', reviewer_effort=['cleanup']))
 
     def test_set_unknown_builder_raises_systemexit(self):
         # Direct call bypasses argparse's own `choices=` guard, exercising cmd_providers'

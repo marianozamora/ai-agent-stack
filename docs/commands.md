@@ -1013,5 +1013,7 @@ usage: ai providers doctor [-h]
 
 ```text
 usage: ai providers set [-h] [--builder {claude}] [--reviewer {codex,command}]
+                        [--reviewer-model REVIEWER_MODEL]
+                        [--reviewer-effort GATE=LEVEL]
                         ...
 ```
