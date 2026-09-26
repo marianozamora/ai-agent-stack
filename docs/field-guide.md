@@ -117,6 +117,9 @@ budget suggests recalibrating `context_caps`. `findings_raised` is a volume coun
 not a claim about what got ignored — the stack cannot distinguish an override from a
 genuine fix without an explicit label.
 
+The protocol for running one — scope, baseline arm, decision rules fixed in advance,
+and a per-task log template — is in [`campaign-protocol.md`](campaign-protocol.md).
+
 ## Zero-footprint: nothing lands in your checkout
 
 Rules, contracts, gate logs, metrics and every learned artifact live outside
