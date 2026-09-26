@@ -149,6 +149,8 @@ Review, security and design are included according to profile, risk and task inp
 | `standard` | 2 | 8 | 10 | 3 | 2 | 230,000 tokens | $1.50 |
 | `strict` | 3 | 12 | 15 | 5 | 2 | 300,000 tokens | $3.00 |
 
+`fast` also launches the builder on a cheaper model (`claude --model sonnet`) and caps the reviewer's reasoning effort at `medium`; `standard` and `strict` use your defaults. Override per repository with `ai providers set --fast-builder-model` / `--fast-reviewer-effort` (`''` turns either off).
+
 Strict means stronger evidence and review, not unlimited context or agent debate. `retries` is enforced per gate — a gate that keeps failing against the same issue stops with `NEEDS_HUMAN` instead of spending another model call. The token and cost budgets are both checked by `ai pipeline`, counting every gate attempt including failed ones; the token budget excludes input the provider reports as served from cache; the cost budget binds only where a provider actually reports `cost_usd`. `--allow-overrun` continues past any of the three.
 
 ## Skills
@@ -233,7 +235,7 @@ Optional integrations include Context7, Graphify, CodeGraph, Code Review Graph, 
 ## Guarantees and limits
 
 - Gate evidence is reproducible and invalidated when its inputs change — including the stack version and which provider judged it.
-- Semantic validators run through a configured reviewer (Codex by default) read-only and require structured verdicts; see `ai providers` to inspect or swap the builder/reviewer. Codex runs without the user's `config.toml` (its model and default effort are carried over) and at a per-gate reasoning effort — mechanical gates like `cleanup` and `summary` at `low`; `ai providers show` lists it and `ai providers set --reviewer-effort GATE=LEVEL` overrides it. A gate that failed is re-reviewed against its prior findings rather than from scratch.
+- Semantic validators run through a configured reviewer (Codex by default) read-only and require structured verdicts; see `ai providers` to inspect or swap the builder/reviewer. Codex runs without the user's `config.toml` (its model and default effort are carried over) and at a per-gate reasoning effort — `contract` at `medium`, `ponytail` and the gates it shares a call with at your default; `ai providers show` lists it and `ai providers set --reviewer-effort GATE=LEVEL` overrides it. A gate that failed is re-reviewed against its prior findings rather than from scratch.
 - A path- or glob-shaped `must_not_change` entry is checked against the diff deterministically by the `contract` gate; a violation is a `FAIL` with no model call. Prose constraints still go to the reviewer.
 - Learned lessons require human confirmation and cannot relax required gates.
 - Token, cost and retry limits are profile-bound and enforced; missing usage remains unreported rather than estimated, and an unreported cost never trips the cost budget.

@@ -25,7 +25,7 @@ from typing import Any, Protocol
 class Builder(Protocol):
     name:str
     def available(self)->bool: ...
-    def launch(self,prompt:str,root:Path,env:dict)->None: ...
+    def launch(self,prompt:str,root:Path,env:dict,model:str|None=None)->None: ...
 
 
 class Reviewer(Protocol):
@@ -44,7 +44,7 @@ class ClaudeBuilder:
 
     def available(self)->bool: return bool(shutil.which(self.executable))
 
-    def launch(self,prompt:str,root:Path,env:dict)->None:
+    def launch(self,prompt:str,root:Path,env:dict,model:str|None=None)->None:
         path=shutil.which(self.executable)
         if not path: raise SystemExit(f'{self.name.capitalize()} CLI missing. Use ai plan to only prepare.')
         # execvpe replaces this process with an interactive Claude session, which needs
@@ -55,7 +55,7 @@ class ClaudeBuilder:
             raise SystemExit(f'{self.name.capitalize()} needs an interactive terminal; '
                              'this session has none (piped, scripted, or CI). '
                              'Use ai plan / --plan-only to only prepare the prompt instead.')
-        os.execvpe(path,[path,prompt],env)
+        os.execvpe(path,[path,*(['--model',model] if model else []),prompt],env)
 
 
 CODEX_READONLY_SANDBOX=['exec','-s','read-only']  # shared by verdict() and review_argv(): never write to the checkout
@@ -198,7 +198,7 @@ def builder(state:Path)->Any:
     return BUILDERS[choice]()
 
 
-def reviewer(state:Path)->Any:
+def reviewer(state:Path,profile:str|None=None)->Any:
     settings=configured(state); choice=settings['reviewer']
     if choice=='command':
         command=settings.get('reviewer_command')
@@ -207,17 +207,48 @@ def reviewer(state:Path)->Any:
     if choice not in REVIEWERS:
         raise ValueError(f'Unknown reviewer {choice!r}. Available: '+', '.join([*REVIEWERS,'command']))
     if choice=='codex':
-        review=review_settings(state)
+        review=review_settings(state,profile)
         return CodexReviewer(model=review['model'],effort=review['effort'])
     return REVIEWERS[choice]()
 
 
 EFFORT_ORDER=('minimal','low','medium','high','xhigh')
-# Ceilings, not floors: a gate never reasons harder than the user's own default. The
-# bundle gates are mechanical (residue, attribution, a summary draft) and were spending
-# the same `high` effort as a security review; review/security/design are absent on
-# purpose and keep the default.
-GATE_EFFORT={'summary':'low','cleanup':'low','provenance':'low','ponytail':'medium','contract':'medium'}
+# Ceilings, not floors: a gate never reasons harder than the user's own default.
+# review/security/design and ponytail are absent on purpose and keep the default:
+# measured on a 24k-line diff, ponytail at `high` caught a real payment-settlement bug
+# in both rounds that it never surfaced at `medium`. Since ponytail shares one call
+# with summary/cleanup/provenance, that call runs at the default too; their `low`
+# entries take effect only if a repository lowers ponytail itself (--reviewer-effort).
+GATE_EFFORT={'summary':'low','cleanup':'low','provenance':'low','contract':'medium'}
+
+
+# `fast` is by construction a small, low-risk change (core.select_profile), so it is the
+# one profile where a cheaper builder and a lighter review are safe defaults.
+# standard/strict are untouched: the payment-settlement bug a `medium` ponytail missed
+# was on a 24k-line change. Both are repository-overridable, and '' turns them off.
+FAST_BUILDER_MODEL='sonnet'
+FAST_REVIEW_EFFORT='medium'
+
+
+def _stored_providers(state:Path)->dict:
+    from core import load_json
+    stored=load_json(state/'repo.json',{}).get('providers',{})
+    return stored if isinstance(stored,dict) else {}
+
+
+def builder_model(state:Path,profile:str|None)->str|None:
+    """The model `ai run` launches the builder with; None means the CLI's own default."""
+    if profile!='fast': return None
+    stored=_stored_providers(state).get('fast_builder_model',FAST_BUILDER_MODEL)
+    return stored if isinstance(stored,str) and stored else None
+
+
+def _lower(level:str|None,cap:str|None)->str|None:
+    """`level` capped at `cap`; an unknown or missing level simply becomes the cap."""
+    if not cap: return level
+    if level in EFFORT_ORDER and cap in EFFORT_ORDER and EFFORT_ORDER.index(level)<=EFFORT_ORDER.index(cap):
+        return level
+    return cap
 
 
 def codex_user_defaults(home:Path|None=None)->dict:
@@ -240,17 +271,20 @@ def codex_user_defaults(home:Path|None=None)->dict:
     return found
 
 
-def review_settings(state:Path)->dict:
+def review_settings(state:Path,profile:str|None=None)->dict:
     """The model and per-gate reasoning effort the Codex reviewer will judge with.
 
     repo.json overrides (`ai providers set --reviewer-model/--reviewer-effort`) win
-    exactly; the built-in GATE_EFFORT entries only ever lower the user's default.
+    exactly; the built-in GATE_EFFORT entries only ever lower the default. On a `fast`
+    task the default itself is first capped at FAST_REVIEW_EFFORT (or the repository's
+    `--fast-reviewer-effort`), so every gate of a small change reviews lighter.
     """
-    from core import load_json
-    stored=load_json(state/'repo.json',{}).get('providers',{})
-    if not isinstance(stored,dict): stored={}
+    stored=_stored_providers(state)
     user=codex_user_defaults()
     default=user.get('model_reasoning_effort')
+    if profile=='fast':
+        cap=stored.get('fast_reviewer_effort',FAST_REVIEW_EFFORT)
+        default=_lower(default,cap if isinstance(cap,str) else None)
     gates={}
     for gate,level in GATE_EFFORT.items():
         if default in EFFORT_ORDER and EFFORT_ORDER.index(level)>=EFFORT_ORDER.index(default): continue
@@ -292,6 +326,11 @@ def cmd_providers(args):
         if getattr(args,'reviewer_model',None) is not None:
             if args.reviewer_model: settings['reviewer_model']=args.reviewer_model
             else: settings.pop('reviewer_model',None)
+        for key in ('fast_builder_model','fast_reviewer_effort'):
+            value=getattr(args,key,None)
+            if value is None: continue
+            if value=='default': settings.pop(key,None)
+            else: settings[key]=value  # '' is kept: it means "off", unlike an absent key
         for spec in getattr(args,'reviewer_effort',None) or []:
             gate,sep,level=spec.partition('=')
             if not sep or not gate: raise SystemExit(f'--reviewer-effort takes GATE=LEVEL, got {spec!r}')
@@ -315,6 +354,9 @@ def cmd_providers(args):
         print(f"  model:  {review['model'] or 'Codex default'}  effort: {review['effort'] or 'Codex default'}")
         if review['gate_effort']:
             print('  per-gate effort: '+', '.join(f'{k}={v}' for k,v in sorted(review['gate_effort'].items())))
+    fast=review_settings(state,'fast') if settings['reviewer']=='codex' else None
+    print(f"Fast profile: builder model {builder_model(state,'fast') or 'CLI default'}"
+          +(f", reviewer effort {fast['effort'] or 'Codex default'}" if fast else ''))
     if args.providers_cmd!='doctor': return
     active_builder=builder(state)
     print(f'\n{"✓" if active_builder.available() else "·"} builder {active_builder.name}: '

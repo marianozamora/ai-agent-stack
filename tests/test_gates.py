@@ -120,6 +120,13 @@ class EvidenceFingerprintTests(unittest.TestCase):
         core.save_json(self.state / 'repo.json', meta)
         self.assertNotEqual(base, self.fp())
 
+    def test_fast_reviewer_effort_change_changes_a_fast_fingerprint(self):
+        base = self.fp()
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'fast_reviewer_effort': 'low'}
+        core.save_json(self.state / 'repo.json', meta)
+        self.assertNotEqual(base, self.fp())
+
     def test_stack_version_change_changes_fingerprint(self):
         # A stack upgrade reships the bundled validator instructions, so evidence a
         # prior version's prompts produced must not still read as fresh.
@@ -616,9 +623,17 @@ class BundledValidatorTests(unittest.TestCase):
         self._validate('ponytail')
         self.assertEqual(len(self.calls), 2)
 
-    def test_the_bundle_call_uses_the_highest_effort_any_member_needs(self):
-        # summary/cleanup/provenance are 'low', ponytail 'medium': one shared call must
-        # not shortchange ponytail. An empty CODEX_HOME means no user default to cap them.
+    def test_the_bundle_call_keeps_the_default_effort_ponytail_needs(self):
+        # summary/cleanup/provenance are 'low' but ponytail has no entry: the one shared
+        # call must not shortchange it, so it runs at the default (None).
+        with mock.patch.dict(os.environ, {'CODEX_HOME': str(self.root.parent / 'no-codex')}):
+            self._validate('cleanup')
+        self.assertEqual(self.efforts, [None])
+
+    def test_lowering_ponytail_lets_the_bundle_run_at_the_highest_member_effort(self):
+        meta = core.load_json(self.state / 'repo.json', {})
+        meta['providers'] = {'reviewer_effort': {'ponytail': 'medium'}}
+        core.save_json(self.state / 'repo.json', meta)
         with mock.patch.dict(os.environ, {'CODEX_HOME': str(self.root.parent / 'no-codex')}):
             self._validate('cleanup')
         self.assertEqual(self.efforts, ['medium'])
@@ -639,6 +654,10 @@ class BundledValidatorTests(unittest.TestCase):
                        {'passed': False, 'verdict': {'status': 'NEEDS_HUMAN', 'findings': ['Codex CLI missing']}})
         self._validate('cleanup')
         self.assertNotIn('Re-review:', self.calls[0][1])
+
+    def test_the_reviewer_is_built_for_the_task_profile(self):
+        self._validate('cleanup')
+        gates.get_reviewer.assert_called_with(self.state, 'fast')
 
     def test_first_pass_is_told_not_to_hold_findings_back(self):
         self._validate('cleanup')
