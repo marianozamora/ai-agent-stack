@@ -180,13 +180,19 @@ def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     connection.close(); return 1+count
 
 
-def consecutive_gate_failures(state:Path,task_key:str,gate:str)->int:
+def consecutive_gate_failures(state:Path,task_key:str,gate:str,fingerprint:str|None=None)->int:
     """How many attempts of this gate have failed in a row since its last pass.
 
     The retry cap counts a streak, not lifetime attempts: a gate that passed, was
     invalidated by a later repository change and is being re-evidenced starts from
     zero again. The cap exists to stop a gate thrashing on one unresolved failure,
     not to retire a gate that keeps being legitimately re-run.
+
+    An attempt blocked by a stale prerequisite never ran the gate, so it is skipped
+    rather than counted. With `fingerprint`, the streak also ends at the first
+    attempt recorded against a different evidence state (or none, for rows written
+    before fingerprints were recorded): a failure on code that has since changed is
+    not the same unresolved failure.
     """
     connection=_sync_metric_index(state)
     rows=connection.execute('SELECT payload FROM events WHERE event=? AND task_key=? AND gate_name=? '
@@ -197,6 +203,8 @@ def consecutive_gate_failures(state:Path,task_key:str,gate:str)->int:
         try: record=json.loads(payload)
         except ValueError: break
         if record.get('passed') is True: break
+        if record.get('blocked_by'): continue
+        if fingerprint is not None and record.get('fingerprint')!=fingerprint: break
         streak+=1
     return streak
 

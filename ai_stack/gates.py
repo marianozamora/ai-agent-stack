@@ -131,6 +131,15 @@ class ContractViolation(Exception):
     def __init__(self,violations): super().__init__('must_not_change violated'); self.violations=violations
 
 
+class PrerequisiteNotReady(ValueError):
+    """An upstream gate's evidence is missing or stale, so this gate never ran.
+
+    Still NEEDS_HUMAN, but the verdict says which prerequisite blocked it: such an
+    attempt judged nothing and spent nothing, so it must not count toward this
+    gate's retry streak (see consecutive_gate_failures)."""
+    def __init__(self,name): super().__init__(f'Missing or stale prerequisite: {name}'); self.name=name
+
+
 PRIOR_FINDING_CHARS=300
 
 
@@ -197,7 +206,7 @@ def cmd_validate(args):
         for name in dependencies:
             record=load_json(task/'gates'/f'{name}.json',{})
             if not record.get('passed') or not intact_record(record,fingerprint):
-                raise ValueError(f'Missing or stale prerequisite: {name}')
+                raise PrerequisiteNotReady(name)
             records[name]={'command':record['command'],'verdict':record.get('verdict'),
                            'log':record['log'],'exit_code':record['exit_code']}
         contract=task/'contracts/current-pr.yml'
@@ -299,6 +308,9 @@ Fresh gate evidence (read referenced logs as needed):
                  'findings':[f"must_not_change forbids {v['constraint']}; changed: {', '.join(v['files'][:5])}"
                              for v in exc.violations],
                  'summary_markdown':''}
+    except PrerequisiteNotReady as exc:
+        verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':'',
+                 'blocked_by':exc.name}
     except (OSError,ValueError,RuntimeError) as exc:
         verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':''}
     print(json.dumps(verdict))
@@ -442,9 +454,14 @@ def run_gate(args,root,state,plan,task,command,before=None):
     # it here, before the command runs and spends anything: a streak past the cap is a
     # gate that is not converging, and a human deciding what to do next is cheaper than
     # another attempt. Checked before `before`, so a refusal costs no worktree hash.
+    # Only failures against this exact state count: a fix, a rebase or a contract edit
+    # changes the fingerprint and starts a fresh streak. The unfiltered count is an
+    # upper bound, so the worktree hash is only paid for when the cap could bite.
     retries=plan['caps'].get('retries')
-    if retries is not None and not getattr(args,'allow_overrun',False):
-        failures=consecutive_gate_failures(state,task.name,args.name)
+    if (retries is not None and not getattr(args,'allow_overrun',False)
+            and consecutive_gate_failures(state,task.name,args.name)>retries):
+        if before is None: before=evidence_fingerprint(root,state,plan)
+        failures=consecutive_gate_failures(state,task.name,args.name,fingerprint=before)
         if failures>retries:
             raise SystemExit(
                 f"NEEDS_HUMAN: {args.name} has failed {failures} time(s) in a row, past this "
@@ -495,7 +512,8 @@ def run_gate(args,root,state,plan,task,command,before=None):
     assignment=load_json(task/'state/prompt-assignment.json',{})
     prompt_variants={slot:assignment[slot]} if slot in assignment else {}
     record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,
-                  usage=usage,attempt=attempt,findings=findings,prompt_variants=prompt_variants)
+                  usage=usage,attempt=attempt,findings=findings,prompt_variants=prompt_variants,
+                  fingerprint=after,blocked_by=verdict.get('blocked_by') if isinstance(verdict,dict) else None)
     print(f"{args.name}: {'PASS' if passed else 'FAIL'} | {log}")
     if before!=after: print('Repository or task changed during gate; rerun against the final state.')
     if needs_verdict and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')

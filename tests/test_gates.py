@@ -513,6 +513,8 @@ class CmdValidateGuardTests(unittest.TestCase):
             with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
                 gates.cmd_validate(argparse.Namespace(name='checks'))
         self.assertIn('Missing or stale prerequisite', buf.getvalue())
+        # Tagged, so the retry streak can tell "never ran" from "ran and failed".
+        self.assertEqual(json.loads(buf.getvalue().strip().splitlines()[-1])['blocked_by'], 'checks')
 
     def test_missing_pr_contract_is_reported(self):
         self._plan()
@@ -907,6 +909,35 @@ class RetryBudgetTests(unittest.TestCase):
         self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 0)
         # Back to a full budget: two more failures are allowed before the cap bites.
         self._run(['false'])
+        self.assertIn('FAIL', self._run(['false']))
+
+    def test_a_changed_state_starts_a_fresh_streak(self):
+        self._run(['false'])
+        self._run(['false'])
+        # A fix (any change to the evidence state) is not the same unresolved failure.
+        (self.root / 'fix.txt').write_text('changed\n')
+        self.assertIn('FAIL', self._run(['false']))
+        self.assertIn('FAIL', self._run(['false']))
+        with self.assertRaises(SystemExit) as ctx:
+            self._run(['false'])
+        self.assertIn('failed 2 time(s) in a row', str(ctx.exception))
+
+    def test_prerequisite_blocked_attempts_do_not_count(self):
+        # The contract gate blocked twice on stale checks evidence: it never ran,
+        # so its budget is untouched once the prerequisite is fixed.
+        fingerprint = gates.evidence_fingerprint(self.root, self.state, self.plan)
+        for _ in range(3):
+            gates.record_metric(self.state, 'gate', gate='checks', passed=False,
+                                  fingerprint=fingerprint, blocked_by='regression')
+        self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks',
+                                                         fingerprint=fingerprint), 0)
+        self.assertIn('FAIL', self._run(['false']))
+
+    def test_rows_without_a_fingerprint_end_the_streak(self):
+        # Failures recorded before fingerprints were: they cannot be tied to this state.
+        for _ in range(3):
+            gates.record_metric(self.state, 'gate', gate='checks', passed=False)
+        self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 3)
         self.assertIn('FAIL', self._run(['false']))
 
 
