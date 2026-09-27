@@ -149,6 +149,30 @@ class LifecycleSandboxTests(unittest.TestCase):
         os.chdir(self.repo)
         self.addCleanup(os.chdir, old_cwd)
 
+    # --- open gate findings in the builder prompt ----------------------
+    def test_prompt_lists_open_gate_findings_and_drops_them_once_passed(self):
+        root = core.git_root(); state = core.repo_state(root)
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertIn('Open gate findings for this task (fix these first', prompt)
+        self.assertIn('none', prompt.split('Open gate findings')[1].split('\n\n')[0])
+        gates_dir = core.task_state(state) / 'gates'
+        gates_dir.mkdir(parents=True, exist_ok=True)
+        record = {'passed': False, 'verdict': {'status': 'FAIL', 'findings': ['escape the email HTML']}}
+        core.save_json(gates_dir / 'review.json', record)
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertIn('- [review] escape the email HTML', prompt)
+        core.save_json(gates_dir / 'review.json', {'passed': True, 'verdict': {'status': 'PASS'}})
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertNotIn('escape the email HTML', prompt)
+
+    def test_prompt_forbids_attribution_trailers_and_plan_metric_names_the_builder(self):
+        root = core.git_root(); state = core.repo_state(root)
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertIn('no Co-Authored-By', prompt)
+        rows = [json.loads(line) for line in (state / 'metrics.jsonl').read_text().splitlines()]
+        plan = [r for r in rows if r['event'] == 'plan'][-1]
+        self.assertEqual((plan['builder'], plan['builder_model']), ('claude', 'sonnet'))
+
     # --- builder model by profile ------------------------------------
     def _planrun(self, profile):
         builder = mock.Mock()

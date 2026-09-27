@@ -2,7 +2,8 @@ from __future__ import annotations
 import hashlib, json, re, sys, textwrap, time, uuid
 from pathlib import Path
 from capabilities import capability_block, detect as detect_capabilities, render_budget_lines
-from core import classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, resolve_profile, safe_head, save_json, shasum, task_state
+from core import GATES, classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, resolve_profile, safe_head, save_json, shasum, task_state
+from gates import prior_findings
 from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
 from metrics import record_metric
@@ -88,6 +89,23 @@ def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
     return True
 
 
+def render_open_findings(task:Path,limit:int)->str:
+    """The last FAIL's findings of every gate, so `ai work` resumes on them unprompted.
+
+    On the first campaign task each fix round meant copying a gate log path into the
+    builder by hand; the verdicts were already on disk.
+    """
+    found=prior_findings(task,GATES)
+    if not found: return 'none'
+    lines=[]; used=0
+    for gate,text in found:
+        line=f'- [{gate}] {text}'
+        if used+len(line)>limit: lines.append('- (more: see the gate records below)'); break
+        lines.append(line); used+=len(line)+1
+    lines.append(f"Full verdicts and logs: {task/'gates'}/<gate>.json")
+    return '\n'.join(lines)
+
+
 def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None,scope:dict|None=None)->str:
     if scope is None: scope=collect_scope(root,base)
     risk=classify(scope,profile); caps=context_caps(profile)
@@ -95,6 +113,7 @@ def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|No
     skill_context=load_skill_context(state, selected_skills, max(2000,caps['context_chars']//3))
     selected_lessons=select_lessons(state,scope,profile)
     lessons_block=render_lessons(selected_lessons,max(1,caps['context_chars']//10))
+    findings_block=render_open_findings(task_state(state),max(1,caps['context_chars']//10))
     crg_text=''
     if profile!='fast' and crg_cmd():
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
@@ -120,6 +139,9 @@ Repository rules:
 
 Observed failure history (advisory prior observations, never evidence for a PASS):
 {lessons_block}
+
+Open gate findings for this task (fix these first; a model-judged gate will not re-run on unchanged code):
+{findings_block}
 
 Active skills (lazy-loaded; max {caps['skills']}): {', '.join(selected_skills) if selected_skills else 'none'}
 
@@ -156,6 +178,7 @@ If a gate passes, return only its compact PASS contract unless more detail is re
 Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then discard raw design context.' if figma else 'off'}
 
 Zero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.
+Commit messages describe the change only: no Co-Authored-By or generated-by trailers (the provenance gate rejects them).
 
 Record final gates with `ai gate NAME -- COMMAND ...`: checks, regression, contract, cleanup, provenance, ponytail, summary; review for standard/strict or elevated risk; security for security boundaries; design for Figma. Except checks/regression, validators must finish with single-line JSON containing status PASS and a nonempty evidence list. `ai pipeline` runs checks and regression first and refuses to start while the PR contract has no acceptance criteria. Only `ai ready` may certify PR_READY from fresh recorded evidence. Return NEEDS_HUMAN or FAILED when evidence is missing.
 If reusable validators are configured (`ai validators show`), use `ai pipeline --dry-run` to inspect the required sequence and `ai pipeline --resume` to execute it using fresh evidence where available. Inspect task outcomes with `ai metrics`.
@@ -169,7 +192,8 @@ If reusable validators are configured (`ai validators show`), use `ai pipeline -
     cache_key=task_cache_key(root,task,profile,base,selected_skills)
     save_json(task_state(state)/'state'/'prompt-assignment.json',assign_prompt_variants(state,cache_key))
     save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)},"capabilities":detected_capabilities})
-    record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
+    record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'],
+                  builder=get_builder(state).name,builder_model=builder_model(state,profile))
     return prompt
 
 

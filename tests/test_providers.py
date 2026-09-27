@@ -71,7 +71,7 @@ class ClaudeBuilderTests(unittest.TestCase):
                 mock.patch.object(providers.sys.stdin, 'isatty', return_value=True), \
                 mock.patch.object(providers.os, 'execvpe') as execvpe:
             builder.launch('the prompt', Path('/repo'), env)
-        execvpe.assert_called_once_with('/usr/local/bin/claude', ['/usr/local/bin/claude', 'the prompt'], env)
+        execvpe.assert_called_once_with('/usr/local/bin/claude', ['/usr/local/bin/claude', *providers.BUILDER_SETTINGS, 'the prompt'], env)
 
     def test_launch_passes_a_model_before_the_prompt(self):
         builder = providers.ClaudeBuilder()
@@ -80,7 +80,7 @@ class ClaudeBuilderTests(unittest.TestCase):
                 mock.patch.object(providers.os, 'execvpe') as execvpe:
             builder.launch('the prompt', Path('/repo'), {}, model='sonnet')
         execvpe.assert_called_once_with(
-            '/usr/local/bin/claude', ['/usr/local/bin/claude', '--model', 'sonnet', 'the prompt'], {})
+            '/usr/local/bin/claude', ['/usr/local/bin/claude', '--model', 'sonnet', *providers.BUILDER_SETTINGS, 'the prompt'], {})
 
     def test_launch_refuses_without_a_tty_instead_of_hanging(self):
         # Regression: execvpe replaces this process with an interactive Claude session.
