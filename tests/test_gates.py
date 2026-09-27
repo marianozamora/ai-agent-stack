@@ -764,6 +764,17 @@ class AssessBundleTests(unittest.TestCase):
         self.assertEqual(name, 'review')
         self.assertIn('Validate gate: review', prompt)
 
+    def test_review_consumes_the_shared_verdict_after_contract_passed(self):
+        # The real pipeline order: contract triggers the shared call, run_gate records its
+        # PASS, and only then does review run -- by which time contract has left the set of
+        # members owed a verdict. Review must still take its stored verdict, not call again.
+        self.required = ['checks', 'regression', 'contract', 'review']
+        for name in ('checks', 'regression'): self._fresh_pass(name)
+        self._validate('contract')
+        self._fresh_pass('contract')
+        self.assertNotIn('usage', self._validate('review'))
+        self.assertEqual([name for name, _ in self.calls], ['assess'])
+
     def test_a_lone_member_runs_on_its_own(self):
         self.required = ['contract']
         for name in ('checks', 'regression'): self._fresh_pass(name)
