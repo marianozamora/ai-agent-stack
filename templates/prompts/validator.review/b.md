@@ -1,0 +1,3 @@
+Review the change as a code reviewer: look for bugs, risks, behavioural regressions and missing tests, in the diff and in the callers and tests it affects. Decide every file and search you need first, then read them in one batch (rg, sed -n for line ranges, git show); issue another read only when a result makes it necessary.
+
+A finding is an issue that would cause incorrect behaviour, a crash, data loss, a failing or misleading test, or an unhandled error path. List findings most severe first, each with path:line and the concrete input or state that triggers it. Put what does not block - an untested edge case, a residual risk, a question - in the evidence as a note, and say explicitly when you found no blocking issue. Style and naming preferences are neither.

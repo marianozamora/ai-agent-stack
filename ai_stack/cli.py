@@ -24,7 +24,7 @@ from checklist import cmd_checklist
 from issues import cmd_tasks_to_issues
 from lifecycle import cmd_handoff, cmd_planrun, cmd_ticket
 from metrics import cmd_metrics
-from prompts import cmd_prompt
+from prompts import PROMPT_NAMES, cmd_prompt
 from providers import BUILDERS, REVIEWERS, cmd_providers
 from repo import cmd_doctor, cmd_init, cmd_optimize, cmd_profile, cmd_rules, cmd_status
 from skills import cmd_skill
@@ -135,15 +135,15 @@ def parser():
     conf=sp.add_parser('confidence'); conf.add_argument('--profile',choices=['fast','standard','strict'],default='standard'); conf.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); conf.add_argument('--json',action='store_true'); conf.set_defaults(func=cmd_confidence)
     prm=sp.add_parser('prompt'); pcs=prm.add_subparsers(dest='prompt_cmd',required=True); prm.set_defaults(func=cmd_prompt)
     pcs.add_parser('list')
-    pshow=pcs.add_parser('show'); pshow.add_argument('name',choices=list(INSTRUCTIONS)); pshow.add_argument('variant',nargs='?',default='a')
+    pshow=pcs.add_parser('show'); pshow.add_argument('name',choices=list(PROMPT_NAMES)); pshow.add_argument('variant',nargs='?',default='a')
     pexp=pcs.add_parser('experiment'); pes=pexp.add_subparsers(dest='experiment_cmd',required=True)
-    pstart=pes.add_parser('start'); pstart.add_argument('name',choices=list(INSTRUCTIONS)); pstart.add_argument('--variants',required=True); pstart.add_argument('--min-samples',type=int,default=15)
+    pstart=pes.add_parser('start'); pstart.add_argument('name',choices=list(PROMPT_NAMES)); pstart.add_argument('--variants',required=True); pstart.add_argument('--min-samples',type=int,default=15)
     pes.add_parser('status'); pes.add_parser('stop')
     prep=pcs.add_parser('report'); prep.add_argument('--json',action='store_true')
-    pprom=pcs.add_parser('promote'); pprom.add_argument('name',choices=list(INSTRUCTIONS)); pprom.add_argument('variant'); pprom.add_argument('--confirm',action='store_true')
-    prst=pcs.add_parser('reset'); prst.add_argument('name',choices=list(INSTRUCTIONS))
-    prb=pcs.add_parser('rollback'); prb.add_argument('name',choices=list(INSTRUCTIONS)); prb.add_argument('--confirm',action='store_true')
-    phist=pcs.add_parser('history'); phist.add_argument('--slot',choices=list(INSTRUCTIONS)); phist.add_argument('--json',action='store_true')
+    pprom=pcs.add_parser('promote'); pprom.add_argument('name',choices=list(PROMPT_NAMES)); pprom.add_argument('variant'); pprom.add_argument('--confirm',action='store_true')
+    prst=pcs.add_parser('reset'); prst.add_argument('name',choices=list(PROMPT_NAMES))
+    prb=pcs.add_parser('rollback'); prb.add_argument('name',choices=list(PROMPT_NAMES)); prb.add_argument('--confirm',action='store_true')
+    phist=pcs.add_parser('history'); phist.add_argument('--slot',choices=list(PROMPT_NAMES)); phist.add_argument('--json',action='store_true')
     fail=sp.add_parser('failures'); fail.add_argument('--gate'); fail.add_argument('--min',type=int,default=2); fail.add_argument('--json',action='store_true'); fail.set_defaults(func=cmd_failures)
     fcs=fail.add_subparsers(dest='failures_cmd')
     fshow=fcs.add_parser('show'); fshow.add_argument('pattern_id')
@@ -178,7 +178,7 @@ def parser():
     f=sp.add_parser('figma'); fs=f.add_subparsers(dest='figma_cmd',required=True); fs.add_parser('doctor'); fsetup=fs.add_parser('setup'); fsetup.add_argument('--claude-only',action='store_true'); fsetup.add_argument('--codex-only',action='store_true'); f.set_defaults(func=cmd_figma)
     c=sp.add_parser('crg'); cs=c.add_subparsers(dest='crg_cmd',required=True); cs.add_parser('doctor'); cs.add_parser('build'); cs.add_parser('status'); up=cs.add_parser('update'); up.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); up.add_argument('--brief',action='store_true',default=True); de=cs.add_parser('detect'); de.add_argument('--base',default=None,help='Diff base ref; defaults to the repository default base recorded by ai init'); de.add_argument('--brief',action='store_true',default=True); c.set_defaults(func=cmd_crg)
     g=sp.add_parser('graph'); gs=g.add_subparsers(dest='graph_cmd',required=True); gs.add_parser('doctor'); gs.add_parser('build'); gs.add_parser('sync'); q=gs.add_parser('query'); q.add_argument('query'); pa=gs.add_parser('path'); pa.add_argument('start'); pa.add_argument('end'); e=gs.add_parser('explain'); e.add_argument('node'); g.set_defaults(func=cmd_graph)
-    pv=sp.add_parser('providers'); pvs=pv.add_subparsers(dest='providers_cmd'); pvshow=pvs.add_parser('show'); pvshow.add_argument('--json',action='store_true'); pvs.add_parser('doctor'); pvset=pvs.add_parser('set'); pvset.add_argument('--builder',choices=list(BUILDERS)); pvset.add_argument('--reviewer',choices=[*REVIEWERS,'command']); pvset.add_argument('--reviewer-model',help='Codex model for gates (empty string clears; default: your Codex config)'); pvset.add_argument('--reviewer-effort',action='append',metavar='GATE=LEVEL',help='Codex reasoning effort for one gate, e.g. cleanup=low (repeatable; GATE= clears)'); pvset.add_argument('--fast-builder-model',help="Builder model for fast-profile tasks (default: sonnet; '' = CLI default; 'default' = restore)"); pvset.add_argument('--fast-reviewer-effort',help="Codex effort cap for fast-profile tasks (default: medium; '' = no cap; 'default' = restore)"); pvset.add_argument('reviewer_command',nargs=argparse.REMAINDER,help='Executable for --reviewer command, after --'); pv.set_defaults(func=cmd_providers)
+    pv=sp.add_parser('providers'); pvs=pv.add_subparsers(dest='providers_cmd'); pvshow=pvs.add_parser('show'); pvshow.add_argument('--json',action='store_true'); pvs.add_parser('doctor'); pvset=pvs.add_parser('set'); pvset.add_argument('--builder',choices=list(BUILDERS)); pvset.add_argument('--reviewer',choices=[*REVIEWERS,'command']); pvset.add_argument('--reviewer-model',help='Codex model for gates (empty string clears; default: your Codex config)'); pvset.add_argument('--reviewer-effort',action='append',metavar='GATE=LEVEL',help='Codex reasoning effort for one gate, e.g. cleanup=low (repeatable; GATE= clears)'); pvset.add_argument('--fast-builder-model',help="Builder model for fast-profile tasks (default: sonnet; '' = CLI default; 'default' = restore)"); pvset.add_argument('--fast-builder-effort',help="Builder --effort for fast-profile tasks (default: high; '' = CLI default; 'default' = restore)"); pvset.add_argument('--fast-reviewer-effort',help="Codex effort cap for fast-profile tasks (default: medium; '' = no cap; 'default' = restore)"); pvset.add_argument('reviewer_command',nargs=argparse.REMAINDER,help='Executable for --reviewer command, after --'); pv.set_defaults(func=cmd_providers)
     for name,command in sp.choices.items(): command.description=COMMAND_DESCRIPTIONS[name]
     for choice in sp._choices_actions: choice.help=COMMAND_DESCRIPTIONS[choice.dest]
     for command in sp.choices.values():

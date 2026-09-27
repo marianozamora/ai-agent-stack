@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Current Claude and Codex guidance, applied where it is safe and measured where it is not.** See [docs/model-guidance.md](docs/model-guidance.md).
+  - *Builder effort.* `fast` launches `claude --model sonnet --effort high` (Sonnet 5's recommended default, below Claude Code's `xhigh`); overridable with `ai providers set --fast-builder-effort`, recorded as `builder_effort` on the plan metric.
+  - *The builder's policy is an experiment slot.* `builder.policy` joins the validator slots in `ai prompt`; variant `a` renders byte-identically to the previous prompt, variant `b` rewrites it for current models (prose with reasons, no strategy coaching, no limits the code does not enforce). Every gate row records the task's builder variant, so `ai prompt report` compares builder prompts by the gates that follow them.
+  - *Codex-style reviewer variants.* `validator.review` and `validator.security` ship a `b` variant: batched reads, severity-ordered findings with `path:line` and a triggering input or exploit path, non-blocking notes in the evidence.
+
 - **`security` is required by what a change says, not only where it lives.** Campaign task 2 rewrote Stripe webhook signature verification in `api/main.py` and no path pattern saw a security boundary, so the gate never ran. `collect_scope()` now records `security_signals` — security vocabulary in added/removed lines and new files (signature, webhook, secret, token, password, `html.escape`, …) — which marks the change security-relevant and lifts a LOW one to MEDIUM; `required_gates()` also requires `security` when the contract's objective or risk notes use security or payment terms, in English or Spanish (`firma`, `pagos`, `cobros`, `contraseña`, …). With the ASSESS bundle it shares the contract/review call.
 
 - **`review` consumes the verdict the shared `contract`/`review` call stored.** Once `contract` passed it left the set of members owed a verdict, `review` ran alone and took the single-gate path, ignoring its cached verdict: campaign task 2 paid ~47k billable tokens to judge `review` twice. The bundle cache is now looked up by group and keyed on the evidence only.

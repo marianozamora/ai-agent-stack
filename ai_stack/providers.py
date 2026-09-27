@@ -25,7 +25,7 @@ from typing import Any, Protocol
 class Builder(Protocol):
     name:str
     def available(self)->bool: ...
-    def launch(self,prompt:str,root:Path,env:dict,model:str|None=None)->None: ...
+    def launch(self,prompt:str,root:Path,env:dict,model:str|None=None,effort:str|None=None)->None: ...
 
 
 class Reviewer(Protocol):
@@ -50,7 +50,7 @@ class ClaudeBuilder:
 
     def available(self)->bool: return bool(shutil.which(self.executable))
 
-    def launch(self,prompt:str,root:Path,env:dict,model:str|None=None)->None:
+    def launch(self,prompt:str,root:Path,env:dict,model:str|None=None,effort:str|None=None)->None:
         path=shutil.which(self.executable)
         if not path:
             # The usual cause is not a missing install but a shell whose version manager
@@ -66,7 +66,8 @@ class ClaudeBuilder:
             raise SystemExit(f'{self.name.capitalize()} needs an interactive terminal; '
                              'this session has none (piped, scripted, or CI). '
                              'Use ai plan / --plan-only to only prepare the prompt instead.')
-        os.execvpe(path,[path,*(['--model',model] if model else []),*BUILDER_SETTINGS,prompt],env)
+        os.execvpe(path,[path,*(['--model',model] if model else []),*(['--effort',effort] if effort else []),
+                         *BUILDER_SETTINGS,prompt],env)
 
 
 CODEX_READONLY_SANDBOX=['exec','-s','read-only']  # shared by verdict() and review_argv(): never write to the checkout
@@ -239,6 +240,13 @@ GATE_EFFORT={'summary':'low','cleanup':'low','provenance':'low','contract':'medi
 # was on a 24k-line change. Both are repository-overridable, and '' turns them off.
 FAST_BUILDER_MODEL='sonnet'
 FAST_REVIEW_EFFORT='medium'
+# Sonnet 5 guidance: keep `high` for most work, `xhigh` for the hardest agentic tasks;
+# it respects effort strictly, so `low`/`medium` risk under-thinking a moderate change.
+# Claude Code otherwise runs at its own default (`xhigh`), which a small `fast` change
+# does not need. standard/strict keep the CLI default: the model there is the user's
+# (Opus 5.5 at `medium` already matches Opus 5 at `high` on coding).
+FAST_BUILDER_EFFORT='high'
+CLAUDE_EFFORTS=('low','medium','high','xhigh','max')  # Claude Code --effort levels (Codex's differ)
 
 
 def _stored_providers(state:Path)->dict:
@@ -252,6 +260,13 @@ def builder_model(state:Path,profile:str|None)->str|None:
     if profile!='fast': return None
     stored=_stored_providers(state).get('fast_builder_model',FAST_BUILDER_MODEL)
     return stored if isinstance(stored,str) and stored else None
+
+
+def builder_effort(state:Path,profile:str|None)->str|None:
+    """The `--effort` `ai run` launches the builder with; None means the CLI's own default."""
+    if profile!='fast': return None
+    stored=_stored_providers(state).get('fast_builder_effort',FAST_BUILDER_EFFORT)
+    return stored if isinstance(stored,str) and stored in CLAUDE_EFFORTS else None
 
 
 def _lower(level:str|None,cap:str|None)->str|None:
@@ -337,7 +352,7 @@ def cmd_providers(args):
         if getattr(args,'reviewer_model',None) is not None:
             if args.reviewer_model: settings['reviewer_model']=args.reviewer_model
             else: settings.pop('reviewer_model',None)
-        for key in ('fast_builder_model','fast_reviewer_effort'):
+        for key in ('fast_builder_model','fast_builder_effort','fast_reviewer_effort'):
             value=getattr(args,key,None)
             if value is None: continue
             if value=='default': settings.pop(key,None)
@@ -367,6 +382,7 @@ def cmd_providers(args):
             print('  per-gate effort: '+', '.join(f'{k}={v}' for k,v in sorted(review['gate_effort'].items())))
     fast=review_settings(state,'fast') if settings['reviewer']=='codex' else None
     print(f"Fast profile: builder model {builder_model(state,'fast') or 'CLI default'}"
+          +f", builder effort {builder_effort(state,'fast') or 'CLI default'}"
           +(f", reviewer effort {fast['effort'] or 'Codex default'}" if fast else ''))
     if args.providers_cmd!='doctor': return
     active_builder=builder(state)

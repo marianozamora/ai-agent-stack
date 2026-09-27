@@ -173,6 +173,18 @@ class LifecycleSandboxTests(unittest.TestCase):
         plan = [r for r in rows if r['event'] == 'plan'][-1]
         self.assertEqual((plan['builder'], plan['builder_model']), ('claude', 'sonnet'))
 
+    def test_a_builder_policy_experiment_changes_the_prompt(self):
+        root = core.git_root(); state = core.repo_state(root)
+        base = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertIn('Token Efficiency Policy:', base)
+        core.save_json(state / 'prompt-experiments.json', {'version': 1, 'active': {
+            'slot': 'builder.policy', 'variants': ['b'], 'started_at': 0, 'min_samples_per_variant': 1}})
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertIn('The PR contract is the definition of done.', prompt)
+        self.assertNotIn('Token Efficiency Policy:', prompt)
+        assignment = core.load_json(core.task_state(state) / 'state' / 'prompt-assignment.json', {})
+        self.assertEqual(assignment['builder.policy']['variant'], 'b')
+
     # --- builder model by profile ------------------------------------
     def _planrun(self, profile):
         builder = mock.Mock()
@@ -182,16 +194,30 @@ class LifecycleSandboxTests(unittest.TestCase):
         with mock.patch.object(lifecycle, 'get_builder', return_value=builder), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
             lifecycle.cmd_planrun(args, launch=True)
-        return builder.launch.call_args.kwargs['model'], out.getvalue()
+        self.launch_kwargs = builder.launch.call_args.kwargs
+        return self.launch_kwargs['model'], out.getvalue()
 
-    def test_fast_task_launches_the_builder_on_the_fast_model(self):
+    def test_fast_task_launches_the_builder_on_the_fast_model_and_effort(self):
         model, out = self._planrun('fast')
-        self.assertEqual(model, 'sonnet')
-        self.assertIn('claude --model sonnet (fast profile)', out)
+        self.assertEqual((model, self.launch_kwargs['effort']), ('sonnet', 'high'))
+        self.assertIn('claude --model sonnet --effort high (fast profile)', out)
 
     def test_standard_task_launches_the_builder_on_its_default_model(self):
         model, _ = self._planrun('standard')
         self.assertIsNone(model)
+        self.assertIsNone(self.launch_kwargs['effort'])
+
+    def test_fast_builder_effort_is_repository_overridable(self):
+        root = core.git_root(); state = core.repo_state(root)
+        meta = core.load_json(state / 'repo.json', {})
+        meta['providers'] = {'fast_builder_effort': 'xhigh'}
+        core.save_json(state / 'repo.json', meta)
+        self._planrun('fast')
+        self.assertEqual(self.launch_kwargs['effort'], 'xhigh')
+        meta['providers'] = {'fast_builder_effort': ''}
+        core.save_json(state / 'repo.json', meta)
+        self._planrun('fast')
+        self.assertIsNone(self.launch_kwargs['effort'])
 
     # --- ensure_contract ---------------------------------------------
     def test_ensure_contract_creates_pr_contract(self):
