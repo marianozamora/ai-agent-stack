@@ -92,3 +92,52 @@ the builder committed without attribution trailers, so `provenance` passed first
 
 Not comparable one-to-one with task 1: smaller change, different profile, new engine.
 
+## danssme — second repository, first paired control (2026-09-27)
+
+danssme (Next.js + Supabase) joined the campaign with 16 tickets from a read-only
+review (issues #90-#105). Setup needed: dependencies, a recorded base, validators
+(`regression` = `pnpm test:run`, plus `supabase test db` when pgTAP tests exist), and a
+fix to the schema-dump baseline migration so a local database could start at all.
+
+### Task: #90 privilege escalation (standard, builder variant b)
+
+`PR_READY` after 5 rounds. Four true positives, including one the builder's own fix
+missed: `security` found that any signed-in user could still set their own
+`profiles.stripe_account_id` (payout hijack), and `review` found `ai_credits_reset_at`
+self-escalation. About 960k billable gate tokens, inflated by a bug: once `contract`
+passed, `review` and `security` computed a different shared-call cache key and paid for
+their own calls. Fixed in #68; the next task shows one call per round.
+
+### Task: #102 hardening `/api/upload` — the same ticket with and without the stack
+
+Both arms: Claude Sonnet 5 at `--effort high`, headless `claude -p`, same permissions.
+
+| | No stack (B) | Stack (A) |
+|---|---|---|
+| Builder | 43 requests, ~$1.22 | 133 requests, ~$2.76 |
+| Gates | one measurement pass, 56k billable | 8 rounds, one shared ASSESS call each |
+| Tests | 1,261 passing | 1,258 passing |
+| Shipped | ownership bypass (substring match) and MIME spoofing | both fixed, plus undeletable PDFs, a 4-segment ownership edge, an unused alias and contract text pasted into the commit message |
+
+With every test green, the no-stack build shipped two security holes, one of them the
+exact bug the ticket existed to close. The stack found 6 real issues, 0 false positives,
+for about 2.3x the builder cost plus review.
+
+**Weaknesses measured:**
+
+- **Reviewer variance.** `review` and `security` passed code in one round and failed the
+  unchanged code in a later round (undeletable PDFs, MIME spoofing). Each finding was real,
+  but a single pass is not a reliable certification and the variance adds rounds.
+- **Unbounded security deepening.** Each fix exposed a deeper variant (substring, then
+  4 segments, then a PDF/HTML polyglot). The last one was out of the ticket's scope and
+  was closed by an operator decision (drop PDF uploads), not by another round. The stack
+  has no way to express that stopping point.
+- **Environment:** a user-level `rtk` command wrapper needed its own permission in both
+  arms; a leftover, ignored `route.ts.tmp` was mistaken for builder scratch and deleted,
+  then restored (it was empty).
+
+**Open stack follow-ups:** default `ai metrics label` to the latest failed attempt;
+`ai validators propose` should prefer a `test:run`-style script over a watch-mode
+`test`; `ai doctor` should flag tracked gitlinks without `.gitmodules`; a round cap or
+explicit scope boundary for `security`.
+
