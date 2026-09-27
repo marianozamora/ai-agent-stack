@@ -690,17 +690,17 @@ def context_caps(profile:str)->dict:
     return {
       'fast': {
         'raw_files':4,'review_files':5,'agent_calls':3,'reviews':0,'docs_queries':1,'graph_queries':2,
-        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1,
+        'skills':1,'findings':3,'context_chars':12000,'handoff_chars':3500,'retries':1,'model_rounds':3,
         'usage_tokens':160000,'usage_cost_usd':0.50
       },
       'standard': {
         'raw_files':8,'review_files':10,'agent_calls':5,'reviews':1,'docs_queries':3,'graph_queries':4,
-        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2,
+        'skills':2,'findings':3,'context_chars':24000,'handoff_chars':5500,'retries':2,'model_rounds':4,
         'usage_tokens':230000,'usage_cost_usd':1.50
       },
       'strict': {
         'raw_files':12,'review_files':15,'agent_calls':7,'reviews':1,'docs_queries':5,'graph_queries':6,
-        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2,
+        'skills':3,'findings':5,'context_chars':36000,'handoff_chars':7500,'retries':2,'model_rounds':5,
         'usage_tokens':300000,'usage_cost_usd':3.00
       }
     }[profile]

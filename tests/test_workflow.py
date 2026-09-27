@@ -635,8 +635,11 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--false-positive', ok=False)
         del self.env['AI_GATE']
 
-        # The PASSED (second) attempt cannot be judged true/false positive.
-        out = self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--true-positive', ok=False)
+        # Without --attempt the latest FAILED attempt is labeled, not the later PASS.
+        out = self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--true-positive')
+        self.assertIn('checks attempt=1 -> true_positive', out)
+        # Naming the PASSED (second) attempt is still refused.
+        out = self.ai('metrics', 'label', 'checks', '--task-key', task_key, '--attempt', '2', '--true-positive', ok=False)
         self.assertIn('Only a FAILED gate attempt', out)
 
         # Label the failed attempt explicitly (attempt 1).

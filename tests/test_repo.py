@@ -289,3 +289,13 @@ class RepoHygieneTests(unittest.TestCase):
         issues = repo.repo_hygiene(self.root)
         self.assertTrue(any('Python bytecode cache' in i and 'pkg/__pycache__' in i for i in issues))
         self.assertTrue(any(i.startswith('nested git repository at backend/.git') for i in issues))
+
+    def test_a_tracked_gitlink_without_gitmodules_is_reported(self):
+        self._commit()
+        sha = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=self.root, check=True,
+                             capture_output=True, text=True).stdout.strip()
+        subprocess.run(['git', 'update-index', '--add', '--cacheinfo', f'160000,{sha},.claude/worktrees/agent-a'],
+                       cwd=self.root, check=True, capture_output=True)
+        issues = repo.repo_hygiene(self.root)
+        self.assertTrue(any('gitlink' in i and '.claude/worktrees/agent-a' in i for i in issues))
+

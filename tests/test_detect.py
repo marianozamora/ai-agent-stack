@@ -137,6 +137,12 @@ class DetectionTests(unittest.TestCase):
         lines = '\n'.join(detect.render(self.propose()))
         self.assertIn("sh -c 'ruff check . && mypy .'", lines)
 
+    def test_a_single_run_test_script_wins_over_a_watch_mode_test(self):
+        # danssme: `test` is watch-mode vitest, `test:run` exits.
+        self.write('package.json', '{"scripts": {"test": "vitest", "test:run": "vitest run"}}')
+        self.write('pnpm-lock.yaml')
+        self.assertEqual(self.row(self.propose(), 'regression')['command'], ['pnpm', 'run', 'test:run'])
+
     def test_malformed_package_json_does_not_crash_detection(self):
         self.write('package.json', '{not json')
         self.assertEqual(detect.package_json(self.root), {})

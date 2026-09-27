@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Follow-ups from the first danssme tasks.**
+  - *A round limit for model-judged gates.* The retry cap counts a streak on unchanged code, so a gate whose every fix exposed a deeper variant never stopped (danssme#102 `security`: substring ownership, then 4 segments, then a PDF/HTML polyglot). Gate rows now record their `verdict`, and a gate that has returned FAIL `model_rounds` times on one task (fast 3, standard 4, strict 5), on any version of the code, stops with `NEEDS_HUMAN` so a human decides the scope. Reviewer crashes (`NEEDS_HUMAN` verdicts) are not rounds. `--allow-overrun` continues.
+  - *`ai metrics label` defaults to the latest failed attempt,* not the latest attempt, which after a fix is the PASS that cannot be labeled. Relabeling an attempt now replaces its earlier label in the campaign report instead of counting twice.
+  - *`ai validators propose` prefers a single-run test script:* `test:run` wins over `test`, which is often watch-mode (`vitest`).
+  - *`ai doctor` flags tracked gitlinks without a `.gitmodules` entry* (danssme had sixteen agent worktrees committed by accident).
+
 - **`review` and `security` consume the shared ASSESS verdict whichever members have passed.** The prerequisite records in the bundle's cache key were computed from the first member still owed a verdict, so once `contract` passed, `review` (with `security`) computed a different key and made its own call, and `security` did the same after `review`: danssme#90 paid for up to three reviewer calls per round instead of one. Dependencies are now anchored on the group's first required member.
 
 - **Database authorization counts as a security boundary.** A Supabase/Postgres RLS change lives in SQL, where none of the application-code security terms appear, so a ticket to lock down `event_registrations` policies would not have required the `security` gate. `security_signals()` now also matches `RLS`, `row level security`, `policy`/`policies`, `grant`/`revoke`, `privilege`, `escalation`, `service_role`, `security definer` and `auth.uid`, and the contract vocabulary adds `políticas`, `privilegios`, `escalada` and `admin`/`super admin`.

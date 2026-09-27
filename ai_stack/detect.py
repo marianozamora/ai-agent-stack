@@ -76,7 +76,11 @@ RULES = [
      lambda r: node_exec(r,'tsc','--noEmit'),'TypeScript type check passed'),
     ('typecheck-script','checks',lambda r: has_script(r,'typecheck'),
      lambda r: [package_manager(r),'run','typecheck'],'Typecheck script passed'),
-    ('npm-test','regression',lambda r: has_script(r,'test'),
+    # A single-run script first: `test` is often `vitest`/`jest --watch`, which waits for
+    # changes instead of exiting (danssme's `test` is watch-mode vitest; `test:run` is not).
+    ('npm-test-run','regression',lambda r: has_script(r,'test:run'),
+     lambda r: [package_manager(r),'run','test:run'],'Test suite passed'),
+    ('npm-test','regression',lambda r: has_script(r,'test') and not has_script(r,'test:run'),
      lambda r: [package_manager(r),'test'],'Test script passed'),
 
     ('clippy','checks',lambda r: has(r,'Cargo.toml'),

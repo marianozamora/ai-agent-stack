@@ -1099,6 +1099,24 @@ class SameStateRerunTests(unittest.TestCase):
         (self.root / 'fix.txt').write_text('fixed\n')
         self.assertIn('FAIL', self._run('review', self.FAIL))
 
+    def test_a_model_gate_stops_after_its_round_limit_even_on_new_code(self):
+        # standard allows 4 FAIL verdicts per gate per task; each new version resets the
+        # streak but not the rounds, so the 5th attempt asks a human to decide the scope.
+        limit = self.plan['caps']['model_rounds']
+        for i in range(limit):
+            (self.root / 'round.txt').write_text(f'round {i}\n')
+            self.assertIn('FAIL', self._run('review', self.FAIL))
+        (self.root / 'round.txt').write_text('another version\n')
+        with self.assertRaises(SystemExit) as ctx:
+            self._run('review', self.FAIL)
+        self.assertIn(f'returned FAIL {limit} times on this task', str(ctx.exception))
+        self.assertIn('FAIL', self._run('review', self.FAIL, allow_overrun=True))
+
+    def test_a_reviewer_crash_is_not_a_round(self):
+        crash = ['sh', '-c', 'echo \'{"status":"NEEDS_HUMAN","evidence":[],"findings":["reviewer exited 1"]}\'']
+        for _ in range(2): self._run('review', crash)  # the retry streak still stops a third
+        self.assertEqual(gates.gate_fail_verdicts(self.state, self.task.name, 'review'), 0)
+
     def test_exit_code_gates_may_rerun_unchanged(self):
         # checks/regression are cheap and may be flaky; only model verdicts are cached.
         self._run('checks', ['false'], adapter='exit-code')

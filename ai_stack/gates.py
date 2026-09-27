@@ -4,7 +4,7 @@ from pathlib import Path
 from detect import proposal, render
 from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, save_json, task_state
 from learning import confidence_card
-from metrics import consecutive_gate_failures, gate_attempt_number, record_metric
+from metrics import consecutive_gate_failures, gate_attempt_number, gate_fail_verdicts, record_metric
 from prompts import BUILDER_SLOT, prompt_slot, variant_text
 from workflow import billable_tokens, contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
@@ -545,6 +545,19 @@ def run_gate(args,root,state,plan,task,command,before=None):
                 '  The gate is not converging; read its last log before spending another attempt.\n'
                 f"  Override with `ai gate {args.name} --allow-overrun -- COMMAND` "
                 'or `ai pipeline --allow-overrun`.')
+    # Rounds, not streaks: a model-judged gate that keeps failing on each new version of the
+    # code is deepening, not converging. Past the profile's `model_rounds` a human decides
+    # where the change's scope ends (narrow the contract, or accept the residual with a
+    # follow-up ticket) instead of the stack paying for another round.
+    rounds=plan['caps'].get('model_rounds')
+    if (rounds is not None and not getattr(args,'allow_overrun',False) and needs_model_verdict(args)
+            and gate_fail_verdicts(state,task.name,args.name)>=rounds):
+        raise SystemExit(
+            f"NEEDS_HUMAN: {args.name} has returned FAIL {gate_fail_verdicts(state,task.name,args.name)} times on this "
+            f"task (profile limit {rounds}), each time on different code.\n"
+            '  Its findings may be going deeper than the change asked for. Decide the scope: fix the\n'
+            '  last findings, narrow the contract, or accept the residual risk in a follow-up ticket.\n'
+            f"  Continue anyway with `ai gate {args.name} --allow-overrun -- COMMAND` or `ai pipeline --allow-overrun`.")
     # A model-judged gate that FAILed against this exact state would be asked the same
     # question about the same code, and its answer is already on disk. On the first
     # campaign task one such re-run cost ~48k tokens to repeat two known findings.
@@ -610,7 +623,8 @@ def run_gate(args,root,state,plan,task,command,before=None):
     prompt_variants={name:assignment[name] for name in (slot,BUILDER_SLOT) if name in assignment}
     record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,
                   usage=usage,attempt=attempt,findings=findings,prompt_variants=prompt_variants,
-                  fingerprint=after,blocked_by=blocked_by)
+                  fingerprint=after,blocked_by=blocked_by,
+                  verdict=verdict.get('status') if isinstance(verdict,dict) else None)
     print(f"{args.name}: {'PASS' if passed else 'FAIL'} | {log}")
     if before!=after: print('Repository or task changed during gate; rerun against the final state.')
     if blocked_by=='environment':

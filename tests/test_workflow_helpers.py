@@ -356,6 +356,15 @@ class CampaignReportTests(unittest.TestCase):
         self.assertEqual(stats, {'true_positive': 1, 'false_positive': 2, 'labeled': 3,
                                  'false_positive_rate': round(2 / 3, 3)})
 
+    def test_relabeling_an_attempt_replaces_its_earlier_label(self):
+        rows = [
+            {'event': 'gate_label', 'gate': 'checks', 'task_key': 'k1', 'attempt': 1, 'label': 'true_positive'},
+            {'event': 'gate_label', 'gate': 'checks', 'task_key': 'k1', 'attempt': 1, 'label': 'false_positive'},
+            {'event': 'gate_label', 'gate': 'checks', 'task_key': 'k1', 'attempt': 2, 'label': 'true_positive'},
+        ]
+        stats = workflow.campaign_report(rows)['gate_labels']['checks']
+        self.assertEqual((stats['true_positive'], stats['false_positive'], stats['labeled']), (1, 1, 2))
+
     def test_unlabeled_gate_has_no_rate_not_zero(self):
         # No gate_label rows at all -> report['gate_labels'] must be empty, never a
         # fabricated 0% rate that looks like "this gate has no false positives".
