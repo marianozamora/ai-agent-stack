@@ -141,3 +141,35 @@ for about 2.3x the builder cost plus review.
 `test`; `ai doctor` should flag tracked gitlinks without `.gitmodules`; a round cap or
 explicit scope boundary for `security`.
 
+### Task: #91 lock down `event_registrations` RLS (standard, builder variant a)
+
+`PR_READY` after 4 rounds, inside the new `model_rounds` limit (4 for `standard`), with
+one shared ASSESS call per round (~90-150k billable each, ~450k in total; builder 103
+Opus requests). The regression gate now rebuilds the local database before pgTAP
+(`supabase db reset --local`); without it, `supabase test db` tested the old policies.
+
+What the gates caught: free registration without status or capacity checks, a
+participant counter reset to 0 on a failed count, staff roles able to update any column,
+`processTransfer` reporting success without a transfer, a capacity race, `notifyOrganizer`
+without an authorization check, and cross-event promoter access. The most valuable one
+was not in the code under review: **a PR merged in parallel (#109) redefined the same
+policies with a later migration timestamp, so merging #91 as written would have
+silently undone it in production.** `contract` caught it by comparing the fresh-database
+run with `origin/main`; every test on the branch passed.
+
+First false positive of the campaign: a criterion stated the cancellation actions
+"use `createAdminClient()`", a factual assumption of the ticket, not a requirement; the
+code was correct. Fixing the criterion ended the loop. Ticket wording is part of the
+contract's quality.
+
+**Gaps found:**
+
+- The builder only saw `contract`'s findings when `contract` failed first, although the
+  same call had judged `review` and `security` (fixed in #71: cached findings are listed).
+- Findings that `review`/`security` produced inside a shared call, in a round where the
+  pipeline stopped at `contract`, are never recorded as gate attempts, so they cannot be
+  labeled. On #91 those were the most important findings. Open.
+- Coordination: two lines of work touched the same policies on the same day. Worth a
+  check in `ai start` or `contract` for migrations landing on the base after the task
+  started.
+
