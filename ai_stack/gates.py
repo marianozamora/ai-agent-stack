@@ -9,7 +9,7 @@ from prompts import prompt_slot, variant_text
 from workflow import billable_tokens, contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
 from providers import builder as get_builder, gate_effort, review_settings, reviewer as get_reviewer
-from validators import BUNDLE, INSTRUCTIONS, SCHEMA, bundle_schema, check_bundle, check_verdict, intact_record
+from validators import ASSESS, BUNDLES, INSTRUCTIONS, SCHEMA, bundle_schema, check_bundle, check_verdict, intact_record
 
 
 # Gates that judge commit messages, not only code: a reworded or squashed commit with
@@ -224,6 +224,11 @@ def with_inspection(prompt:str,inlined:str,base:str)->str:
     return prompt.replace(INSPECT_MARKER,line)+inlined
 
 
+def intact_pass(task:Path,name:str,fingerprint:str)->bool:
+    record=load_json(task/'gates'/f'{name}.json',{})
+    return bool(record.get('passed')) and intact_record(record,fingerprint)
+
+
 def cmd_validate(args):
     try:
         if os.environ.get('AI_GATE')!=args.name:
@@ -243,7 +248,13 @@ def cmd_validate(args):
             if violations: raise ContractViolation(violations)
         fingerprint=evidence_fingerprint(root,state,plan)
         message_fingerprint=evidence_fingerprint(root,state,plan,gate='provenance')
-        bundle=[name for name in BUNDLE if name in required]
+        group=next((members for members in BUNDLES if args.name in members),())
+        bundle=[name for name in group if name in required]
+        if group is ASSESS:
+            # Only members still owed a verdict: a fresh contract PASS is not re-judged
+            # just because review is being re-run after a fix.
+            bundle=[name for name in bundle if name==args.name or not intact_pass(task,name,fingerprint)]
+            if len(bundle)<2: bundle=[]
         dependencies=['checks','regression']
         if args.name in bundle: dependencies=required[:required.index(bundle[0])]
         records={}
@@ -315,8 +326,10 @@ Fresh gate evidence (read referenced logs as needed):
             # this same call before anything is written to disk -- keying on the file it is
             # about to overwrite would invalidate the cache the moment the trigger call wrote
             # it, forcing a second reviewer call for the very next bundle member.
-            key=hashlib.sha256(json.dumps([message_fingerprint,records]).encode()).hexdigest()
-            cache=task/'review/bundle.json'; saved=load_json(cache,{})
+            label='assess' if group is ASSESS else 'bundle'
+            key=hashlib.sha256(json.dumps([fingerprint if group is ASSESS else message_fingerprint,
+                                           records,bundle]).encode()).hexdigest()
+            cache=task/'review'/f'{label}.json'; saved=load_json(cache,{})
             if saved.get('key')==key and args.name in saved.get('verdicts',{}):
                 # Consumed once: re-running a gate asks the reviewer again instead of replaying its answer.
                 verdict=check_verdict(saved['verdicts'].pop(args.name),args.name); save_json(cache,saved)
@@ -330,7 +343,7 @@ Fresh gate evidence (read referenced logs as needed):
                 prompt=with_inspection(prompt,inline_evidence(root,plan,contract,plan['caps']['context_chars']-len(prompt)-INSPECT_SLACK),
                                        plan['scope']['base'])
                 enforce_budget(prompt,plan['caps']['context_chars'],'validator context')
-                result=active_reviewer.verdict(root,task/'review','bundle',prompt,bundle_schema(bundle),
+                result=active_reviewer.verdict(root,task/'review',label,prompt,bundle_schema(bundle),
                                                lambda value: check_bundle(value,bundle),None,effort=effort)
                 verdict=result[args.name]
                 if 'usage' in result: verdict['usage']=result['usage']

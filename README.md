@@ -137,7 +137,7 @@ checks → regression → contract → review → security → design
        → summary → cleanup → ponytail → provenance
 ```
 
-`cleanup`, `ponytail` and `provenance` are judged in one reviewer call; each still records its own verdict and evidence.
+`contract`, `review` and (when due) `security` are judged in one reviewer call, and so are `summary`, `cleanup`, `ponytail` and `provenance`; each gate still records its own verdict and evidence, and a gate that already holds a fresh PASS is not re-judged.
 
 Review, security and design are included according to profile, risk and task inputs. The deterministic gates run first, so a failing test stops the run before any model-judged gate spends tokens, and `ai pipeline` refuses to start at all while the PR contract has no acceptance criteria.
 

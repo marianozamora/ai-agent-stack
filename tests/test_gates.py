@@ -14,6 +14,7 @@ Run just this file:
 """
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -699,6 +700,75 @@ class BundledValidatorTests(unittest.TestCase):
         passing = {'status': 'PASS', 'evidence': ['x'], 'findings': [], 'summary_markdown': ''}
         with self.assertRaises(ValueError):
             validators.check_bundle({'cleanup': passing}, validators.BUNDLE)
+
+
+class AssessBundleTests(unittest.TestCase):
+    """contract, review (and security when due) share one reviewer call, judging only
+    the members still owed a verdict."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'standard', 'HEAD', None)
+        _accept(self.state)
+        self.task = core.task_state(self.state)
+        self.calls = []
+        self.required = ['contract', 'review']
+        passing = {'status': 'PASS', 'evidence': ['app.txt:1 inspected'], 'findings': [], 'summary_markdown': ''}
+
+        def verdict(root, review_dir, name, prompt, schema, checker, timeout, effort=None):
+            self.calls.append((name, prompt))
+            members = schema.get('required', [])
+            value = {gate: dict(passing) for gate in members} if 'properties' in schema and members != list(validators.SCHEMA['required']) else dict(passing)
+            return {**checker(value), 'usage': {'input_tokens': 9, 'output_tokens': 1}}
+        reviewer = types.SimpleNamespace(name='codex', probe_binary='codex', verdict=verdict)
+        for patch in (mock.patch.object(gates, 'required_gates', side_effect=lambda *a: list(self.required)),
+                      mock.patch.object(gates, 'get_reviewer', return_value=reviewer),
+                      mock.patch.object(gates.shutil, 'which', return_value='/usr/bin/true')):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _validate(self, name):
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {'AI_GATE': name}), contextlib.redirect_stdout(buf):
+            gates.cmd_validate(argparse.Namespace(name=name))
+        return json.loads(buf.getvalue().strip().splitlines()[-1])
+
+    def test_one_call_serves_contract_and_review(self):
+        self.assertIn('usage', self._validate('contract'))
+        self.assertNotIn('usage', self._validate('review'))
+        self.assertEqual(len(self.calls), 1)
+        name, prompt = self.calls[0]
+        self.assertEqual(name, 'assess')
+        self.assertIn('Validate gates: contract, review', prompt)
+
+    def test_security_joins_when_it_is_required(self):
+        self.required = ['contract', 'review', 'security']
+        self._validate('contract')
+        self.assertIn('Validate gates: contract, review, security', self.calls[0][1])
+
+    def _fresh_pass(self, name):
+        plan = gates.current_plan(self.state)
+        log = self.task / 'gates' / f'{name}-x.log'
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text('ok\n')
+        core.save_json(self.task / 'gates' / f'{name}.json', {
+            'passed': True, 'verdict': {'status': 'PASS'}, 'log': str(log), 'artifacts': [],
+            'command': ['true'], 'exit_code': 0,
+            'log_hash': hashlib.sha256(log.read_bytes()).hexdigest(),
+            'fingerprint': gates.evidence_fingerprint(self.root, self.state, plan)})
+
+    def test_a_fresh_contract_pass_is_not_rejudged(self):
+        for name in ('checks', 'regression', 'contract'): self._fresh_pass(name)
+        self._validate('review')
+        name, prompt = self.calls[0]
+        self.assertEqual(name, 'review')
+        self.assertIn('Validate gate: review', prompt)
+
+    def test_a_lone_member_runs_on_its_own(self):
+        self.required = ['contract']
+        for name in ('checks', 'regression'): self._fresh_pass(name)
+        self._validate('contract')
+        self.assertEqual(self.calls[0][0], 'contract')
 
 
 class InlineEvidenceTests(unittest.TestCase):

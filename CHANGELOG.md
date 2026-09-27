@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`contract`, `review` and `security` share one reviewer call.** On the first campaign task each explored the same diff and callers separately (~300k input tokens apiece per round) for independent verdicts. They now form a second bundle (`validators.ASSESS`, cached in `review/assess.json`) exactly like `summary`/`cleanup`/`ponytail`/`provenance`, judging only the members still owed a verdict: a fresh `contract` PASS is not re-judged when `review` re-runs after a fix, and a lone member (e.g. `fast`/LOW without `review`) runs on its own. The deterministic `must_not_change` check still decides `contract` before any call.
+
 - **Tighter builder ↔ gate loop, measured on the first campaign task.**
   - *Commits enter the evidence fingerprint as trees, not SHAs.* Rewording or squashing to an identical tree used to invalidate all eight gates (~230k tokens to re-review unchanged code); commit messages now only fold into `summary`/`provenance` (`MESSAGE_GATES`), and the base enters as its tree too.
   - *A model-judged gate that FAILed is not re-run on the same state.* Its verdict is already on disk; one such re-run cost ~48k tokens to repeat two known findings. `--allow-overrun` still forces it; `checks`/`regression` may re-run freely.
