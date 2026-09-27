@@ -16,21 +16,38 @@ ai init                              # once per repo: records the base, reports 
 ai validators propose --apply        # once per repo: configures checks/regression
 ai validators install                # once per repo: configures the semantic gates
 
-ai start LOGIN-42 --ticket-file ticket.md   # fresh contract, becomes the active task
-ai work                                      # plan + launch the builder for that task
+ai start LOGIN-42 --ticket-file ticket.md   # fresh contract from the ticket; baseline checks run
+ai work                                      # plan + launch the builder (open gate findings included)
 ai finish                                    # run every required gate, then certify
-ai close --reason "merged"                   # freeze the evidence
+ai close --reason "merged"                   # freeze the evidence; record the builder's usage
 ```
 
 `ai current` shows what is active at any point; `ai tasks` lists everything in
 this checkout. A task carries its own base, so `ai start --base release` keeps
 one task on a different branch than the rest without a flag on every command.
 
+What each step now catches for you:
+
+- **`ai start`** fills the contract's objective, acceptance, `must_not_change` and
+  risk notes from the ticket's own headings (English or Spanish), runs the configured
+  `checks` once on the starting tree and says if it is already red, and warns when
+  the base is more than 2,000 changed lines away. `--no-baseline` skips the run.
+- **`ai work`** keeps the contract's objective, lists every gate's open findings in
+  the builder's prompt, and launches Claude without `Co-Authored-By` trailers.
+- **`ai finish`** refuses to re-run a model-judged gate that already FAILed on the
+  exact same code — fix its findings first — and does not count a command that could
+  not run (exit 126/127) or a stale prerequisite as a retry.
+- **Wait for the builder to finish** before `ai finish`: a gate that sees the
+  repository change while it runs is discarded.
+
 ## How a task moves through the stack
 
-Every gate's PASS is bound to a fingerprint of the repo, index, base, plan,
-rules, validator config, the stack version and the active builder/reviewer
-providers; any change invalidates it. `ai ready` never launches a model — it
+Every gate's PASS is bound to a fingerprint of the repo's tree, index, base,
+plan, rules, validator config, the stack version and the active builder/reviewer
+providers; any change invalidates it. Commit messages only count for `summary` and
+`provenance`, so rewording a commit re-runs those two, not the code review.
+`contract`, `review` and `security` share one reviewer call, as do `summary`,
+`cleanup`, `ponytail` and `provenance`. `ai ready` never launches a model — it
 only recomputes that fingerprint against what was actually recorded.
 
 ```mermaid
@@ -116,6 +133,11 @@ the gate dominating that group's duration; a profile eating over 80% of its toke
 budget suggests recalibrating `context_caps`. `findings_raised` is a volume count,
 not a claim about what got ignored — the stack cannot distinguish an override from a
 genuine fix without an explicit label.
+
+Gate tokens in the report are **billable** (cache hits excluded, as the budget counts
+them). Attempts blocked by the environment or a stale prerequisite are reported apart
+from retries. The builder's own usage, per model, is read from Claude Code's
+transcripts when the task is closed and shown beside the gates'.
 
 The protocol for running one — scope, baseline arm, decision rules fixed in advance,
 and a per-task log template — is in [`campaign-protocol.md`](campaign-protocol.md).

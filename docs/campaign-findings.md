@@ -55,3 +55,40 @@ task 1: the engine changed mid-campaign (logged here, per protocol §5).
 
 **Open:** the `fast` budget (160k) is left unchanged until tasks run on the new engine
 show whether the reviewer changes bring a task like this one under it.
+
+## Task 2 — promize, "the Stripe webhook requires a signature" (2026-09-26)
+
+Profile `standard`, fix, MEDIUM risk. Diff: 2 files, +119/−9 (`api/main.py` and
+integration tests). First task on the engine with #62/#63.
+
+**Outcome.** `PR_READY` in a single model round; certified `correct` after human
+review. No model-judged gate failed, so nothing to label.
+
+**Cost.**
+
+| Gate | Billable tokens |
+|---|---|
+| contract (shared ASSESS call) | 37.5k |
+| review (its own call — bug, see below) | 46.7k |
+| summary/cleanup/ponytail/provenance (one call) | 25.4k |
+| **Total** | **~110k** (would be ~63k with #64) |
+
+Builder (`builder_usage`, recorded by `ai close`): 27 Opus requests, 11k output,
+1.9M cache-read — `standard` uses the default model.
+
+**What worked:** the ticket filled all 7 criteria, 5 `must_not_change` and 2 risk
+notes with Spanish headings; the baseline `checks` ran green before the builder;
+the builder committed without attribution trailers, so `provenance` passed first time.
+
+**Found and fixed:**
+
+- `ai work` overwrote the ticket's objective with the task title — #63.
+- Once `contract` passed, `review` left the shared ASSESS call and was judged again
+  on its own (~47k) — #64.
+- `security` was never required: detection matched paths only, and the change lived
+  in `api/main.py`. Now also from diff content and the contract's risk notes — #65.
+- A `regression` run was discarded because `ai finish` started while the builder was
+  still writing (correct behaviour; operator note, not a stack bug).
+
+Not comparable one-to-one with task 1: smaller change, different profile, new engine.
+

@@ -198,6 +198,12 @@ An adhoc review's prompt and metadata go to `state/adhoc-reviews/<commit-or-pr-l
 
 The framework must not add tracked AI configuration, contracts, metrics, graph outputs, generated prompts, CRG databases, or MCP files to work repositories. Per-repo data belongs under the external config directory. `ai doctor` / `ai status` detect known contamination.
 
+`ai doctor` also reports **repository hygiene** (`repo.repo_hygiene()`), which is not
+contamination by the stack but costs it: tracked generated artifacts (`__pycache__`,
+`*.pyc`, `*.egg-info`, `node_modules`, pytest/ruff caches, `.DS_Store`) show up as a
+change on every test run and are then reported by `cleanup` at a token cost, and a
+nested `.git` directory silently captures every git command run inside it.
+
 ## Agent pipeline
 
 Builder → deterministic checks → Regression → contract → CRG impact → conditional Codex adversarial/security review → optional design fidelity → PR summary → one combined Cleanup/Ponytail/provenance review.
@@ -262,21 +268,36 @@ key includes the checkout path and the explicit task ID (branch by default).
 `ai gate` executes a validator and records its command, exit code, output hash,
 structured verdict for semantic gates, and a fingerprint of the validated tree
 and task inputs. That fingerprint (`evidence_fingerprint()` in `gates.py`) folds
-in `HEAD`, the verified base, `git ls-files --stage`, `git diff --binary HEAD`,
-the plan, `core.VERSION`, and the active builder/reviewer provider names — the
-last two because a stack upgrade reships the bundled validator `INSTRUCTIONS` and
-an `ai providers set` changes which model judged the change, so neither may leave
-a prior semantic PASS looking fresh to `ai pipeline --resume`. Gates that modify
+in the tree of `HEAD` and of the verified base, `git ls-files --stage`,
+`git diff --binary HEAD`, the plan, `core.VERSION`, and the active builder/reviewer
+provider names — the last two because a stack upgrade reships the bundled
+validator `INSTRUCTIONS` and an `ai providers set` changes which model judged the
+change, so neither may leave a prior semantic PASS looking fresh to
+`ai pipeline --resume`. Commits enter as **trees, not SHAs**: rewording a commit
+or squashing to an identical tree changes no code and must not invalidate a code
+review. The commit messages (author and body, `base..HEAD`) are folded in only for
+the gates that judge them, `MESSAGE_GATES = ('summary', 'provenance')`, so the
+fingerprint is per gate (`evidence_fingerprint(..., gate=name)`). Gates that modify
 their own inputs fail and must be rerun.
 
-Before running a gate's command, `run_gate()` checks
-`metrics.consecutive_gate_failures()` — failed attempts in a row since this gate
-last passed for this task — against the profile's `retries` cap and exits
-`NEEDS_HUMAN` when the streak is past it. The check runs before the command and
-before `evidence_fingerprint()`, so a non-converging gate costs neither a model
-call nor a worktree hash on the attempt that trips it; a pass resets the streak,
-so a legitimately re-evidenced gate is never retired. `ai gate NAME
---allow-overrun` / `ai pipeline --allow-overrun` run the blocked attempt anyway.
+Before running a gate's command, `run_gate()` applies two refusals, both before
+anything is spent:
+
+* **Retry streak.** `metrics.consecutive_gate_failures()` counts failed attempts
+  in a row since this gate last passed, **against the current fingerprint only**:
+  an attempt recorded against a different state ends the streak (a fix, a rebase
+  or a contract edit starts a fresh budget), and an attempt that never judged the
+  change — `blocked_by` a stale prerequisite (`PrerequisiteNotReady`) or by the
+  environment (exit 126/127: missing venv, binary off `PATH`) — is skipped. Past
+  the profile's `retries` cap the gate exits `NEEDS_HUMAN`. The unfiltered count
+  is an upper bound, so the worktree is only hashed when the cap could bite.
+* **Same-state re-run.** A model-judged gate whose last verdict was `FAIL` against
+  exactly the current fingerprint is refused: the same question about the same
+  code already has its answer on disk. `checks`/`regression` may re-run freely
+  (they are cheap and may be flaky).
+
+`ai gate NAME --allow-overrun` / `ai pipeline --allow-overrun` run a refused
+attempt anyway.
 
 `ai ready` evaluates required gates against the current fingerprint and emits a
 machine-readable readiness artifact plus a terminal status. It never invokes an
@@ -308,11 +329,28 @@ and inherits the enclosing gate's process group, so its timeout terminates the
 reviewer and its child tools. Structured output is validated independently of
 process success. Summary creation is performed by the wrapper outside the
 checkout, before provenance review; both gate records include the summary
-artifact hash. Cleanup, ponytail and provenance share one reviewer call that
-returns a verdict per gate: the first of them to run makes the call, and the
-other two consume their stored verdict once, keyed to the evidence fingerprint,
-the prerequisite records and the summary hash. Missing prerequisites stop bundled
-validators before model execution. Reviewer completion events supply token counts, while missing cost
+artifact hash. Semantic gates are judged in two shared reviewer calls
+(`validators.BUNDLES`), each returning one verdict per gate:
+
+* `ASSESS = ('contract', 'review', 'security')` — the code-judging gates, which
+  otherwise each explored the same diff and callers on their own. Only members
+  still owed a verdict are judged: a fresh `contract` PASS is not re-judged when
+  `review` re-runs after a fix, and a lone member runs on its own.
+* `BUNDLE = ('summary', 'cleanup', 'ponytail', 'provenance')` — `summary` generates
+  the PR draft in the same response the others (provenance especially) judge.
+
+The first member to run makes the call; the others consume their stored verdict
+once (`review/assess.json`, `review/bundle.json`). The cache is looked up by group
+and keyed on the evidence — the fingerprint (with commit messages for `BUNDLE`)
+and the prerequisite records — never on which members were in the call, so
+`review` still finds its verdict after `contract` has passed and left the set.
+Missing prerequisites stop bundled validators before model execution.
+
+The reviewer prompt inlines the changed-file list, the contract and the whole diff
+when they fit (`inline_evidence()`), and then says so instead of asking the
+reviewer to inspect the diff again (`with_inspection()`); it asks for batched
+shell commands and a scoped `codegraph explore --max-files 4`, because every
+reviewer turn re-sends the whole conversation. Reviewer completion events supply token counts, while missing cost
 data remains unreported. `ai validators install` adds missing semantic commands
 without replacing custom validators.
 
@@ -342,6 +380,17 @@ anyway; the pipeline metric and `state/pipeline-run.json` record
 counts runs that stopped on a budget (`BUDGET_EXCEEDED`, or a pre-existing
 `FAILED` row from before that status existed, inferred from reported usage), so
 `ai metrics` shows end-to-end spend across a whole run, not just per-gate figures.
+
+Which gates are required is decided by `core.required_gates()`: the deterministic
+gates and the `BUNDLE` always; `review` unless a `fast` task is LOW risk; `design`
+with a Figma link; and `security` when `classify()` sees a security boundary —
+by path (`auth/`, `crypto/`, `secrets/`, `token`, …) **or by content**:
+`collect_scope()` records `security_signals`, the security vocabulary found in
+added/removed lines and new files (signature, webhook, hmac, secret, token,
+password, csrf, `html.escape`, rate limit, …), and any signal also lifts a LOW
+change to MEDIUM. `security` is further required when the active contract's
+objective or risk notes use security or payment terms, in English or Spanish
+(`contract_security_signals()`: *firma, pagos, cobros, contraseña, credenciales*…).
 
 `ai benchmark` runs a fixed set of realistic task fixtures (`BENCHMARK_TASKS` in
 `ai_stack/benchmark.py`) through `classify`, `context_caps` and `select_skills` for
@@ -707,6 +756,27 @@ a task type's p90 time-to-ready over 3x its median names the gate with the most 
 duration in that group and suggests investigating outliers; a profile's median token
 usage over 80% of its budget suggests recalibrating `context_caps`.
 
+What the report counts, after the first campaign task showed the raw figures misled:
+
+* **Gate tokens are billable** (`billable_tokens()`: input minus cache hits, plus
+  output), exactly as the budget counts them. Summing raw input, most of which an
+  agentic reviewer re-reads from cache every turn, overstated gate spend ~4×.
+* **Blocked attempts are not retries.** Gate rows carrying `blocked_by`
+  (environment or stale prerequisite) are reported as `blocked_attempts`, apart from
+  `retries_by_gate`; on task 1 three real retries had read as eleven.
+* **Builder usage.** `ai work` execs Claude and never regains control, so the stack
+  cannot meter the builder directly. `ai close` reads Claude Code's own transcripts
+  for the checkout (`metrics.builder_usage()`: `~/.claude/projects/<escaped path>/*.jsonl`,
+  or `$CLAUDE_CONFIG_DIR`) over the task's window, counts each request once by id
+  (a request is logged once per content block), and records a `builder_usage` event
+  per model. The report shows the builder's fresh tokens (input + cache writes +
+  output) and cache reads beside the gates'. Every Claude session in the checkout
+  during the window counts, not only the one `ai work` launched; nothing is
+  estimated, and no transcript means no number.
+* **The window is the start.** With `--since`, a task belongs to the campaign only
+  if it started inside the window, so a pre-campaign task closed on day one is not
+  campaign data.
+
 ## v0.9 "Measurement" — Phase 4 (prompt versioning)
 
 Closes the gap identified when scoping v0.9: `ai prompt`'s A/B evaluation (v0.8 Phase 4)
@@ -814,19 +884,34 @@ existing stdlib-only, zero-footprint mold more tightly than a fetch-based
 version could.
 
 `analyze_ticket_text()` in `ai_stack/workflow.py` is pure regex: an
-`## Acceptance Criteria` heading followed by bullets, `- [ ]`/`- [x]`
-checklist items anywhere, a `figma.com` URL, and lines mentioning `blocked
-by`/`depends on`/`waiting on`. It returns facts about pattern matches, never
+acceptance heading (`Acceptance Criteria`/`Scenarios`, `Functional Requirements`,
+or the Spanish `Criterios de aceptación`/`Escenarios de aceptación`/`Requisitos
+funcionales`) followed by bullets or numbered items, `- [ ]`/`- [x]` checklist
+items anywhere, `Objective`/`Objetivo`, `Must not change`/`No debe cambiar`/
+`Out of scope`/`Fuera de alcance` and `Risk notes`/`Risks`/`Notas de riesgo`
+sections, a `figma.com` URL, and lines mentioning `blocked by`/`depends on`/
+`waiting on`. It returns facts about pattern matches, never
 an interpretation of ticket quality — there is no model call here at all,
 unlike `ai profile --deep`.
 
-`populate_acceptance_if_empty()` in `cli.py` reuses the *exact* regex
-`cmd_validate()`'s contract gate already uses to detect an empty acceptance
-list (`^acceptance:\s*\[\s*\]\s*$`), so "is the list empty" is one predicate
+`populate_contract_from_ticket()` in `lifecycle.py` fills `acceptance`,
+`must_not_change` and `risk_notes` through `populate_list_if_empty()`, which
+reuses the *exact* regex `cmd_validate()`'s contract gate uses to detect an empty
+list (`^<field>:\s*\[\s*\]\s*$`), so "is the list empty" is one predicate
 shared by the writer and the gate — the same discipline
-`run_benchmark_scenario()`'s contract population already established. This
-guarantees a human-authored acceptance list can never be silently overwritten
-by a later `--ticket-file` run; only a blank list is ever filled.
+`run_benchmark_scenario()`'s contract population already established. A
+human-authored list can never be silently overwritten by a later `--ticket-file`
+run; only a blank one is filled. `ai start` also takes the ticket's objective for a
+**new** contract, and `ai work` no longer rewrites the objective with the task
+title (`keep_objective`); an explicit `ai work "..."`/`ai plan "..."` still sets it.
+
+`ai start` then runs the configured `checks` once on the starting tree
+(`run_baseline()`, recorded in `state/baseline.json`; `--no-baseline` skips it) and
+warns when the base is already more than `BASE_DRIFT_LINES` (2,000) changed lines
+away — a red base or a mis-chosen base otherwise surfaced only after the builder
+had run. `ai work` lists every gate's last-FAIL findings in the builder prompt
+(`render_open_findings()`), and the builder is launched with
+`includeCoAuthoredBy: false`, since `provenance` rejects attribution trailers.
 
 Blockers/dependencies are advisory-only, permanently — not a placeholder for
 a future hard gate. The Jira-fetch design that preceded this one argued a
