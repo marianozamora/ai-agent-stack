@@ -38,6 +38,12 @@ class Reviewer(Protocol):
     def review_argv(self,root:Path,prompt:str)->list[str]: ...
 
 
+# The provenance gate rejects generated-by/co-author attribution in the task's commits,
+# and Claude Code adds a Co-Authored-By trailer by default: every commit the builder made
+# on the first campaign task failed provenance for it. Turn it off at the source.
+BUILDER_SETTINGS=['--settings',json.dumps({'includeCoAuthoredBy':False})]
+
+
 class ClaudeBuilder:
     """Replaces this process with the Claude CLI, handing it the built prompt."""
     name='claude'; executable='claude'
@@ -46,7 +52,12 @@ class ClaudeBuilder:
 
     def launch(self,prompt:str,root:Path,env:dict,model:str|None=None)->None:
         path=shutil.which(self.executable)
-        if not path: raise SystemExit(f'{self.name.capitalize()} CLI missing. Use ai plan to only prepare.')
+        if not path:
+            # The usual cause is not a missing install but a shell whose version manager
+            # has not loaded yet (nvm is commonly lazy-loaded), so the binary is off PATH.
+            print(f'  `{self.executable}` is not on PATH in this shell. If it is installed through a '
+                  'version manager (nvm, asdf, volta), load it first -- e.g. `nvm use default`.',file=sys.stderr)
+            raise SystemExit(f'{self.name.capitalize()} CLI missing. Use ai plan to only prepare.')
         # execvpe replaces this process with an interactive Claude session, which needs
         # a real terminal to talk to. Without one (a script, CI, a pipe) this used to
         # hang silently forever instead of failing - the builder started, found no TTY
@@ -55,7 +66,7 @@ class ClaudeBuilder:
             raise SystemExit(f'{self.name.capitalize()} needs an interactive terminal; '
                              'this session has none (piped, scripted, or CI). '
                              'Use ai plan / --plan-only to only prepare the prompt instead.')
-        os.execvpe(path,[path,*(['--model',model] if model else []),prompt],env)
+        os.execvpe(path,[path,*(['--model',model] if model else []),*BUILDER_SETTINGS,prompt],env)
 
 
 CODEX_READONLY_SANDBOX=['exec','-s','read-only']  # shared by verdict() and review_argv(): never write to the checkout

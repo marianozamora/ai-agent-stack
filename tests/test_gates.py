@@ -14,6 +14,7 @@ Run just this file:
 """
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -109,6 +110,27 @@ class EvidenceFingerprintTests(unittest.TestCase):
     def test_tracked_file_edit_changes_fingerprint(self):
         base = self.fp()
         (self.root / 'app.txt').write_text('edited in working tree\n')
+        self.assertNotEqual(base, self.fp())
+
+    def test_rewording_a_commit_keeps_code_evidence_but_not_message_evidence(self):
+        # Rewording (or squashing to the same tree) changes no code: a code review
+        # must stay fresh, while the gates that judge commit messages must re-run.
+        first = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=self.root, check=True,
+                               capture_output=True, text=True).stdout.strip()
+        (self.root / 'app.txt').write_text('second\n')
+        _git(self.root, 'commit', '-qam', 'change\n\nCo-Authored-By: Bot <b@e.com>')
+        plan = {'scope': {'base': first}, 'profile': 'fast'}
+        code = gates.evidence_fingerprint(self.root, self.state, plan)
+        messages = gates.evidence_fingerprint(self.root, self.state, plan, gate='provenance')
+        _git(self.root, 'commit', '-q', '--amend', '-m', 'change')
+        self.assertEqual(code, gates.evidence_fingerprint(self.root, self.state, plan))
+        self.assertEqual(code, gates.evidence_fingerprint(self.root, self.state, plan, gate='review'))
+        self.assertNotEqual(messages, gates.evidence_fingerprint(self.root, self.state, plan, gate='provenance'))
+
+    def test_a_new_commit_changing_code_moves_every_fingerprint(self):
+        base = self.fp()
+        (self.root / 'app.txt').write_text('committed change\n')
+        _git(self.root, 'commit', '-qam', 'change')
         self.assertNotEqual(base, self.fp())
 
     def test_reviewer_effort_change_changes_fingerprint(self):
@@ -680,6 +702,75 @@ class BundledValidatorTests(unittest.TestCase):
             validators.check_bundle({'cleanup': passing}, validators.BUNDLE)
 
 
+class AssessBundleTests(unittest.TestCase):
+    """contract, review (and security when due) share one reviewer call, judging only
+    the members still owed a verdict."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'standard', 'HEAD', None)
+        _accept(self.state)
+        self.task = core.task_state(self.state)
+        self.calls = []
+        self.required = ['contract', 'review']
+        passing = {'status': 'PASS', 'evidence': ['app.txt:1 inspected'], 'findings': [], 'summary_markdown': ''}
+
+        def verdict(root, review_dir, name, prompt, schema, checker, timeout, effort=None):
+            self.calls.append((name, prompt))
+            members = schema.get('required', [])
+            value = {gate: dict(passing) for gate in members} if 'properties' in schema and members != list(validators.SCHEMA['required']) else dict(passing)
+            return {**checker(value), 'usage': {'input_tokens': 9, 'output_tokens': 1}}
+        reviewer = types.SimpleNamespace(name='codex', probe_binary='codex', verdict=verdict)
+        for patch in (mock.patch.object(gates, 'required_gates', side_effect=lambda *a: list(self.required)),
+                      mock.patch.object(gates, 'get_reviewer', return_value=reviewer),
+                      mock.patch.object(gates.shutil, 'which', return_value='/usr/bin/true')):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _validate(self, name):
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {'AI_GATE': name}), contextlib.redirect_stdout(buf):
+            gates.cmd_validate(argparse.Namespace(name=name))
+        return json.loads(buf.getvalue().strip().splitlines()[-1])
+
+    def test_one_call_serves_contract_and_review(self):
+        self.assertIn('usage', self._validate('contract'))
+        self.assertNotIn('usage', self._validate('review'))
+        self.assertEqual(len(self.calls), 1)
+        name, prompt = self.calls[0]
+        self.assertEqual(name, 'assess')
+        self.assertIn('Validate gates: contract, review', prompt)
+
+    def test_security_joins_when_it_is_required(self):
+        self.required = ['contract', 'review', 'security']
+        self._validate('contract')
+        self.assertIn('Validate gates: contract, review, security', self.calls[0][1])
+
+    def _fresh_pass(self, name):
+        plan = gates.current_plan(self.state)
+        log = self.task / 'gates' / f'{name}-x.log'
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text('ok\n')
+        core.save_json(self.task / 'gates' / f'{name}.json', {
+            'passed': True, 'verdict': {'status': 'PASS'}, 'log': str(log), 'artifacts': [],
+            'command': ['true'], 'exit_code': 0,
+            'log_hash': hashlib.sha256(log.read_bytes()).hexdigest(),
+            'fingerprint': gates.evidence_fingerprint(self.root, self.state, plan)})
+
+    def test_a_fresh_contract_pass_is_not_rejudged(self):
+        for name in ('checks', 'regression', 'contract'): self._fresh_pass(name)
+        self._validate('review')
+        name, prompt = self.calls[0]
+        self.assertEqual(name, 'review')
+        self.assertIn('Validate gate: review', prompt)
+
+    def test_a_lone_member_runs_on_its_own(self):
+        self.required = ['contract']
+        for name in ('checks', 'regression'): self._fresh_pass(name)
+        self._validate('contract')
+        self.assertEqual(self.calls[0][0], 'contract')
+
+
 class InlineEvidenceTests(unittest.TestCase):
     """inline_evidence() must never push a prompt over its context budget."""
 
@@ -939,6 +1030,66 @@ class RetryBudgetTests(unittest.TestCase):
             gates.record_metric(self.state, 'gate', gate='checks', passed=False)
         self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 3)
         self.assertIn('FAIL', self._run(['false']))
+
+
+class SameStateRerunTests(unittest.TestCase):
+    """A model-judged gate that FAILed is not re-run against the very same state."""
+
+    FAIL = ['sh', '-c', 'echo \'{"status":"FAIL","evidence":[],"findings":["a real finding"]}\'']
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        lifecycle.build_prompt(self.root, self.state, 'small change', 'standard', 'HEAD', None)
+        self.task = core.task_state(self.state)
+        self.plan = gates.current_plan(self.state)
+
+    def _run(self, name, command, adapter='json', allow_overrun=False):
+        args = argparse.Namespace(name=name, timeout=30, adapter=adapter, evidence='ok',
+                                  allow_overrun=allow_overrun)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                gates.run_gate(args, self.root, self.state, self.plan, self.task, command)
+        except SystemExit as exc:
+            if exc.code != 1: raise
+        return buf.getvalue()
+
+    def test_a_failed_model_gate_is_refused_on_unchanged_state(self):
+        self.assertIn('FAIL', self._run('review', self.FAIL))
+        with self.assertRaises(SystemExit) as ctx:
+            self._run('review', self.FAIL)
+        self.assertIn('nothing changed since review failed', str(ctx.exception))
+
+    def test_a_change_or_an_override_lets_it_run_again(self):
+        self._run('review', self.FAIL)
+        self.assertIn('FAIL', self._run('review', self.FAIL, allow_overrun=True))
+        (self.root / 'fix.txt').write_text('fixed\n')
+        self.assertIn('FAIL', self._run('review', self.FAIL))
+
+    def test_exit_code_gates_may_rerun_unchanged(self):
+        # checks/regression are cheap and may be flaky; only model verdicts are cached.
+        self._run('checks', ['false'], adapter='exit-code')
+        self.assertIn('FAIL', self._run('checks', ['false'], adapter='exit-code'))
+
+    def test_a_command_that_cannot_run_is_an_environment_problem(self):
+        missing = ['sh', '-c', 'exit 127']
+        out = self._run('checks', missing, adapter='exit-code')
+        self.assertIn('environment problem', out)
+        for _ in range(3): self._run('checks', missing, adapter='exit-code')
+        self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 0)
+
+
+class InspectionLineTests(unittest.TestCase):
+    """The reviewer is told not to re-fetch a diff that is already inlined."""
+
+    def test_inlined_diff_says_do_not_rerun_git_diff(self):
+        prompt = gates.with_inspection(f'x {gates.INSPECT_MARKER} y', '--- git diff main ---\n+a\n', 'main')
+        self.assertIn('do not re-run git diff', prompt)
+        self.assertNotIn(gates.INSPECT_MARKER, prompt)
+
+    def test_without_the_diff_it_still_asks_to_inspect_it(self):
+        prompt = gates.with_inspection(f'{gates.INSPECT_MARKER}', '--- Changed files ---\na\n', 'main')
+        self.assertIn('Inspect git diff against the base', prompt)
 
 
 class ContractPathConstraintTests(unittest.TestCase):

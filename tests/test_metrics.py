@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import datetime
 import json
 import os
 import sys
@@ -8,6 +9,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -323,3 +325,41 @@ class CmdMetricsLabelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BuilderUsageTests(unittest.TestCase):
+    """builder_usage() reads Claude Code transcripts for the task window, once per request."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix='builder-usage-')
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name)
+        self.root = self.home / 'repo'
+        self.root.mkdir()
+        project = self.home / 'claude' / 'projects' / ''.join(c if c.isalnum() else '-' for c in str(self.root.resolve()))
+        project.mkdir(parents=True)
+        self.transcript = project / 'session.jsonl'
+        env = mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.home / 'claude')})
+        env.start(); self.addCleanup(env.stop)
+
+    def _entry(self, request, model, when, output):
+        return json.dumps({'type': 'assistant', 'requestId': request, 'timestamp': when,
+                           'message': {'model': model, 'usage': {'input_tokens': 1, 'cache_read_input_tokens': 100,
+                                                                 'cache_creation_input_tokens': 10, 'output_tokens': output}}})
+
+    def test_requests_are_counted_once_and_only_inside_the_window(self):
+        lines = [self._entry('r1', 'claude-sonnet-5', '2026-09-26T22:00:00Z', 5),
+                 self._entry('r1', 'claude-sonnet-5', '2026-09-26T22:00:00Z', 5),  # second content block
+                 self._entry('r2', 'claude-opus-5-5', '2026-09-26T23:00:00Z', 7),
+                 self._entry('r3', 'claude-opus-5-5', '2026-09-20T00:00:00Z', 9),  # before the task
+                 '{not json', json.dumps({'type': 'user'})]
+        self.transcript.write_text('\n'.join(lines) + '\n')
+        start = datetime.datetime(2026, 9, 26, tzinfo=datetime.timezone.utc).timestamp()
+        usage = metrics.builder_usage(self.root, start, start + 86400)
+        self.assertEqual(usage['requests'], 2)
+        self.assertEqual(usage['models']['claude-sonnet-5']['output_tokens'], 5)
+        self.assertEqual(usage['models']['claude-opus-5-5']['requests'], 1)
+
+    def test_no_transcript_or_no_start_means_nothing_recorded(self):
+        self.assertIsNone(metrics.builder_usage(self.root, time.time() - 60, time.time()))
+        self.assertIsNone(metrics.builder_usage(self.root, None, time.time()))

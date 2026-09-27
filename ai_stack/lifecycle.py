@@ -2,7 +2,8 @@ from __future__ import annotations
 import hashlib, json, re, sys, textwrap, time, uuid
 from pathlib import Path
 from capabilities import capability_block, detect as detect_capabilities, render_budget_lines
-from core import classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, resolve_profile, safe_head, save_json, shasum, task_state
+from core import GATES, classify, classify_task, collect_scope, context_caps, enforce_budget, git_root, load_json, profile_repo, repo_state, resolve_profile, safe_head, save_json, shasum, task_state
+from gates import prior_findings
 from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
 from metrics import record_metric
@@ -69,23 +70,56 @@ def ensure_contract(state:Path,task:str,figma:str|None=None):
         '''))
 
 
-def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
-    """Fill an empty acceptance list from detected ticket content; never touch a human's own list.
+def populate_list_if_empty(contract_path:Path,field:str,items:list[str])->bool:
+    """Fill an empty contract list from detected ticket content; never touch a human's own list.
 
     Uses the exact regex the contract gate's own emptiness check uses (cmd_validate),
     so "is this list empty" is one predicate shared by the writer and the gate — this
-    can never overwrite a human-authored acceptance list, only fill a blank one.
+    can never overwrite a human-authored list, only fill a blank one.
     """
     if not items: return False
     text=contract_path.read_text()
-    if not re.search(r'^acceptance:\s*\[\s*\]\s*$',text,re.M): return False
+    empty=rf'^{field}:\s*\[\s*\]\s*$'
+    if not re.search(empty,text,re.M): return False
     # A function replacement, not a plain string: re.sub() treats a string repl as its own
     # backslash-escape template, so json.dumps() output containing a non-ASCII character
     # (escaped as \uXXXX, e.g. an accented word from a Spanish ticket) raises
     # "bad escape \u" - a callable's return value is inserted literally instead.
-    def _acceptance_line(m:re.Match)->str: return 'acceptance: '+json.dumps(items)
-    contract_path.write_text(re.sub(r'^acceptance:\s*\[\s*\]\s*$',_acceptance_line,text,flags=re.M))
+    def _line(m:re.Match)->str: return f'{field}: '+json.dumps(items)
+    contract_path.write_text(re.sub(empty,_line,text,flags=re.M))
     return True
+
+
+def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
+    return populate_list_if_empty(contract_path,'acceptance',items)
+
+
+def populate_contract_from_ticket(contract_path:Path,analysis:dict)->dict:
+    """Every list the ticket states, into the blank contract fields it maps to.
+
+    `must_not_change` and `risk_notes` used to be copied in by hand after `ai start`
+    even when the ticket spelled them out under their own headings.
+    """
+    return {field:populate_list_if_empty(contract_path,field,analysis.get(key) or [])
+            for field,key in (('acceptance','acceptance_items'),('must_not_change','must_not_change_items'),
+                              ('risk_notes','risk_items'))}
+
+
+def render_open_findings(task:Path,limit:int)->str:
+    """The last FAIL's findings of every gate, so `ai work` resumes on them unprompted.
+
+    On the first campaign task each fix round meant copying a gate log path into the
+    builder by hand; the verdicts were already on disk.
+    """
+    found=prior_findings(task,GATES)
+    if not found: return 'none'
+    lines=[]; used=0
+    for gate,text in found:
+        line=f'- [{gate}] {text}'
+        if used+len(line)>limit: lines.append('- (more: see the gate records below)'); break
+        lines.append(line); used+=len(line)+1
+    lines.append(f"Full verdicts and logs: {task/'gates'}/<gate>.json")
+    return '\n'.join(lines)
 
 
 def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None,scope:dict|None=None)->str:
@@ -95,6 +129,7 @@ def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|No
     skill_context=load_skill_context(state, selected_skills, max(2000,caps['context_chars']//3))
     selected_lessons=select_lessons(state,scope,profile)
     lessons_block=render_lessons(selected_lessons,max(1,caps['context_chars']//10))
+    findings_block=render_open_findings(task_state(state),max(1,caps['context_chars']//10))
     crg_text=''
     if profile!='fast' and crg_cmd():
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
@@ -120,6 +155,9 @@ Repository rules:
 
 Observed failure history (advisory prior observations, never evidence for a PASS):
 {lessons_block}
+
+Open gate findings for this task (fix these first; a model-judged gate will not re-run on unchanged code):
+{findings_block}
 
 Active skills (lazy-loaded; max {caps['skills']}): {', '.join(selected_skills) if selected_skills else 'none'}
 
@@ -156,6 +194,7 @@ If a gate passes, return only its compact PASS contract unless more detail is re
 Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then discard raw design context.' if figma else 'off'}
 
 Zero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.
+Commit messages describe the change only: no Co-Authored-By or generated-by trailers (the provenance gate rejects them).
 
 Record final gates with `ai gate NAME -- COMMAND ...`: checks, regression, contract, cleanup, provenance, ponytail, summary; review for standard/strict or elevated risk; security for security boundaries; design for Figma. Except checks/regression, validators must finish with single-line JSON containing status PASS and a nonempty evidence list. `ai pipeline` runs checks and regression first and refuses to start while the PR contract has no acceptance criteria. Only `ai ready` may certify PR_READY from fresh recorded evidence. Return NEEDS_HUMAN or FAILED when evidence is missing.
 If reusable validators are configured (`ai validators show`), use `ai pipeline --dry-run` to inspect the required sequence and `ai pipeline --resume` to execute it using fresh evidence where available. Inspect task outcomes with `ai metrics`.
@@ -169,7 +208,8 @@ If reusable validators are configured (`ai validators show`), use `ai pipeline -
     cache_key=task_cache_key(root,task,profile,base,selected_skills)
     save_json(task_state(state)/'state'/'prompt-assignment.json',assign_prompt_variants(state,cache_key))
     save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)},"capabilities":detected_capabilities})
-    record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'])
+    record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'],
+                  builder=get_builder(state).name,builder_model=builder_model(state,profile))
     return prompt
 
 
@@ -191,7 +231,7 @@ def cmd_planrun(args,launch:bool):
     plan=load_json(task_state(state)/'state'/'current-plan.json',{})
     if ticket_analysis is not None:
         task=task_state(state)
-        populate_acceptance_if_empty(task/'contracts/current-pr.yml',ticket_analysis['acceptance_items'])
+        populate_contract_from_ticket(task/'contracts/current-pr.yml',ticket_analysis)
         save_json(task/'state/ticket.json',ticket_snapshot(ticket_analysis))
     print('AI plan')
     print('  repo state: ',state)

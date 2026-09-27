@@ -150,6 +150,38 @@ def cmd_status(args):
         for x in bad: print('  tracked:',x)
 
 
+# Generated artifacts that, once committed, show up as a change on every test run or
+# install -- and that a cleanup gate then spends tokens reporting. promize had
+# __pycache__ bytecode and an egg-info directory committed.
+_GENERATED=(('__pycache__/','Python bytecode cache'),('.pyc','Python bytecode'),('.egg-info/','Python package metadata'),
+            ('node_modules/','Node dependencies'),('.pytest_cache/','pytest cache'),('.ruff_cache/','ruff cache'),
+            ('.DS_Store','macOS Finder metadata'))
+_WALK_SKIP={'.git','node_modules','.venv','venv','dist','build','.nuxt','.output','.next','target','__pycache__'}
+
+
+def repo_hygiene(root:Path,limit:int=5)->list[str]:
+    """Committed generated artifacts and nested git repositories under `root`.
+
+    A nested `.git` (promize had one in backend/, left over from an early `git init`)
+    silently captures every git command run from inside that directory.
+    """
+    from core import run
+    issues=[]
+    try: tracked=run(['git','ls-files','-z'],cwd=root).split('\0')
+    except (RuntimeError,OSError): tracked=[]
+    for marker,label in _GENERATED:
+        hits=[path for path in tracked if marker in path or path.endswith(marker.rstrip('/'))]
+        if hits: issues.append(f'{len(hits)} tracked {label} file(s), e.g. {hits[0]} -- untrack and ignore them')
+    nested=[]
+    for directory,subdirs,_ in os.walk(root):
+        if Path(directory)!=root and '.git' in subdirs: nested.append(Path(directory).relative_to(root))
+        subdirs[:]=[d for d in subdirs if d not in _WALK_SKIP]
+        if len(nested)>=limit: break
+    for path in nested:
+        issues.append(f'nested git repository at {path}/.git -- git commands run inside {path}/ use it, not this repo')
+    return issues
+
+
 def cmd_doctor(args):
     print('AI Agent Stack',VERSION)
     print('Skills Engine:',len(skill_registry().get('skills',{})),'skills installed')
@@ -176,6 +208,9 @@ def cmd_doctor(args):
         print('Base:', base_report(root,state))
         print('Zero-footprint:', 'PASS' if not bad else 'FAIL')
         for x in bad: print('  tracked:',x)
+        hygiene=repo_hygiene(root)
+        print('Repository hygiene:', 'PASS' if not hygiene else f'{len(hygiene)} issue(s)')
+        for x in hygiene: print('  ',x)
         state_files=['rules.json','lessons.json','patterns.json','validators.json',
             'prompt-overrides.json','prompt-experiments.json','skill-overrides.json',
             'context7-libraries.json','project-profile.json','project-deep-profile.json']

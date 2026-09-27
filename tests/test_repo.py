@@ -259,3 +259,33 @@ class CmdInitOnAnEmptyRepoTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RepoHygieneTests(unittest.TestCase):
+    """ai doctor names committed generated artifacts and nested git repositories."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix='hygiene-')
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        for args in (('init', '-q'), ('config', 'user.name', 'T'), ('config', 'user.email', 't@e.com')):
+            subprocess.run(['git', *args], cwd=self.root, check=True, capture_output=True)
+        (self.root / 'app.py').write_text('x = 1\n')
+
+    def _commit(self):
+        subprocess.run(['git', 'add', '-A'], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-qm', 'c'], cwd=self.root, check=True, capture_output=True)
+
+    def test_a_clean_repository_has_no_issues(self):
+        self._commit()
+        self.assertEqual(repo.repo_hygiene(self.root), [])
+
+    def test_committed_bytecode_and_a_nested_repository_are_reported(self):
+        (self.root / 'pkg' / '__pycache__').mkdir(parents=True)
+        (self.root / 'pkg' / '__pycache__' / 'm.cpython-310.pyc').write_bytes(b'\0')
+        self._commit()
+        (self.root / 'backend').mkdir()
+        subprocess.run(['git', 'init', '-q'], cwd=self.root / 'backend', check=True, capture_output=True)
+        issues = repo.repo_hygiene(self.root)
+        self.assertTrue(any('Python bytecode cache' in i and 'pkg/__pycache__' in i for i in issues))
+        self.assertTrue(any(i.startswith('nested git repository at backend/.git') for i in issues))

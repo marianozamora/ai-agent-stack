@@ -286,6 +286,43 @@ class CampaignReportTests(unittest.TestCase):
         self.assertEqual(detail['findings_raised'], 2)
         self.assertIn("volume signal", workflow.campaign_report(rows)['findings_raised_caveat'])
 
+    def test_median_tokens_are_billable_not_raw_input(self):
+        rows = self._task('k1', 'feature', 'fast', started_at=1000, gates=[
+            {'gate': 'review', 'usage': {'input_tokens': 300_000, 'cached_input_tokens': 250_000, 'output_tokens': 5_000}},
+        ])
+        report = workflow.campaign_report(rows)
+        self.assertEqual(report['tasks_detail'][0]['billable_tokens'], 55_000)
+        self.assertEqual(report['by_profile']['fast']['median_tokens'], 55_000)
+
+    def test_blocked_attempts_are_not_retries(self):
+        rows = self._task('k1', 'feature', 'fast', started_at=1000, gates=[
+            {'gate': 'checks', 'attempt': 1, 'passed': False},
+            {'gate': 'checks', 'attempt': 2, 'passed': True},
+        ])
+        for attempt in (1, 2, 3):
+            rows.append({'event': 'gate', 'task_key': 'k1', 'gate': 'contract', 'attempt': attempt,
+                         'passed': False, 'blocked_by': 'checks'})
+        detail = workflow.campaign_report(rows)['tasks_detail'][0]
+        self.assertEqual(detail['retries_by_gate'], {'checks': 2})
+        self.assertEqual(detail['blocked_attempts'], 3)
+
+    def test_a_task_that_only_closed_inside_the_window_is_not_campaign_data(self):
+        old = [{'event': 'plan', 'task_key': 'old', 'ts': 100},
+               {'event': 'task_close', 'task_key': 'old', 'readiness': 'none', 'ts': 2000}]
+        new = self._task('new', 'feature', 'fast', started_at=1500)
+        report = workflow.campaign_report(old + new, since=1000)
+        self.assertEqual([t['task_key'] for t in report['tasks_detail']], ['new'])
+
+    def test_builder_usage_is_reported_per_task(self):
+        rows = self._task('k1', 'feature', 'fast', started_at=1000)
+        rows.append({'event': 'builder_usage', 'task_key': 'k1', 'models': {
+            'claude-sonnet-5': {'requests': 10, 'input_tokens': 5, 'cache_creation_input_tokens': 100,
+                                'cache_read_input_tokens': 9000, 'output_tokens': 50}}})
+        report = workflow.campaign_report(rows)
+        self.assertEqual(report['tasks_detail'][0]['builder'],
+                         {'models': {'claude-sonnet-5': 10}, 'fresh_tokens': 155, 'cache_read_tokens': 9000})
+        self.assertEqual(report['by_profile']['fast']['median_builder_tokens'], 155)
+
     def test_tokens_summed_across_gate_attempts(self):
         rows = self._task('k1', 'bug', 'fast', started_at=1000, gates=[
             {'gate': 'checks', 'usage': {'input_tokens': 100, 'output_tokens': 10}},

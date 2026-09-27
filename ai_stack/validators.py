@@ -56,6 +56,12 @@ def check_verdict(value: Any, name: str) -> dict[str, Any]:
 # in the same response, before anything is written to disk.
 BUNDLE = ('summary', 'cleanup', 'ponytail', 'provenance')
 
+# The code-judging gates, also one call when more than one is due. On the first campaign
+# task `contract` and `review` each explored the same diff and callers on their own
+# (~300k input tokens apiece per round) to reach two independent verdicts.
+ASSESS = ('contract', 'review', 'security')
+BUNDLES = (ASSESS, BUNDLE)
+
 
 def bundle_schema(names) -> dict[str, Any]:
     return {'type': 'object', 'additionalProperties': False, 'required': list(names),
