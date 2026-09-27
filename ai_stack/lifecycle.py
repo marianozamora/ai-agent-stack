@@ -105,13 +105,31 @@ def populate_contract_from_ticket(contract_path:Path,analysis:dict)->dict:
                               ('risk_notes','risk_items'))}
 
 
+def cached_bundle_findings(task:Path)->list[tuple[str,str]]:
+    """FAIL findings a shared reviewer call stored for gates the pipeline never reached.
+
+    The pipeline stops at the first failing gate, so when `contract` triggers the shared
+    call and fails, `review` and `security` are judged but never recorded: their findings
+    sat in the cache and the builder fixed only contract's, costing extra rounds (danssme
+    #91, #102). A gate whose own record has since passed is left out.
+    """
+    found=[]
+    for cache in ('assess','bundle'):
+        verdicts=load_json(task/'review'/f'{cache}.json',{}).get('verdicts') or {}
+        for name,verdict in verdicts.items():
+            if not isinstance(verdict,dict) or verdict.get('status')!='FAIL': continue
+            if load_json(task/'gates'/f'{name}.json',{}).get('passed'): continue
+            found+=[(name,text.strip()[:300]) for text in verdict.get('findings') or [] if isinstance(text,str) and text.strip()]
+    return found
+
+
 def render_open_findings(task:Path,limit:int)->str:
     """The last FAIL's findings of every gate, so `ai work` resumes on them unprompted.
 
     On the first campaign task each fix round meant copying a gate log path into the
     builder by hand; the verdicts were already on disk.
     """
-    found=prior_findings(task,GATES)
+    found=prior_findings(task,GATES)+cached_bundle_findings(task)
     if not found: return 'none'
     lines=[]; used=0
     for gate,text in found:

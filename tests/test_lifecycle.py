@@ -165,6 +165,21 @@ class LifecycleSandboxTests(unittest.TestCase):
         prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
         self.assertNotIn('escape the email HTML', prompt)
 
+    def test_prompt_lists_findings_the_shared_call_cached_for_unreached_gates(self):
+        root = core.git_root(); state = core.repo_state(root)
+        lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        task = core.task_state(state)
+        (task / 'review').mkdir(parents=True, exist_ok=True)
+        core.save_json(task / 'review' / 'assess.json', {'key': 'k', 'verdicts': {
+            'review': {'status': 'FAIL', 'findings': ['capacity is never checked']},
+            'security': {'status': 'PASS', 'findings': []}}})
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertIn('- [review] capacity is never checked', prompt)
+        (task / 'gates').mkdir(parents=True, exist_ok=True)
+        core.save_json(task / 'gates' / 'review.json', {'passed': True})
+        prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        self.assertNotIn('capacity is never checked', prompt)
+
     def test_prompt_forbids_attribution_trailers_and_plan_metric_names_the_builder(self):
         root = core.git_root(); state = core.repo_state(root)
         prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)

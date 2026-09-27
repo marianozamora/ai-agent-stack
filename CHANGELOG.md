@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The builder sees every finding of a shared review call.** The pipeline stops at the first failing gate, so when `contract` triggered the shared ASSESS call and failed, `review` and `security` were judged but never recorded, and the builder's next prompt listed only contract's findings. `render_open_findings()` now also lists FAIL findings cached in `review/assess.json` and `review/bundle.json`, except for gates whose own record has since passed (danssme #91, #102 lost rounds to this).
+
 - **Follow-ups from the first danssme tasks.**
   - *A round limit for model-judged gates.* The retry cap counts a streak on unchanged code, so a gate whose every fix exposed a deeper variant never stopped (danssme#102 `security`: substring ownership, then 4 segments, then a PDF/HTML polyglot). Gate rows now record their `verdict`, and a gate that has returned FAIL `model_rounds` times on one task (fast 3, standard 4, strict 5), on any version of the code, stops with `NEEDS_HUMAN` so a human decides the scope. Reviewer crashes (`NEEDS_HUMAN` verdicts) are not rounds. `--allow-overrun` continues.
   - *`ai metrics label` defaults to the latest failed attempt,* not the latest attempt, which after a fix is the PASS that cannot be labeled. Relabeling an attempt now replaces its earlier label in the campaign report instead of counting twice.
