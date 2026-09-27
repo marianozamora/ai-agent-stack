@@ -286,9 +286,16 @@ def cmd_close(args):
     # Record before clearing the pointer: record_metric() resolves the task through
     # task_state(), which once the pointer is gone has no active task to resolve and
     # would refuse rather than file the close event against the right task.
+    from metrics import builder_usage
+    usage=builder_usage(root,meta.get('started_at'),time.time())
+    if usage: record_metric(state,'builder_usage',task_id=identity,**usage)
     record_metric(state,'task_close',task_id=identity,readiness=readiness,reason=args.reason or '')
     if active_task_id(state,root)==identity: set_active_task(state,root,None)
     print(f'Closed task: {identity}')
+    if usage:
+        print('  builder usage:      '+'; '.join(
+            f"{model} {totals['requests']} req, {totals['output_tokens']} out, "
+            f"{totals['cache_read_input_tokens']} cache-read" for model,totals in usage['models'].items()))
     print(f'  readiness at close: {readiness}')
     print(f'  evidence retained:  {task_dir(state,root,identity)}')
 

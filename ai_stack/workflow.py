@@ -608,6 +608,19 @@ FINDINGS_RAISED_CAVEAT = (
     "override from a genuine fix without a human label (see `ai metrics label`).")
 
 
+def _builder_totals(rows):
+    """The builder's recorded usage for one task: fresh tokens, cache reads, per-model requests."""
+    if not rows: return None
+    models: dict[str, int] = {}; fresh = cached = 0
+    for row in rows:
+        for model, totals in (row.get('models') or {}).items():
+            if not isinstance(totals, dict): continue
+            models[model] = models.get(model, 0) + totals.get('requests', 0)
+            fresh += totals.get('input_tokens', 0) + totals.get('cache_creation_input_tokens', 0) + totals.get('output_tokens', 0)
+            cached += totals.get('cache_read_input_tokens', 0)
+    return {'models': models, 'fresh_tokens': fresh, 'cache_read_tokens': cached}
+
+
 def campaign_report(rows, *, since=None, usage_budgets=None):
     """Aggregate a real-usage validation campaign from recorded events plus human labels.
 
@@ -632,7 +645,8 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
         key = row.get('task_key')
         if key is None:
             continue
-        bucket = by_task.setdefault(key, {'starts': [], 'plans': [], 'gates': [], 'pipelines': [], 'closes': []})
+        bucket = by_task.setdefault(key, {'starts': [], 'plans': [], 'gates': [], 'pipelines': [], 'closes': [],
+                                          'builder': []})
         event = row.get('event')
         if event == 'task_start':
             bucket['starts'].append(row)
@@ -644,6 +658,8 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
             bucket['pipelines'].append(row)
         elif event == 'task_close':
             bucket['closes'].append(row)
+        elif event == 'builder_usage':
+            bucket['builder'].append(row)
 
     labels: dict[Any, list[dict]] = {}
     task_labels: dict[Any, list[dict]] = {}
@@ -662,6 +678,10 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
 
         start_candidates = [row['ts'] for row in starts + plans if isinstance(row.get('ts'), (int, float))]
         started_at = min(start_candidates) if start_candidates else None
+        # A task belongs to the window it started in: one merely closed inside it (a
+        # pre-campaign task tidied up on day one) is not campaign data.
+        if since is not None and started_at is None:
+            continue
         ready_candidates = [row['ts'] for row in bucket['pipelines']
                             if row.get('status') == 'PR_READY' and isinstance(row.get('ts'), (int, float))]
         ready_at = min(ready_candidates) if ready_candidates else None
@@ -675,20 +695,28 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
             final_status = None
 
         retries_by_gate: dict[str, int] = {}
+        blocked_attempts = 0
+        billable = 0
         duration_by_gate: dict[str, float] = {}
         findings_seen: set[str] = set()
         usage_values: dict[str, list[int]] = {'input_tokens': [], 'output_tokens': []}
         for gate_row in bucket['gates']:
             gate_name = gate_row.get('gate')
+            # An attempt that never judged the change (missing venv, stale prerequisite)
+            # is not a retry of it: on the first campaign task these made 3 real retries
+            # read as 11.
+            if gate_row.get('blocked_by'):
+                blocked_attempts += 1
+            elif gate_name:
+                retries_by_gate[gate_name] = retries_by_gate.get(gate_name, 0) + 1
             if gate_name:
-                attempt = gate_row.get('attempt') or 1
-                retries_by_gate[gate_name] = max(retries_by_gate.get(gate_name, 1), attempt)
                 duration_by_gate[gate_name] = duration_by_gate.get(gate_name, 0) + (gate_row.get('duration_seconds') or 0)
             for finding in gate_row.get('findings') or []:
                 if isinstance(finding, dict) and isinstance(finding.get('hash'), str):
                     findings_seen.add(finding['hash'])
             usage = gate_row.get('usage')
             if isinstance(usage, dict):
+                billable += billable_tokens(usage)
                 for field in usage_values:
                     if field in usage:
                         usage_values[field].append(usage[field])
@@ -702,6 +730,9 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
             'findings_raised': len(findings_seen),
             'input_tokens': sum(usage_values['input_tokens']) if usage_values['input_tokens'] else None,
             'output_tokens': sum(usage_values['output_tokens']) if usage_values['output_tokens'] else None,
+            'billable_tokens': billable if usage_values['input_tokens'] or usage_values['output_tokens'] else None,
+            'blocked_attempts': blocked_attempts,
+            'builder': _builder_totals(bucket['builder']),
         })
 
     def _stratify(field):
@@ -711,8 +742,10 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
         report = {}
         for value, entries in groups.items():
             times = [t['time_to_ready_seconds'] for t in entries if t['time_to_ready_seconds'] is not None]
-            totals = [(t['input_tokens'] or 0) + (t['output_tokens'] or 0) for t in entries
-                     if t['input_tokens'] is not None or t['output_tokens'] is not None]
+            # Billable, as the budget counts them: cache hits are most of an agentic gate's
+            # input, and summing them overstated gate spend about four times.
+            totals = [t['billable_tokens'] for t in entries if t['billable_tokens'] is not None]
+            builder = [t['builder']['fresh_tokens'] for t in entries if t['builder']]
             duration_totals: dict[str, float] = {}
             for t in entries:
                 for gate, seconds in t['duration_by_gate'].items():
@@ -728,7 +761,9 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
                 'dominant_gate_by_duration': dominant_gate,
                 'median_retries': round(statistics.median([t['max_retries'] for t in entries]), 2),
                 'max_retries': max(t['max_retries'] for t in entries),
+                'blocked_attempts': sum(t['blocked_attempts'] for t in entries),
                 'median_tokens': round(statistics.median(totals)) if totals else None,
+                'median_builder_tokens': round(statistics.median(builder)) if builder else None,
                 'reporting_tasks_for_tokens': len(totals),
                 'median_findings_raised': round(statistics.median([t['findings_raised'] for t in entries]), 1),
             }

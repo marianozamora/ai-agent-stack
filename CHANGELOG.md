@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The campaign report measures what was actually spent.**
+  - *Builder usage is recorded.* `ai close` reads Claude Code's transcripts for the checkout over the task's window (one count per request, per model) and records a `builder_usage` event; `ai metrics --campaign` reports the builder's fresh tokens beside the gates'. On the first task this showed ~27M cache-read builder tokens against ~2.8M gate input, and fix rounds that ran on Opus rather than the `fast` builder.
+  - *Gate tokens are billable tokens* (input minus cache hits, plus output), as the budget counts them; the raw sum overstated gate spend about four times.
+  - *Blocked attempts are not retries.* Attempts blocked by the environment or a stale prerequisite are counted apart (`blocked_attempts`); 3 real retries had read as 11.
+  - *A task belongs to the window it started in*, so a pre-campaign task closed on day one no longer joins the campaign.
+
 - **`ai start` catches what broke the first campaign task before the builder runs.**
   - *Spanish tickets and the whole contract.* Acceptance headings are recognised in Spanish (`Criterios de aceptación`, `Requisitos funcionales`, …), and `Objective`/`Objetivo`, `Must not change`/`No debe cambiar` and `Risk notes`/`Notas de riesgo` sections fill the new contract's objective and the empty `must_not_change`/`risk_notes` lists — never a human-edited one.
   - *A baseline run.* The configured `checks` runs once on the starting tree (`--no-baseline` skips it) and says when it is already red: `checks` failed four times on that task for a missing venv and lint/type errors that were on the base.

@@ -83,8 +83,11 @@ Record what the stack cannot see in [`campaign-log-template.csv`](campaign-log-t
 | `bug_post_merge` | `y` / `n`, filled at +2 weeks |
 | `note` | Anything that explains an outlier |
 
-`builder_usd` is manual because metrics record gate usage only, and Codex reports no
-`cost_usd`; gate cost has to be derived from tokens.
+`ai close` records the builder's tokens per model from Claude Code's transcripts
+(`builder_usage`), and `ai metrics --campaign` reports them next to the gates'
+billable tokens — which is how task 1 showed its fix rounds ran on Opus, not the
+`fast` builder. `builder_usd` stays manual only because neither Claude's transcripts
+nor Codex report a dollar cost; copy it from `/cost` if you want the money figure.
 
 ## 5. Rules that keep the data clean
 

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import csv, hashlib, json, sqlite3, sys, time
+import csv, datetime, hashlib, json, os, re, sqlite3, sys, time
 from pathlib import Path
 from typing import Any
 from core import VERSION, context_caps, git_root, load_json, repo_state, require_human, task_state
@@ -172,6 +172,54 @@ def record_task_label(state:Path,*,task_key:str,label:str,note:str):
     append_event(state,row)
 
 
+_BUILDER_FIELDS=('input_tokens','cache_creation_input_tokens','cache_read_input_tokens','output_tokens')
+
+
+def _claude_config_dirs()->list[Path]:
+    override=os.environ.get('CLAUDE_CONFIG_DIR')
+    return [Path(override).expanduser()] if override else [Path.home()/'.claude']
+
+
+def builder_usage(root:Path,since:float|None,until:float)->dict|None:
+    """Token usage of the Claude sessions run in this checkout between `since` and `until`.
+
+    The stack never saw the builder's cost: `ai work` execs Claude and never regains
+    control. Claude Code's own transcripts do record it, per request and per model --
+    on the first campaign task they showed the "fast" builder's fix rounds had run on
+    Opus. Each request is logged once per content block, so it is counted once by
+    request id. Every session in the checkout during the window counts, not only the
+    one `ai work` launched, and nothing is estimated: no transcript, no number.
+    """
+    if since is None: return None
+    project=re.sub(r'[^A-Za-z0-9]','-',str(root.resolve()))
+    requests:dict[str,tuple[str,dict]]={}
+    for config in _claude_config_dirs():
+        for transcript in sorted((config/'projects'/project).glob('*.jsonl')):
+            try: lines=transcript.read_text(errors='replace').splitlines()
+            except OSError: continue
+            for line in lines:
+                try: entry=json.loads(line)
+                except ValueError: continue
+                if not isinstance(entry,dict) or entry.get('type')!='assistant': continue
+                raw=entry.get('message'); message:dict=raw if isinstance(raw,dict) else {}
+                try: at=datetime.datetime.fromisoformat(str(entry.get('timestamp','')).replace('Z','+00:00')).timestamp()
+                except ValueError: continue
+                if not since<=at<=until: continue
+                key=entry.get('requestId') or message.get('id') or entry.get('uuid')
+                usage=message.get('usage')
+                if key and isinstance(usage,dict): requests[key]=(str(message.get('model') or 'unknown'),usage)
+    if not requests: return None
+    models:dict[str,dict[str,int]]={}
+    for model,usage in requests.values():
+        totals=models.setdefault(model,{field:0 for field in _BUILDER_FIELDS}|{'requests':0})
+        totals['requests']+=1
+        for field in _BUILDER_FIELDS:
+            value=usage.get(field)
+            if isinstance(value,int): totals[field]+=value
+    return {'models':models,'requests':len(requests),'source':'claude-transcripts',
+            'caveat':'every Claude session in this checkout during the task window, not only the builder'}
+
+
 def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     """Count prior recorded attempts of this gate for this task, for a fresh 1-based number."""
     connection=_sync_metric_index(state)
@@ -293,7 +341,9 @@ def print_campaign_report(report):
         print(f"  {str(task_type or 'unclassified'):14} n={stats['n']:<3} ready={stats['reached_pr_ready']}/{stats['n']} "
               f"median={median if median is not None else '-'}s p90={p90 if p90 is not None else '-'}s "
               f"retries(median/max)={stats['median_retries']}/{stats['max_retries']} "
-              f"tokens(median)={tokens if tokens is not None else 'unreported'}")
+              f"gate tokens(median, billable)={tokens if tokens is not None else 'unreported'} "
+              f"builder tokens(median, fresh)={stats['median_builder_tokens'] if stats.get('median_builder_tokens') is not None else 'unrecorded'}"
+              +(f" env/prereq-blocked attempts={stats['blocked_attempts']}" if stats.get('blocked_attempts') else ''))
     fpr=report.get('false_pr_ready') or {}
     if fpr.get('labeled_certifications'):
         rate=fpr['false_pr_ready_rate']
