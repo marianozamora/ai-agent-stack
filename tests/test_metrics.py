@@ -243,11 +243,13 @@ class CmdMetricsLabelTests(unittest.TestCase):
                         false_positive=False, correct=False, incorrect=False, note=None)
         return argparse.Namespace(**{**defaults, **fields})
 
-    def test_defaults_to_the_most_recent_attempt(self):
-        # attempt 2 is the most recent for (T1, checks), but it PASSED -- refused.
-        with self.assertRaises(SystemExit) as caught:
+    def test_defaults_to_the_latest_failed_attempt(self):
+        # attempt 2 is the most recent for (T1, checks) but PASSED; the default is the
+        # latest attempt that can be judged -- the failed attempt 1.
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
             metrics.cmd_metrics_label(self._ns(true_positive=True), self.state)
-        self.assertIn('Only a FAILED gate attempt', str(caught.exception))
+        self.assertIn('checks attempt=1 -> true_positive', buf.getvalue())
 
     def test_explicit_attempt_selects_the_failed_one(self):
         buf = io.StringIO()

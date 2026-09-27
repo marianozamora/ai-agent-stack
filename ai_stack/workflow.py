@@ -665,7 +665,13 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
     task_labels: dict[Any, list[dict]] = {}
     for row in rows:
         if row.get('event') == 'gate_label':
-            labels.setdefault(row.get('gate'), []).append(row)
+            # Relabeling an attempt replaces its earlier label (latest wins, as for
+            # task_label): one attempt is one judgment, however many times it was filed.
+            entries = labels.setdefault(row.get('gate'), [])
+            key = (row.get('task_key'), row.get('attempt'))
+            if None not in key:
+                entries[:] = [e for e in entries if (e.get('task_key'), e.get('attempt')) != key]
+            entries.append(row)
         elif row.get('event') == 'task_label':
             task_labels.setdefault(row.get('task_key'), []).append(row)
 

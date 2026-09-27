@@ -228,6 +228,25 @@ def gate_attempt_number(state:Path,task_key:str,gate:str)->int:
     connection.close(); return 1+count
 
 
+def gate_fail_verdicts(state:Path,task_key:str,gate:str)->int:
+    """How many times this gate returned a FAIL verdict on this task, on any version of the code.
+
+    Unlike the retry streak, a fix does not reset this: it counts rounds, so a gate whose
+    every fix exposes a deeper variant (danssme#102: substring, 4 segments, polyglot)
+    reaches a point where a human decides the scope instead of another round.
+    """
+    connection=_sync_metric_index(state)
+    rows=connection.execute('SELECT payload FROM events WHERE event=? AND task_key=? AND gate_name=?',
+                            ('gate',task_key,gate)).fetchall()
+    connection.close()
+    count=0
+    for (payload,) in rows:
+        try: record=json.loads(payload)
+        except ValueError: continue
+        if record.get('verdict')=='FAIL': count+=1
+    return count
+
+
 def consecutive_gate_failures(state:Path,task_key:str,gate:str,fingerprint:str|None=None)->int:
     """How many attempts of this gate have failed in a row since its last pass.
 
@@ -386,7 +405,10 @@ def cmd_metrics_label(args,state):
         where=f' attempt {args.attempt}' if args.attempt is not None else ''
         raise SystemExit(f'No recorded {args.gate!r} gate attempt{where} for task {args.task_key!r}. '
                          'Find the right task_key and attempt with `ai metrics --all-tasks --by task --json`.')
-    target=matches[-1]
+    # Without --attempt, the latest FAILED attempt: labels are filed after a gate has
+    # been fixed and passed, and the latest attempt is then the PASS, which cannot be labeled.
+    target=matches[-1] if args.attempt is not None else next(
+        (row for row in reversed(matches) if not row.get('passed')),matches[-1])
     if target.get('passed'):
         raise SystemExit('Only a FAILED gate attempt can be labeled true/false positive '
                          '(a PASS is required to carry no unresolved findings).')

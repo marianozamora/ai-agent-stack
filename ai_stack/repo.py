@@ -177,6 +177,17 @@ def repo_hygiene(root:Path,limit:int=5)->list[str]:
         if Path(directory)!=root and '.git' in subdirs: nested.append(Path(directory).relative_to(root))
         subdirs[:]=[d for d in subdirs if d not in _WALK_SKIP]
         if len(nested)>=limit: break
+    # Gitlinks (mode 160000) without a .gitmodules entry are committed pointers to
+    # repositories that are not submodules -- e.g. agent worktrees committed by accident
+    # (danssme had sixteen under .claude/worktrees/); they show as deleted in every checkout.
+    try: stage=run(['git','ls-files','-s'],cwd=root).splitlines()
+    except (RuntimeError,OSError): stage=[]
+    gitlinks=[line.split('\t',1)[1] for line in stage if line.startswith('160000 ') and '\t' in line]
+    declared=(root/'.gitmodules').read_text(errors='replace') if (root/'.gitmodules').is_file() else ''
+    stray=[path for path in gitlinks if f'path = {path}' not in declared]
+    if stray:
+        issues.append(f'{len(stray)} tracked gitlink(s) without a .gitmodules entry, e.g. {stray[0]} -- '
+                      'untrack them with `git rm --cached`')
     for path in nested:
         issues.append(f'nested git repository at {path}/.git -- git commands run inside {path}/ use it, not this repo')
     return issues
