@@ -150,16 +150,18 @@ def cmd_prompt(args):
         experiment=prompt_experiment(state)
         if not experiment: raise SystemExit('No active experiment; nothing to report.')
         rows,_=load_metric_rows(state,event='gate')
-        stats=variant_stats(rows,experiment['slot'],since=experiment['started_at'])
+        stats=variant_stats(rows,experiment['slot'],since=experiment['started_at'],per_task=experiment['slot']==BUILDER_SLOT)
         if args.json: print(json.dumps({'slot':experiment['slot'],
             'min_samples_per_variant':experiment['min_samples_per_variant'],'stats':stats},indent=2)); return
-        print(f"Prompt experiment: {experiment['slot']} (min {experiment['min_samples_per_variant']} samples/variant, "
+        unit='tasks' if experiment['slot']==BUILDER_SLOT else 'gate attempts'
+        print(f"Prompt experiment: {experiment['slot']} (min {experiment['min_samples_per_variant']} {unit}/variant, "
               f"since this experiment started)")
         if len({s['sha'] for s in stats})>len({s['variant'] for s in stats}):
             print("Note: this slot's text changed mid-experiment; rows below are grouped by (variant, sha), not directly comparable across a change.")
         for s in stats:
             print(f"  {s['variant']} ({s['sha']}) n={s['n']} pass_rate={s['pass_rate']} "
-                  f"first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}")
+                  f"first_attempt={s['first_attempt_pass_rate']} median_tokens={s['median_usage_tokens']}"
+                  +(f" median_model_fail_rounds={s['median_model_fail_rounds']}" if 'median_model_fail_rounds' in s else ''))
             print(f"    by_task_type={s['by_task_type']}  by_risk={s['by_risk']}  by_stack_version={s['by_stack_version']}")
         return
     if args.prompt_cmd=='promote':
@@ -172,7 +174,7 @@ def cmd_prompt(args):
         # decision a human makes from evidence, never a formula, so the evidence must be seen.
         if experiment and experiment['slot']==slot:
             rows,_=load_metric_rows(state,event='gate')
-            stats=variant_stats(rows,slot,since=experiment['started_at'])
+            stats=variant_stats(rows,slot,since=experiment['started_at'],per_task=slot==BUILDER_SLOT)
             evidence=stats
             by_key={(s['variant'],s['sha']):s for s in stats}
             min_samples=experiment['min_samples_per_variant']

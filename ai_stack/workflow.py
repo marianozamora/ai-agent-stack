@@ -323,7 +323,7 @@ def outcome_stats(rows, *, profile=None, risk=None, task_type=None, min_n=5):
     return stats
 
 
-def variant_stats(rows, slot, since=None):
+def variant_stats(rows, slot, since=None, per_task=False):
     """Per-variant outcome stats for one prompt slot, keyed by (variant, sha).
 
     Grouping by sha too means a mid-experiment text change (a stack upgrade that
@@ -337,6 +337,8 @@ def variant_stats(rows, slot, since=None):
     gates = [row for row in rows if row.get('event') == 'gate'
              and isinstance(row.get('prompt_variants'), dict) and slot in row['prompt_variants']
              and (since is None or row.get('ts', 0) >= since)]
+    if per_task:
+        return _task_variant_stats(gates, slot)
     by_key: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
     for row in gates:
         info = row['prompt_variants'][slot]
@@ -350,6 +352,47 @@ def variant_stats(rows, slot, since=None):
             'variant': variant, 'sha': sha, 'n': len(entries),
             **_pass_rate_stats(entries),
             'median_usage_tokens': statistics.median(usage_totals) if usage_totals else None,
+            'by_task_type': buckets['task_type'], 'by_risk': buckets['risk'],
+            'by_stack_version': buckets['stack_version'],
+        })
+    return stats
+
+
+def _model_fail(row):
+    """A model-judged FAIL verdict; rows from before `verdict` was recorded are inferred
+    from a failed, unblocked attempt that carried findings."""
+    if 'verdict' in row:
+        return row['verdict'] == 'FAIL'
+    return not row.get('passed') and not row.get('blocked_by') and bool(row.get('findings'))
+
+
+def _task_variant_stats(gates, slot):
+    """One sample per task: a builder prompt is judged by its tasks, not by gate rows.
+
+    Counting gate rows gave the builder experiment 95 "samples" from four tasks. Per task:
+    how many model-judged FAIL verdicts it took (0 = clean first round) and its billable
+    gate tokens. Keys mirror the gate-row stats so the report and promotion read both.
+    """
+    tasks: dict[Any, list[dict]] = {}
+    for row in gates:
+        tasks.setdefault(row.get('task_key'), []).append(row)
+    by_key: dict[tuple[Any, Any], list[dict]] = {}
+    for rows in tasks.values():
+        info = rows[0]['prompt_variants'][slot]
+        fails = sum(1 for r in rows if r.get('gate') not in ('checks', 'regression') and _model_fail(r))
+        tokens = sum(billable_tokens(r.get('usage')) for r in rows)
+        by_key.setdefault((info.get('variant'), info.get('sha')), []).append(
+            {'fails': fails, 'tokens': tokens, 'task_type': rows[0].get('task_type'),
+             'risk': rows[0].get('risk'), 'stack_version': rows[0].get('stack_version')})
+    stats = []
+    for (variant, sha), entries in sorted(by_key.items(), key=lambda kv: str(kv[0])):
+        clean = round(sum(1 for e in entries if e['fails'] == 0) / len(entries), 3)
+        buckets = _bucket_counts(entries, ('task_type', 'risk', 'stack_version'))
+        stats.append({
+            'variant': variant, 'sha': sha, 'n': len(entries), 'unit': 'tasks',
+            'pass_rate': clean, 'first_attempt_pass_rate': clean,
+            'median_model_fail_rounds': statistics.median(e['fails'] for e in entries),
+            'median_usage_tokens': statistics.median(e['tokens'] for e in entries),
             'by_task_type': buckets['task_type'], 'by_risk': buckets['risk'],
             'by_stack_version': buckets['stack_version'],
         })
@@ -700,6 +743,17 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
         else:
             final_status = None
 
+        # Spend per `ai pipeline` run: the gates each run executed, not the task total, since
+        # the budget is enforced per run. A resumed run's reused evidence costs nothing.
+        run_tokens: list[int] = []
+        running = 0
+        for event_row in sorted(bucket['gates'] + bucket['pipelines'], key=lambda r: r.get('ts') or 0):
+            if event_row.get('event') == 'gate':
+                running += billable_tokens(event_row.get('usage'))
+            else:
+                run_tokens.append(running); running = 0
+        if running:  # gates recorded without a closing pipeline run (`ai gate` by hand)
+            run_tokens.append(running)
         retries_by_gate: dict[str, int] = {}
         blocked_attempts = 0
         billable = 0
@@ -738,6 +792,7 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
             'output_tokens': sum(usage_values['output_tokens']) if usage_values['output_tokens'] else None,
             'billable_tokens': billable if usage_values['input_tokens'] or usage_values['output_tokens'] else None,
             'blocked_attempts': blocked_attempts,
+            'run_tokens': run_tokens,
             'builder': _builder_totals(bucket['builder']),
         })
 
@@ -770,6 +825,7 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
                 'blocked_attempts': sum(t['blocked_attempts'] for t in entries),
                 'median_tokens': round(statistics.median(totals)) if totals else None,
                 'median_builder_tokens': round(statistics.median(builder)) if builder else None,
+                'median_run_tokens': round(statistics.median(runs)) if (runs := [n for t in entries for n in t.get('run_tokens', []) if n]) else None,
                 'reporting_tasks_for_tokens': len(totals),
                 'median_findings_raised': round(statistics.median([t['findings_raised'] for t in entries]), 1),
             }
@@ -830,10 +886,11 @@ def campaign_report(rows, *, since=None, usage_budgets=None):
     if usage_budgets:
         for profile, stats in sorted(by_profile.items(), key=lambda kv: str(kv[0])):
             budget = usage_budgets.get(profile)
-            if budget and stats['median_tokens'] and stats['median_tokens'] > 0.8 * budget:
+            per_run = stats.get('median_run_tokens')
+            if budget and per_run and per_run > 0.8 * budget:
                 recommendations.append(
-                    f"{profile or 'unclassified'}: median usage {stats['median_tokens']} tokens is over 80% "
-                    f"of its {budget}-token budget -- recalibrate context_caps for this profile.")
+                    f"{profile or 'unclassified'}: a median `ai pipeline` run spends {per_run} billable tokens, over 80% "
+                    f"of its {budget}-token per-run budget -- recalibrate context_caps for this profile.")
 
     return {
         'tasks': len(tasks), 'reached_pr_ready': sum(1 for t in tasks if t['reached_pr_ready']),

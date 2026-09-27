@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Improvements measured on danssme (six tasks).**
+  - *`ai pipeline` stops when the base moved underneath the branch.* It fetches the remote (bounded, never fatal; `AI_STACK_NO_FETCH=1` skips it) and, when the base's upstream holds commits the branch does not, exits `NEEDS_HUMAN` before any gate runs. On one day `origin/main` moved under three tasks; each cost a model round reviewing against a stale base, and once the merge would have undone the change.
+  - *The builder no longer tries to run the gates.* Its prompt told it to record gates with `ai gate`/`ai pipeline`; headless builders spent turns on denied commands and reported the task blocked. It now implements, commits and stops; `ai finish` runs the gates.
+  - *The builder experiment counts tasks.* `ai prompt report`/`promote` for `builder.policy` use one sample per task (model-judged FAIL rounds, clean first round, billable tokens) instead of one per gate row, which had given a variant 95 "samples" from four tasks. Rows from before verdicts were recorded are inferred from failed, unblocked attempts with findings.
+  - *Budgets are compared per `ai pipeline` run,* as they are enforced. The campaign report compared each task's total with the per-run budget, so the recalibration advice fired on every profile; per run, danssme's medians are 94k (`standard`, budget 230k) and 65k (`fast`, 160k).
+
 - **The builder sees every finding of a shared review call.** The pipeline stops at the first failing gate, so when `contract` triggered the shared ASSESS call and failed, `review` and `security` were judged but never recorded, and the builder's next prompt listed only contract's findings. `render_open_findings()` now also lists FAIL findings cached in `review/assess.json` and `review/bundle.json`, except for gates whose own record has since passed (danssme #91, #102 lost rounds to this).
 
 - **Follow-ups from the first danssme tasks.**

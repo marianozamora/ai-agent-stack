@@ -397,3 +397,48 @@ class StackRootOverrideTests(unittest.TestCase):
     def test_override_expands_user_and_resolves(self):
         nested = self.base / 'a' / '..' / 'source'
         self.assertEqual(core.resolve_stack_root(str(nested), self.source, self.bundled), self.source.resolve())
+
+
+class BaseBehindUpstreamTests(unittest.TestCase):
+    """base_behind_upstream() notices a remote base that moved under the branch."""
+
+    def _git(self, cwd, *args):
+        return subprocess.run(['git', *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix='drift-')
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.remote = root / 'remote.git'
+        self._git(root, 'init', '-q', '--bare', '-b', 'main', str(self.remote))
+        self.work = root / 'work'
+        self._git(root, 'clone', '-q', str(self.remote), str(self.work))
+        for args in (('config', 'user.name', 'T'), ('config', 'user.email', 't@e.com')):
+            self._git(self.work, *args)
+        (self.work / 'a.txt').write_text('a\n')
+        self._git(self.work, 'add', '.'); self._git(self.work, 'commit', '-qm', 'a')
+        self._git(self.work, 'push', '-q', '-u', 'origin', 'main')
+        self._git(self.work, 'checkout', '-q', '-b', 'task')
+        self.other = root / 'other'
+        self._git(root, 'clone', '-q', str(self.remote), str(self.other))
+        for args in (('config', 'user.name', 'T'), ('config', 'user.email', 't@e.com')):
+            self._git(self.other, *args)
+        env = mock.patch.dict(os.environ, {'AI_STACK_NO_FETCH': ''})
+        env.start(); self.addCleanup(env.stop)
+
+    def test_in_sync_is_none(self):
+        self.assertIsNone(core.base_behind_upstream(self.work, 'main'))
+
+    def test_a_commit_merged_elsewhere_is_reported(self):
+        (self.other / 'b.txt').write_text('b\n')
+        self._git(self.other, 'add', '.'); self._git(self.other, 'commit', '-qm', 'b')
+        self._git(self.other, 'push', '-q', 'origin', 'main')
+        self.assertEqual(core.base_behind_upstream(self.work, 'main'), {'upstream': 'origin/main', 'ahead': 1})
+        self._git(self.work, 'rebase', '-q', 'origin/main')
+        self.assertIsNone(core.base_behind_upstream(self.work, 'main'))
+
+    def test_no_remote_is_none(self):
+        with tempfile.TemporaryDirectory() as bare:
+            self._git(bare, 'init', '-q')
+            self.assertIsNone(core.base_behind_upstream(Path(bare), 'main'))
+

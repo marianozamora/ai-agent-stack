@@ -602,6 +602,29 @@ def contract_security_signals(root:Path)->list[str]:
     return security_signals('\n'.join(lines),_SECURITY_PROSE)
 
 
+def base_behind_upstream(root:Path,base:str)->dict|None:
+    """The upstream of `base` when it holds commits this checkout does not, else None.
+
+    Refreshes the remote first (quietly, bounded, and never fatal: offline simply means
+    no answer). On one campaign day `origin/main` moved under three tasks; each time a
+    model round was spent reviewing a diff against a stale base, and once the merge
+    would have silently undone the change. Set AI_STACK_NO_FETCH=1 to skip the fetch.
+    """
+    if not os.environ.get('AI_STACK_NO_FETCH'):
+        with contextlib.suppress(OSError,subprocess.TimeoutExpired):
+            subprocess.run(['git','fetch','--quiet','--no-tags','origin'],cwd=root,timeout=20,
+                           capture_output=True,check=False)
+    upstream=None
+    for candidate in (f'{base}@{{upstream}}',base if base.startswith('origin/') else f'origin/{base}'):
+        try: upstream=run(['git','rev-parse','--abbrev-ref','--symbolic-full-name',candidate],cwd=root)
+        except (RuntimeError,OSError): continue
+        if upstream: break
+    if not upstream: return None
+    try: ahead=int(run(['git','rev-list','--count',f'HEAD..{upstream}'],cwd=root) or 0)
+    except (RuntimeError,OSError,ValueError): return None
+    return {'upstream':upstream,'ahead':ahead} if ahead else None
+
+
 def classify(scope:dict, profile:str)->dict:
     paths='\n'.join(scope['files']).lower(); risk='LOW'; reason='small/local change'; security=False
     high=re.compile(r'(^|/)(auth|authentication|authorization|rbac|iam|payment|payments|billing|migration|migrations|schema|database|db|crypto|secrets?|permissions?|infra|terraform|k8s|kubernetes)(/|$)|\.sql$|\.tf$',re.M)
