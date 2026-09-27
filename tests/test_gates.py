@@ -786,6 +786,17 @@ class AssessBundleTests(unittest.TestCase):
         self.assertNotIn('usage', self._validate('review'))
         self.assertEqual([name for name, _ in self.calls], ['assess'])
 
+    def test_every_member_consumes_the_shared_verdict_as_the_others_pass(self):
+        # With security also due, review is left with a partner once contract passes, and
+        # security is left alone once review passes; both must still hit the one shared call.
+        self.required = ['checks', 'regression', 'contract', 'review', 'security']
+        for name in ('checks', 'regression'): self._fresh_pass(name)
+        self._validate('contract'); self._fresh_pass('contract')
+        self.assertNotIn('usage', self._validate('review')); self._fresh_pass('review')
+        self.assertNotIn('usage', self._validate('security'))
+        self.assertEqual([name for name, _ in self.calls], ['assess'])
+        self.assertIn('Validate gates: contract, review, security', self.calls[0][1])
+
     def test_a_lone_member_runs_on_its_own(self):
         self.required = ['contract']
         for name in ('checks', 'regression'): self._fresh_pass(name)

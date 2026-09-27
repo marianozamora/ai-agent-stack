@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`review` and `security` consume the shared ASSESS verdict whichever members have passed.** The prerequisite records in the bundle's cache key were computed from the first member still owed a verdict, so once `contract` passed, `review` (with `security`) computed a different key and made its own call, and `security` did the same after `review`: danssme#90 paid for up to three reviewer calls per round instead of one. Dependencies are now anchored on the group's first required member.
+
 - **Database authorization counts as a security boundary.** A Supabase/Postgres RLS change lives in SQL, where none of the application-code security terms appear, so a ticket to lock down `event_registrations` policies would not have required the `security` gate. `security_signals()` now also matches `RLS`, `row level security`, `policy`/`policies`, `grant`/`revoke`, `privilege`, `escalation`, `service_role`, `security definer` and `auth.uid`, and the contract vocabulary adds `políticas`, `privilegios`, `escalada` and `admin`/`super admin`.
 
 - **Current Claude and Codex guidance, applied where it is safe and measured where it is not.** See [docs/model-guidance.md](docs/model-guidance.md).

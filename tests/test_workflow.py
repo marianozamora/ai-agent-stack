@@ -849,10 +849,11 @@ if mode=='exit': sys.exit(2)
         (self.repo/'auth/token.py').write_text('token = 1')
         self.assertIn('PR_READY',self.ai('pipeline'))
         calls=(task/'review/calls').read_text().splitlines()
-        self.assertIn('review',calls)
-        self.assertIn('security',calls)
-        self.assertIn('design',calls)
-        self.assertEqual(calls[-1],'summary')
+        # contract triggers the one ASSESS call; review and security consume their verdicts
+        # from it instead of calling again (design is outside the bundle; summary starts the other).
+        self.assertEqual(calls,['contract','design','summary'])
+        for name in ('review','security'):
+            self.assertTrue(json.loads((task/'gates'/f'{name}.json').read_text())['passed'])
 
     def test_init_reports_repository_state_and_languages(self):
         output = self.ai('init')

@@ -249,14 +249,20 @@ def cmd_validate(args):
         fingerprint=evidence_fingerprint(root,state,plan)
         message_fingerprint=evidence_fingerprint(root,state,plan,gate='provenance')
         group=next((members for members in BUNDLES if args.name in members),())
-        bundle=[name for name in group if name in required]
+        members=[name for name in group if name in required]
+        bundle=list(members)
         if group is ASSESS:
             # Only members still owed a verdict: a fresh contract PASS is not re-judged
             # just because review is being re-run after a fix.
             bundle=[name for name in bundle if name==args.name or not intact_pass(task,name,fingerprint)]
             if len(bundle)<2: bundle=[]
+        # Anchored on the group's first required member, never on the first one still owed
+        # a verdict: the prerequisite records are part of the shared-verdict cache key, so a
+        # member whose predecessor had passed (review after contract, security after review)
+        # otherwise computed a different key and paid for its own call -- campaign task
+        # danssme#90 judged contract, review and security in three calls per round.
         dependencies=['checks','regression']
-        if args.name in bundle: dependencies=required[:required.index(bundle[0])]
+        if args.name in members: dependencies=required[:required.index(members[0])]
         records={}
         for name in dependencies:
             record=load_json(task/'gates'/f'{name}.json',{})
