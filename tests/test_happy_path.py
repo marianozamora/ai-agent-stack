@@ -5,6 +5,8 @@ here is the wiring: which task they act on, which base they inherit, and how the
 refuse when a precondition is missing.
 """
 import argparse
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -92,6 +94,18 @@ class HappyPathTests(unittest.TestCase):
         built = planrun.call_args.args[0]
         self.assertEqual(built.task, 'add email sign-in')
         self.assertFalse(planrun.call_args.kwargs['launch'])
+
+    def test_work_keeps_the_contract_objective_unless_one_is_given(self):
+        # `ai work` used to overwrite the objective the ticket had filled with the title.
+        tasks.cmd_start(namespace(id='PROJ-1', title='short title'))
+        contract = core.task_state(core.repo_state(core.git_root())) / 'contracts' / 'current-pr.yml'
+        contract.write_text(contract.read_text().replace('objective: "short title"', 'objective: "the real objective"'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            tasks.cmd_work(namespace(plan_only=True, base='HEAD'))
+        self.assertIn('objective: "the real objective"', contract.read_text())
+        with contextlib.redirect_stdout(io.StringIO()):
+            tasks.cmd_work(namespace(task='explicit objective', plan_only=True, base='HEAD'))
+        self.assertIn('objective: "explicit objective"', contract.read_text())
 
     def test_work_falls_back_to_the_task_id_when_there_is_no_title(self):
         tasks.cmd_start(namespace(id='PROJ-1'))
