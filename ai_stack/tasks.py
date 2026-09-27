@@ -175,22 +175,74 @@ def cmd_start(args):
     # resuming must never rewrite an objective a human edited: ensure_contract() rewrites
     # `objective:` whenever it is given a non-empty one, so only pass one when the
     # contract is new or the caller explicitly supplied a title.
-    from lifecycle import ensure_contract, populate_acceptance_if_empty
+    from lifecycle import ensure_contract, populate_contract_from_ticket
     ensure_contract(state, args.title or (title or identity if fresh else ''))
-    detected=0; clarifications=[]
+    detected=0; clarifications=[]; analysis={}
     if getattr(args,'ticket_file',None):
         analysis=analyze_ticket_text(Path(args.ticket_file).read_text())
-        populate_acceptance_if_empty(task/'contracts/current-pr.yml',analysis['acceptance_items'])
+        # A new contract takes the ticket's own objective over the bare title/id; a
+        # resumed one keeps whatever a human already wrote there.
+        if fresh and analysis['objective']: ensure_contract(state,analysis['objective'])
+        populate_contract_from_ticket(task/'contracts/current-pr.yml',analysis)
         save_json(task/'state/ticket.json',ticket_snapshot(analysis))
         detected=len(analysis['acceptance_items']); clarifications=analysis['clarifications_needed']
     record_metric(state,'task_start',task_id=identity,resumed=bool(existing))
+    drift=base_drift(root,base)
+    baseline=None if getattr(args,'no_baseline',False) or existing else run_baseline(root,state,task)
     print(f'Started task: {identity}')
     if title: print(f'  title:    {title}')
     print(f'  base:     {base}')
     print(f'  contract: {task/"contracts/current-pr.yml"}'+('' if fresh else ' (existing, resumed)'))
-    if getattr(args,'ticket_file',None): print(f'  ticket:   {detected} acceptance item(s) detected')
+    if getattr(args,'ticket_file',None):
+        print(f'  ticket:   {detected} acceptance item(s), {len(analysis["must_not_change_items"])} '
+              f'must_not_change, {len(analysis["risk_items"])} risk note(s) detected'
+              +(', objective taken from the ticket' if fresh and analysis['objective'] else ''))
     if clarifications:
         print(f'  clarify:  {len(clarifications)} unresolved marker(s) in the source; run `ai clarify`')
+    if drift:
+        print(f'  warning:  base {base} is already {drift} changed line(s) away from this checkout; every '
+              'gate will review all of it. If the task starts from the current branch, restart with '
+              '`ai start --resume --base <branch>`.')
+    if baseline is not None:
+        if baseline['passed']: print('  baseline: checks PASS on the starting tree')
+        else:
+            print(f"  baseline: checks FAIL before any change (exit {baseline['exit_code']}) -- fix the "
+                  f"base or the environment first, or every gate run starts red: {baseline['log']}")
+
+
+BASE_DRIFT_LINES=2000
+
+
+def base_drift(root:Path,base:str)->int:
+    """Changed lines between `base` and this checkout when that is already a large review.
+
+    The pilot recorded `main` as the base of a branch 24k lines ahead of it, so every
+    gate re-reviewed the whole MVP for a small task.
+    """
+    from core import collect_scope
+    try: lines=collect_scope(root,base)['changed_lines']
+    except (RuntimeError,OSError,SystemExit): return 0
+    return lines if lines>BASE_DRIFT_LINES else 0
+
+
+def run_baseline(root:Path,state:Path,task:Path)->dict|None:
+    """Run the configured `checks` once on the starting tree, before the builder touches it.
+
+    On the first campaign task `checks` failed four times on things the change never
+    touched (a missing venv, lint and type errors already on the base), each noticed only
+    after implementation. None when no `checks` validator is configured.
+    """
+    from gates import resolved_command, validator_config
+    from workflow import execute
+    item=validator_config(state)['validators'].get('checks')
+    if not item: return None
+    log=task/'state'/'baseline-checks.log'; log.parent.mkdir(parents=True,exist_ok=True)
+    with log.open('w') as out:
+        code=execute(resolved_command(item),root,dict(os.environ),out,item.get('timeout',300))
+    result={'passed':code==0,'exit_code':code,'log':str(log),'at':time.time()}
+    save_json(task/'state'/'baseline.json',result)
+    record_metric(state,'baseline',gate='checks',passed=code==0,exit_code=code)
+    return result
 
 
 def cmd_switch(args):

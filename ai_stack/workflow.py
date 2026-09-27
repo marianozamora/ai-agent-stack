@@ -361,8 +361,15 @@ _WINDOW = re.compile(r'^(\d+)([dw])$')
 
 _FIGMA_URL = re.compile(r'https?://\S*figma\.com/\S+')
 _BLOCKER_MENTION = re.compile(r'(?im)^\s*(?:[-*]\s*)?(?:blocked by|blocker|depends on|dependency|waiting on)\s*[:\-]?\s*(.+)$')
+# Spanish headings too: the first campaign ticket said "Criterios de aceptación" and
+# `ai start` detected zero criteria until the heading was translated by hand.
 _ACCEPTANCE_HEADING = re.compile(
-    r'(?im)^#{0,6}\s*(?:acceptance\s*(?:criteria|scenarios)|functional\s*requirements)\s*:?\s*$')
+    r'(?im)^#{0,6}\s*(?:acceptance\s*(?:criteria|scenarios)|functional\s*requirements'
+    r'|criterios\s+de\s+aceptaci[oó]n|escenarios\s+de\s+aceptaci[oó]n|requisitos\s+funcionales)\s*:?\s*$')
+_MUST_NOT_CHANGE_HEADING = re.compile(
+    r'(?im)^#{0,6}\s*(?:must\s*not\s*change|out\s+of\s+scope|no\s+debe\s+cambiar|fuera\s+de\s+alcance)\s*:?\s*$')
+_RISK_HEADING = re.compile(r'(?im)^#{0,6}\s*(?:risk\s*notes|risks|notas\s+de\s+riesgo|riesgos)\s*:?\s*$')
+_OBJECTIVE_HEADING = re.compile(r'(?im)^#{0,6}\s*(?:objective|goal|objetivo)\s*:?\s*$')
 _CHECKLIST_ITEM = re.compile(r'(?m)^\s*[-*]\s*\[[ xX]?\]\s*(.+)$')
 _PLAIN_BULLET = re.compile(r'(?m)^\s*[-*]\s+(.+)$')
 # Spec-kit numbers its acceptance scenarios ("1. **Given** ... **Then** ...") instead of
@@ -372,6 +379,25 @@ _LEADING_CHECKBOX = re.compile(r'^\[[ xX]?\]\s*')
 # Spec-kit's own unresolved-ambiguity marker, written into a spec by its /specify step and
 # meant to be answered before implementation. Captured verbatim: `ai clarify` blocks on it.
 _CLARIFICATION_MARKER = re.compile(r'(?i)\[NEEDS\s+CLARIFICATION:?\s*([^\]]*)\]')
+
+
+def _section_block(text, heading):
+    """The text under the first `heading` match, up to the next Markdown heading."""
+    match = heading.search(text)
+    if not match: return ''
+    rest = text[match.end():]
+    following = re.search(r'(?m)^#{1,6}\s', rest)
+    return rest[:following.start()] if following else rest
+
+
+def _section_items(text, heading):
+    """Bullet and numbered items under `heading`, checkboxes stripped, in order, deduped."""
+    block = _section_block(text, heading); items = []
+    for pattern in (_PLAIN_BULLET, _NUMBERED_ITEM):
+        for m in pattern.finditer(block):
+            item = _LEADING_CHECKBOX.sub('', m.group(1)).strip()
+            if item and item not in items: items.append(item)
+    return items
 
 
 def analyze_ticket_text(text):
@@ -405,7 +431,11 @@ def analyze_ticket_text(text):
                 item = _LEADING_CHECKBOX.sub('', m.group(1)).strip()
                 if item and item not in acceptance_items: acceptance_items.append(item)
     clarifications = [m.group(1).strip() or '(unlabelled)' for m in _CLARIFICATION_MARKER.finditer(text)]
+    objective = ' '.join(_section_block(text, _OBJECTIVE_HEADING).split())
     return {
+        'objective': objective or None,
+        'must_not_change_items': _section_items(text, _MUST_NOT_CHANGE_HEADING),
+        'risk_items': _section_items(text, _RISK_HEADING),
         'figma_url': figma.group(0) if figma else None,
         'acceptance_items': acceptance_items,
         'blockers_mentioned': blockers,
@@ -428,6 +458,9 @@ def ticket_snapshot(analysis, source='pasted'):
         'version': 1, 'fetched_at': time.time(), 'source': source,
         'length': analysis['length'], 'figma_url': analysis['figma_url'],
         'acceptance_items': analysis['acceptance_items'],
+        'objective': analysis.get('objective'),
+        'must_not_change_items': analysis.get('must_not_change_items', []),
+        'risk_items': analysis.get('risk_items', []),
         'blockers_mentioned': analysis['blockers_mentioned'],
         'clarifications_needed': analysis['clarifications_needed'],
         'has_acceptance': analysis['has_acceptance'],

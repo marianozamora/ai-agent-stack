@@ -59,13 +59,13 @@ See the generated [command reference](docs/commands.md) for every command and fl
 
 The PR contract (`objective`, `acceptance`, `must_not_change`, `risk_notes`) is what every gate measures the change against, so where its acceptance criteria come from matters more than any other input.
 
-`ai start --ticket-file` fills an empty acceptance list from a document — a pasted ticket, or a [spec-kit](https://github.com/github/spec-kit) `spec.md`, whose "Acceptance Scenarios" and "Functional Requirements" sections are both read without a converter:
+`ai start --ticket-file` fills an empty acceptance list — and an empty `must_not_change`, `risk_notes` and a new contract's objective, from their own headings in English or Spanish — from a document — a pasted ticket, or a [spec-kit](https://github.com/github/spec-kit) `spec.md`, whose "Acceptance Scenarios" and "Functional Requirements" sections are both read without a converter:
 
 ```bash
 ai start 1450 --ticket-file .specify/specs/042-checkout/spec.md
 ```
 
-It never overwrites a human-authored list, only fills a blank one. Spec-kit's `[NEEDS CLARIFICATION: ...]` markers are carried through rather than silently accepted.
+It never overwrites a human-authored list, only fills a blank one. It also runs the configured `checks` once on the starting tree (skip with `--no-baseline`) and warns when the base is already more than 2,000 changed lines away, so a red base or a mis-chosen base shows up before any tokens are spent. Spec-kit's `[NEEDS CLARIFICATION: ...]` markers are carried through rather than silently accepted.
 
 `ai clarify` then checks that contract before a model is launched:
 

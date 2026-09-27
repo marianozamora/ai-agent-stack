@@ -38,7 +38,7 @@ Start a task with its own fresh contract and make it active.
 
 ```text
 usage: ai start [-h] [--title TITLE] [--ticket-file TICKET_FILE] [--base BASE]
-                [--resume] [--switch] [--task-id TASK_ID]
+                [--resume] [--switch] [--no-baseline] [--task-id TASK_ID]
                 id
 ```
 

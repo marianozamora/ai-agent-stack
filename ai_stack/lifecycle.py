@@ -70,23 +70,39 @@ def ensure_contract(state:Path,task:str,figma:str|None=None):
         '''))
 
 
-def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
-    """Fill an empty acceptance list from detected ticket content; never touch a human's own list.
+def populate_list_if_empty(contract_path:Path,field:str,items:list[str])->bool:
+    """Fill an empty contract list from detected ticket content; never touch a human's own list.
 
     Uses the exact regex the contract gate's own emptiness check uses (cmd_validate),
     so "is this list empty" is one predicate shared by the writer and the gate — this
-    can never overwrite a human-authored acceptance list, only fill a blank one.
+    can never overwrite a human-authored list, only fill a blank one.
     """
     if not items: return False
     text=contract_path.read_text()
-    if not re.search(r'^acceptance:\s*\[\s*\]\s*$',text,re.M): return False
+    empty=rf'^{field}:\s*\[\s*\]\s*$'
+    if not re.search(empty,text,re.M): return False
     # A function replacement, not a plain string: re.sub() treats a string repl as its own
     # backslash-escape template, so json.dumps() output containing a non-ASCII character
     # (escaped as \uXXXX, e.g. an accented word from a Spanish ticket) raises
     # "bad escape \u" - a callable's return value is inserted literally instead.
-    def _acceptance_line(m:re.Match)->str: return 'acceptance: '+json.dumps(items)
-    contract_path.write_text(re.sub(r'^acceptance:\s*\[\s*\]\s*$',_acceptance_line,text,flags=re.M))
+    def _line(m:re.Match)->str: return f'{field}: '+json.dumps(items)
+    contract_path.write_text(re.sub(empty,_line,text,flags=re.M))
     return True
+
+
+def populate_acceptance_if_empty(contract_path:Path,items:list[str])->bool:
+    return populate_list_if_empty(contract_path,'acceptance',items)
+
+
+def populate_contract_from_ticket(contract_path:Path,analysis:dict)->dict:
+    """Every list the ticket states, into the blank contract fields it maps to.
+
+    `must_not_change` and `risk_notes` used to be copied in by hand after `ai start`
+    even when the ticket spelled them out under their own headings.
+    """
+    return {field:populate_list_if_empty(contract_path,field,analysis.get(key) or [])
+            for field,key in (('acceptance','acceptance_items'),('must_not_change','must_not_change_items'),
+                              ('risk_notes','risk_items'))}
 
 
 def render_open_findings(task:Path,limit:int)->str:
@@ -215,7 +231,7 @@ def cmd_planrun(args,launch:bool):
     plan=load_json(task_state(state)/'state'/'current-plan.json',{})
     if ticket_analysis is not None:
         task=task_state(state)
-        populate_acceptance_if_empty(task/'contracts/current-pr.yml',ticket_analysis['acceptance_items'])
+        populate_contract_from_ticket(task/'contracts/current-pr.yml',ticket_analysis)
         save_json(task/'state/ticket.json',ticket_snapshot(ticket_analysis))
     print('AI plan')
     print('  repo state: ',state)

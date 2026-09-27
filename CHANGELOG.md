@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`ai start` catches what broke the first campaign task before the builder runs.**
+  - *Spanish tickets and the whole contract.* Acceptance headings are recognised in Spanish (`Criterios de aceptación`, `Requisitos funcionales`, …), and `Objective`/`Objetivo`, `Must not change`/`No debe cambiar` and `Risk notes`/`Notas de riesgo` sections fill the new contract's objective and the empty `must_not_change`/`risk_notes` lists — never a human-edited one.
+  - *A baseline run.* The configured `checks` runs once on the starting tree (`--no-baseline` skips it) and says when it is already red: `checks` failed four times on that task for a missing venv and lint/type errors that were on the base.
+  - *A base-drift warning* when the base is already more than 2,000 changed lines away (the pilot reviewed a 24k-line MVP for a small change).
+- **`ai doctor` reports repository hygiene:** committed generated artifacts (`__pycache__`, `*.egg-info`, `node_modules`, …) and nested `.git` directories that capture git commands run inside them.
+
 - **`contract`, `review` and `security` share one reviewer call.** On the first campaign task each explored the same diff and callers separately (~300k input tokens apiece per round) for independent verdicts. They now form a second bundle (`validators.ASSESS`, cached in `review/assess.json`) exactly like `summary`/`cleanup`/`ponytail`/`provenance`, judging only the members still owed a verdict: a fresh `contract` PASS is not re-judged when `review` re-runs after a fix, and a lone member (e.g. `fast`/LOW without `review`) runs on its own. The deterministic `must_not_change` check still decides `contract` before any call.
 
 - **Tighter builder ↔ gate loop, measured on the first campaign task.**
