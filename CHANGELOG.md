@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`security` is required by what a change says, not only where it lives.** Campaign task 2 rewrote Stripe webhook signature verification in `api/main.py` and no path pattern saw a security boundary, so the gate never ran. `collect_scope()` now records `security_signals` — security vocabulary in added/removed lines and new files (signature, webhook, secret, token, password, `html.escape`, …) — which marks the change security-relevant and lifts a LOW one to MEDIUM; `required_gates()` also requires `security` when the contract's objective or risk notes use security or payment terms, in English or Spanish (`firma`, `pagos`, `cobros`, `contraseña`, …). With the ASSESS bundle it shares the contract/review call.
+
 - **`review` consumes the verdict the shared `contract`/`review` call stored.** Once `contract` passed it left the set of members owed a verdict, `review` ran alone and took the single-gate path, ignoring its cached verdict: campaign task 2 paid ~47k billable tokens to judge `review` twice. The bundle cache is now looked up by group and keyed on the evidence only.
 
 - **`ai work` keeps the contract's objective.** Every run rewrote `objective:` with the task title, discarding the objective `ai start --ticket-file` had just imported (campaign task 2) or a human had written (task 1). The title now only seeds a new contract; an explicit `ai work "..."` / `ai plan "..."` objective still replaces it.

@@ -515,6 +515,17 @@ class CmdValidateGuardTests(unittest.TestCase):
                 self._call('checks')
         self.assertIn('NEEDS_HUMAN: run ai plan', str(ctx.exception))
 
+    def test_security_is_required_by_diff_content_or_contract_risk_notes(self):
+        self._plan()
+        plan = gates.current_plan(self.state)
+        self.assertNotIn('security', core.required_gates(self.root, plan))
+        (self.root / 'app.txt').write_text('verify the webhook signature before trusting the payload\n')
+        self.assertIn('security', core.required_gates(self.root, plan))
+        (self.root / 'app.txt').write_text('initial\n')
+        contract = core.task_state(self.state) / 'contracts' / 'current-pr.yml'
+        contract.write_text(contract.read_text().replace('risk_notes: []', 'risk_notes: ["afecta a los pagos"]'))
+        self.assertIn('security', core.required_gates(self.root, plan))
+
     def test_gate_not_applicable_to_current_task(self):
         self._plan()
         # fast profile + empty diff => LOW risk => 'review' is not required.

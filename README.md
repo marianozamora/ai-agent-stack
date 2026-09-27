@@ -1,7 +1,7 @@
 # AI Agent Stack
 
 [![CI](https://github.com/marianozamora/ai-agent-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/marianozamora/ai-agent-stack/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-86%25-green)](#development)
+[![Coverage](https://img.shields.io/badge/coverage-88%25-green)](#development)
 [![Version](https://img.shields.io/badge/version-0.9.4-blue)](VERSION)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
@@ -18,9 +18,9 @@ Current release: see [`VERSION`](VERSION). Changes between releases are recorded
 |---|---|
 | Runtime dependencies | none — Python 3.10+ standard library only |
 | Bundled skills | 46, resolved in a repo-over-stack cascade |
-| Test suite | 1230 tests, 872 subtests (`tests/`) |
-| Line coverage | 86% overall (`coverage report`), CI-enforced floor 81%; `ai_stack/skills.py` at 96% |
-| Codebase | ~5,800 lines across [`ai_stack/`](ai_stack) |
+| Test suite | 1298 tests, 872 subtests (`tests/`) |
+| Line coverage | 88% overall (`coverage report`), CI-enforced floor 81%; `ai_stack/skills.py` at 96% |
+| Codebase | ~6,800 lines across [`ai_stack/`](ai_stack) |
 | License | [MIT](LICENSE) |
 
 Coverage and test counts are measured against the full suite, including the subprocess-heavy end-to-end tests that only run after merge (see [Development](#development)); re-measure locally with `coverage run -m pytest -q && coverage combine && coverage report -m` rather than trusting these numbers to stay current forever.
@@ -128,7 +128,7 @@ flowchart LR
     D -->|failed| G["FAILED"]
 ```
 
-Every gate result is bound to a fingerprint of the repository, index, base, plan, contracts, rules, validator configuration, stack version and the active builder/reviewer providers. A relevant change — including a stack upgrade or an `ai providers set` — invalidates prior evidence. Resume only reuses evidence whose fingerprint and artifact hashes still match.
+Every gate result is bound to a fingerprint of the repository tree, index, base, plan, contracts, rules, validator configuration, stack version and the active builder/reviewer providers. A relevant change — including a stack upgrade or an `ai providers set` — invalidates prior evidence; rewording a commit only invalidates `summary` and `provenance`, the gates that read commit messages. Resume only reuses evidence whose fingerprint and artifact hashes still match, and a model-judged gate that already failed on the exact same state is not re-run until something changes.
 
 The default gate order is:
 
@@ -139,7 +139,7 @@ checks → regression → contract → review → security → design
 
 `contract`, `review` and (when due) `security` are judged in one reviewer call, and so are `summary`, `cleanup`, `ponytail` and `provenance`; each gate still records its own verdict and evidence, and a gate that already holds a fresh PASS is not re-judged.
 
-Review, security and design are included according to profile, risk and task inputs. The deterministic gates run first, so a failing test stops the run before any model-judged gate spends tokens, and `ai pipeline` refuses to start at all while the PR contract has no acceptance criteria.
+Review, security and design are included according to profile, risk and task inputs. `security` is required when a path, the diff's own content (signatures, webhooks, secrets, tokens, passwords, escaping…) or the contract's objective and risk notes point at a security or payment boundary. The deterministic gates run first, so a failing test stops the run before any model-judged gate spends tokens, and `ai pipeline` refuses to start at all while the PR contract has no acceptance criteria.
 
 ## Profiles
 

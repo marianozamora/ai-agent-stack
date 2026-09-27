@@ -54,6 +54,23 @@ class CoreHelpersTests(unittest.TestCase):
         strict_floor = core.classify({'files': ['a.py'], 'file_count': 1, 'changed_lines': 1}, 'strict')
         self.assertEqual(strict_floor['risk'], 'MEDIUM')
 
+    def test_security_signals_come_from_content_not_only_paths(self):
+        # Campaign task 2: webhook signature code in api/main.py matched no security path.
+        self.assertEqual(core.security_signals('event = stripe.Webhook.construct_event(payload, sig, secret)\n'
+                                               'raise HTTPException(400, "Invalid signature")'),
+                         ['webhook', 'secret', 'signature'])
+        self.assertEqual(core.security_signals('total = price * quantity'), [])
+        webhook = core.classify({'files': ['backend/api/main.py'], 'file_count': 1, 'changed_lines': 20,
+                                 'security_signals': ['webhook', 'signature']}, 'standard')
+        self.assertTrue(webhook['security'])
+        quiet = core.classify({'files': ['src/ui/copy.py'], 'file_count': 1, 'changed_lines': 5,
+                               'security_signals': ['password']}, 'fast')
+        self.assertEqual((quiet['risk'], quiet['security']), ('MEDIUM', True))
+
+    def test_contract_prose_signals_cover_spanish(self):
+        self.assertEqual(core.security_signals('risk_notes: ["un evento falso podría habilitar cobros"]',
+                                               core._SECURITY_PROSE), ['cobros'])
+
     def test_classify_elevates_a_rename_set_that_a_line_diff_cannot_describe(self):
         base = {'files': ['b.py', 'c.py'], 'file_count': 2, 'changed_lines': 0}
         self.assertEqual(core.classify(base, 'standard')['risk'], 'LOW')
