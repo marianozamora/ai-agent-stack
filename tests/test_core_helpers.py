@@ -67,6 +67,16 @@ class CoreHelpersTests(unittest.TestCase):
                                'security_signals': ['password']}, 'fast')
         self.assertEqual((quiet['risk'], quiet['security']), ('MEDIUM', True))
 
+    def test_database_authorization_changes_are_security_signals(self):
+        # An RLS change lives in SQL, where none of the application-code terms appear.
+        self.assertEqual(core.security_signals('CREATE POLICY "own" ON public.profiles FOR UPDATE USING (auth.uid() = id);\n'
+                                               'ALTER TABLE t ENABLE ROW LEVEL SECURITY;'),
+                         ['policy', 'auth.uid', 'row level security'])
+        self.assertEqual(core.security_signals('Block self-escalation through privileged columns',
+                                               core._SECURITY_PROSE), ['escalation'])
+        self.assertEqual(core.security_signals('ajustar las políticas para que ningún usuario sea super admin',
+                                               core._SECURITY_PROSE), ['políticas', 'super admin'])
+
     def test_contract_prose_signals_cover_spanish(self):
         self.assertEqual(core.security_signals('risk_notes: ["un evento falso podría habilitar cobros"]',
                                                core._SECURITY_PROSE), ['cobros'])
