@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse, hashlib, json, os, shutil, sys, tempfile, time, uuid
 from pathlib import Path
 from detect import proposal, render
-from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, save_json, task_state
+from core import VERSION, base_behind_upstream, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, save_json, task_state
 from learning import confidence_card
 from metrics import consecutive_gate_failures, gate_attempt_number, gate_fail_verdicts, record_metric
 from prompts import BUILDER_SLOT, prompt_slot, variant_text
@@ -418,6 +418,15 @@ def cmd_pipeline(args):
     if not contract.is_file() or not contract_list_field(contract.read_text(),'acceptance'):
         raise SystemExit('NEEDS_HUMAN: the PR contract has no acceptance criteria; no gate was run.\n'
                          f'  edit {contract} and check it with `ai clarify`.')
+    # Before any model round: a base that moved under the branch makes every reviewer
+    # judge a diff against the wrong code (and can hide a merge that undoes the change).
+    drift=base_behind_upstream(root,plan['scope']['base'])
+    if drift and not getattr(args,'allow_overrun',False):
+        raise SystemExit(
+            f"NEEDS_HUMAN: {drift['upstream']} has {drift['ahead']} commit(s) this branch does not include; "
+            'no gate was run.\n'
+            f"  Rebase first (`git rebase {drift['upstream']}`), renaming any new migration whose timestamp is now\n"
+            '  older than one on the base, then run `ai finish` again. `--allow-overrun` continues on the stale base.')
     budget=plan['caps'].get('usage_tokens')
     card=confidence_card(root,state,plan['scope']['base'],plan['profile'],scope=plan['scope'],risk=plan['risk'])
     if budget and card['projected_usage_tokens']>budget:

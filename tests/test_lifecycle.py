@@ -184,6 +184,9 @@ class LifecycleSandboxTests(unittest.TestCase):
         root = core.git_root(); state = core.repo_state(root)
         prompt = lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
         self.assertIn('no Co-Authored-By', prompt)
+        # The builder implements and commits; `ai finish` runs the gates afterwards.
+        self.assertIn('do not run `ai gate`, `ai pipeline` or `ai ready` yourself', prompt)
+        self.assertNotIn('Record final gates with', prompt)
         rows = [json.loads(line) for line in (state / 'metrics.jsonl').read_text().splitlines()]
         plan = [r for r in rows if r['event'] == 'plan'][-1]
         self.assertEqual((plan['builder'], plan['builder_model']), ('claude', 'sonnet'))

@@ -365,6 +365,27 @@ class CampaignReportTests(unittest.TestCase):
         stats = workflow.campaign_report(rows)['gate_labels']['checks']
         self.assertEqual((stats['true_positive'], stats['false_positive'], stats['labeled']), (1, 1, 2))
 
+    def test_budget_is_compared_per_pipeline_run_not_per_task(self):
+        rows = self._task('k1', 'feature', 'standard', started_at=1000)
+        for ts, tokens in ((1100, 150_000), (1300, 150_000)):
+            rows.append({'event': 'gate', 'task_key': 'k1', 'gate': 'review', 'ts': ts - 50,
+                         'usage': {'input_tokens': tokens, 'output_tokens': 0}})
+            rows.append({'event': 'pipeline', 'task_key': 'k1', 'status': 'FAILED', 'ts': ts})
+        report = workflow.campaign_report(rows, usage_budgets={'standard': 230_000})
+        self.assertEqual(report['by_profile']['standard']['median_run_tokens'], 150_000)
+        self.assertEqual(report['recommendations'], [])  # 300k per task, but 150k per run fits
+
+    def test_builder_experiment_counts_tasks_not_gate_rows(self):
+        def gate(key, variant, verdict, tokens):
+            return {'event': 'gate', 'task_key': key, 'gate': 'review', 'verdict': verdict,
+                    'passed': verdict == 'PASS', 'usage': {'input_tokens': tokens, 'output_tokens': 0},
+                    'prompt_variants': {'builder.policy': {'variant': variant, 'sha': variant * 3}}}
+        rows = [gate('t1', 'a', 'FAIL', 10), gate('t1', 'a', 'PASS', 10),
+                gate('t2', 'a', 'PASS', 30), gate('t3', 'b', 'FAIL', 5), gate('t3', 'b', 'FAIL', 5)]
+        stats = {s['variant']: s for s in workflow.variant_stats(rows, 'builder.policy', per_task=True)}
+        self.assertEqual((stats['a']['n'], stats['a']['pass_rate'], stats['a']['median_model_fail_rounds']), (2, 0.5, 0.5))
+        self.assertEqual((stats['b']['n'], stats['b']['median_model_fail_rounds'], stats['b']['median_usage_tokens']), (1, 2, 10))
+
     def test_unlabeled_gate_has_no_rate_not_zero(self):
         # No gate_label rows at all -> report['gate_labels'] must be empty, never a
         # fabricated 0% rate that looks like "this gate has no false positives".

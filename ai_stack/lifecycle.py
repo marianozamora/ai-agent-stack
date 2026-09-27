@@ -195,8 +195,7 @@ Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then dis
 Zero-footprint invariant: DO NOT create or modify AI framework/config/state files in the working repository. Do not modify .gitignore for this framework.
 Commit messages describe the change only: no Co-Authored-By or generated-by trailers (the provenance gate rejects them).
 
-Record final gates with `ai gate NAME -- COMMAND ...`: checks, regression, contract, cleanup, provenance, ponytail, summary; review for standard/strict or elevated risk; security for security boundaries; design for Figma. Except checks/regression, validators must finish with single-line JSON containing status PASS and a nonempty evidence list. `ai pipeline` runs checks and regression first and refuses to start while the PR contract has no acceptance criteria. Only `ai ready` may certify PR_READY from fresh recorded evidence. Return NEEDS_HUMAN or FAILED when evidence is missing.
-If reusable validators are configured (`ai validators show`), use `ai pipeline --dry-run` to inspect the required sequence and `ai pipeline --resume` to execute it using fresh evidence where available. Inspect task outcomes with `ai metrics`.
+When the change is implemented and the repository's own checks pass, commit it and stop. The gates are run afterwards by `ai finish`, outside this session: do not run `ai gate`, `ai pipeline` or `ai ready` yourself, and do not report the task as blocked because they have not run.
 '''
     enforce_budget(prompt,caps['context_chars'],'orchestration context')
     # `keep_objective`: every `ai work` used to rewrite the objective with the task title,
