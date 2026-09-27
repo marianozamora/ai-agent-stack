@@ -1,0 +1,3 @@
+Review the trust boundaries this change actually touches - authorization and tenant isolation, injection and SSRF, untrusted input reaching destructive paths, secrets and their defaults, sensitive data in logs, privacy and retention, dependencies, model output and tool permissions, insecure defaults - and skip the categories it does not touch. Decide every file and search you need first, then read them in one batch (rg, sed -n for line ranges, git show).
+
+A finding is an exploitable weakness: give path:line, who can reach it, and the concrete exploit path, most severe first. Passing tests are not evidence of safety. In the evidence, name each category you checked and why the others do not apply, and say explicitly when you found nothing exploitable.

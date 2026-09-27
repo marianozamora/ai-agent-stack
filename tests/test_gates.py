@@ -1101,6 +1101,23 @@ class SameStateRerunTests(unittest.TestCase):
         self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 0)
 
 
+class BuilderVariantMetricTests(unittest.TestCase):
+    """Every gate row carries the task's builder-policy variant for `ai prompt report`."""
+
+    def test_gate_rows_record_the_builder_variant(self):
+        root, state = _sandbox(self)
+        core.save_json(state / 'prompt-experiments.json', {'version': 1, 'active': {
+            'slot': 'builder.policy', 'variants': ['b'], 'started_at': 0, 'min_samples_per_variant': 1}})
+        lifecycle.build_prompt(root, state, 'small change', 'fast', 'HEAD', None)
+        task = core.task_state(state); plan = gates.current_plan(state)
+        args = argparse.Namespace(name='checks', timeout=30, adapter='exit-code', evidence='ok', allow_overrun=False)
+        with contextlib.redirect_stdout(io.StringIO()):
+            gates.run_gate(args, root, state, plan, task, ['true'])
+        rows = [json.loads(line) for line in (state / 'metrics.jsonl').read_text().splitlines()]
+        gate = [r for r in rows if r['event'] == 'gate'][-1]
+        self.assertEqual(gate['prompt_variants']['builder.policy']['variant'], 'b')
+
+
 class InspectionLineTests(unittest.TestCase):
     """The reviewer is told not to re-fetch a diff that is already inlined."""
 

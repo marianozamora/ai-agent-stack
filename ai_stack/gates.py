@@ -5,7 +5,7 @@ from detect import proposal, render
 from core import VERSION, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, save_json, task_state
 from learning import confidence_card
 from metrics import consecutive_gate_failures, gate_attempt_number, record_metric
-from prompts import prompt_slot, variant_text
+from prompts import BUILDER_SLOT, prompt_slot, variant_text
 from workflow import billable_tokens, contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
 from providers import builder as get_builder, gate_effort, review_settings, reviewer as get_reviewer
@@ -599,7 +599,9 @@ def run_gate(args,root,state,plan,task,command,before=None):
     attempt=gate_attempt_number(state,task.name,args.name)
     slot=prompt_slot(args.name)
     assignment=load_json(task/'state/prompt-assignment.json',{})
-    prompt_variants={slot:assignment[slot]} if slot in assignment else {}
+    # Every gate also carries the builder's policy variant: a gate's first-attempt
+    # outcome is how a builder-prompt experiment is judged (`ai prompt report`).
+    prompt_variants={name:assignment[name] for name in (slot,BUILDER_SLOT) if name in assignment}
     record_metric(state,'gate',gate=args.name,passed=passed,exit_code=code,duration_seconds=duration,
                   usage=usage,attempt=attempt,findings=findings,prompt_variants=prompt_variants,
                   fingerprint=after,blocked_by=blocked_by)

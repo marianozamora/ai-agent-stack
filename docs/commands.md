@@ -335,7 +335,7 @@ usage: ai prompt list [-h]
 
 ```text
 usage: ai prompt show [-h]
-                      {cleanup,contract,review,security,ponytail,design,summary,provenance}
+                      {cleanup,contract,review,security,ponytail,design,summary,provenance,builder}
                       [variant]
 ```
 
@@ -354,7 +354,7 @@ usage: ai prompt experiment [-h] {start,status,stop} ...
 ```text
 usage: ai prompt experiment start [-h] --variants VARIANTS
                                   [--min-samples MIN_SAMPLES]
-                                  {cleanup,contract,review,security,ponytail,design,summary,provenance}
+                                  {cleanup,contract,review,security,ponytail,design,summary,provenance,builder}
 ```
 
 #### `ai prompt experiment status`
@@ -387,7 +387,7 @@ usage: ai prompt report [-h] [--json]
 
 ```text
 usage: ai prompt promote [-h] [--confirm]
-                         {cleanup,contract,review,security,ponytail,design,summary,provenance}
+                         {cleanup,contract,review,security,ponytail,design,summary,provenance,builder}
                          variant
 ```
 
@@ -397,7 +397,7 @@ usage: ai prompt promote [-h] [--confirm]
 
 ```text
 usage: ai prompt reset [-h]
-                       {cleanup,contract,review,security,ponytail,design,summary,provenance}
+                       {cleanup,contract,review,security,ponytail,design,summary,provenance,builder}
 ```
 
 ### `ai prompt rollback`
@@ -406,7 +406,7 @@ usage: ai prompt reset [-h]
 
 ```text
 usage: ai prompt rollback [-h] [--confirm]
-                          {cleanup,contract,review,security,ponytail,design,summary,provenance}
+                          {cleanup,contract,review,security,ponytail,design,summary,provenance,builder}
 ```
 
 ### `ai prompt history`
@@ -415,7 +415,7 @@ usage: ai prompt rollback [-h] [--confirm]
 
 ```text
 usage: ai prompt history [-h]
-                         [--slot {cleanup,contract,review,security,ponytail,design,summary,provenance}]
+                         [--slot {cleanup,contract,review,security,ponytail,design,summary,provenance,builder}]
                          [--json]
 ```
 
@@ -1016,6 +1016,7 @@ usage: ai providers set [-h] [--builder {claude}] [--reviewer {codex,command}]
                         [--reviewer-model REVIEWER_MODEL]
                         [--reviewer-effort GATE=LEVEL]
                         [--fast-builder-model FAST_BUILDER_MODEL]
+                        [--fast-builder-effort FAST_BUILDER_EFFORT]
                         [--fast-reviewer-effort FAST_REVIEWER_EFFORT]
                         ...
 ```

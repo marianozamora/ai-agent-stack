@@ -7,12 +7,53 @@ from workflow import variant_stats
 from validators import INSTRUCTIONS
 
 
+# The builder's working policy -- how to explore, what limits apply, what happens after
+# -- is an experiment slot like each validator's instruction, so a rewrite for current
+# models (prose that carries its reasons, no strategy coaching, no limits the code
+# already enforces) competes with the text it replaces instead of replacing it blind.
+# Placeholders are filled by lifecycle.build_prompt() with str.format_map().
+BUILDER_POLICY_A = """Token Efficiency Policy:
+- Classify first; do not explore broadly before routing.
+- Progressive disclosure: metadata -> compact graph evidence -> snippets -> raw files.
+- Prefer one tool per question; never ask two tools the same thing.
+- Reuse external repo state/cache; never rediscover stable project facts in every task.
+- Tests/static evidence arbitrate disagreements; do not create model-to-model debate loops.
+- PASS outputs must be minimal. Findings must be capped and actionable.
+- Escalate model/context only on concrete failed evidence, security/data risk, or unresolved high-risk ambiguity.
+
+Context budget:
+- raw files <= {raw_files} unless evidence requires escalation
+- review files <= {review_files}
+- agent calls <= {agent_calls}
+- review rounds <= {reviews}
+{budget_lines}- active skills <= {skills}
+- findings <= {findings}
+- retries per failing approach <= {retries}
+- injected context target <= {context_chars} characters before evidence-driven escalation
+
+{capability_block}
+
+Correctness pipeline:
+Builder -> deterministic checks -> regression check -> contract -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> PR summary -> one combined cleanup/ponytail/provenance review.
+Ponytail judges project-specific quality; it does not impose SOLID or FP contrary to repo conventions.
+Cleanup removes AI provenance/references and unnecessary comments without changing behavior.
+If a gate passes, return only its compact PASS contract unless more detail is required by a failure."""
+
+BUILDER_SLOT='builder.policy'
+PROMPT_NAMES=(*INSTRUCTIONS,'builder')
+
+
 def prompt_slot(name:str)->str:
-    return f'validator.{name}'
+    return BUILDER_SLOT if name=='builder' else f'validator.{name}'
+
+
+def slot_name(slot:str)->str:
+    """Inverse of prompt_slot()."""
+    return 'builder' if slot==BUILDER_SLOT else slot.split('.',1)[1]
 
 
 def variant_text(name:str,slot:str,variant:str)->str:
-    if variant=='a': return INSTRUCTIONS[name]
+    if variant=='a': return BUILDER_POLICY_A if name=='builder' else INSTRUCTIONS[name]
     path=STACK_ROOT/'templates/prompts'/slot/f'{variant}.md'
     if not path.is_file(): raise SystemExit(f'Unknown prompt variant: {slot}/{variant}')
     return path.read_text()
@@ -67,10 +108,10 @@ def assign_prompt_variants(state:Path,cache_key:str)->dict:
     """
     assignment={}
     for slot,info in prompt_overrides(state).get('slots',{}).items():
-        assignment[slot]=variant_entry(slot.split('.',1)[1],slot,info['variant'])
+        assignment[slot]=variant_entry(slot_name(slot),slot,info['variant'])
     experiment=prompt_experiment(state)
     if experiment and experiment['slot'] not in assignment:
-        slot=experiment['slot']; name=slot.split('.',1)[1]; variants=experiment['variants']
+        slot=experiment['slot']; name=slot_name(slot); variants=experiment['variants']
         variant=variants[int(shasum(cache_key+slot),16)%len(variants)]
         assignment[slot]=variant_entry(name,slot,variant)
     return assignment
@@ -80,7 +121,7 @@ def cmd_prompt(args):
     state=repo_state(git_root())
     if args.prompt_cmd=='list':
         overrides=prompt_overrides(state).get('slots',{}); experiment=prompt_experiment(state)
-        for name in INSTRUCTIONS:
+        for name in PROMPT_NAMES:
             slot=prompt_slot(name); variants=available_variants(slot); notes=[]
             if slot in overrides: notes.append(f"promoted={overrides[slot]['variant']}")
             if experiment and experiment['slot']==slot: notes.append('experiment active')

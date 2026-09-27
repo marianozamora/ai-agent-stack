@@ -35,7 +35,7 @@ class PureHelperTests(unittest.TestCase):
                          validators.INSTRUCTIONS['review'])
 
     def test_variant_text_unknown_variant_exits(self):
-        # No templates/prompts/<slot>/ tree ships, so any non-'a' variant is unknown.
+        # 'zz' ships for no slot, so it is unknown.
         with self.assertRaises(SystemExit):
             prompts.variant_text('review', 'validator.review', 'zz')
 
@@ -50,6 +50,35 @@ class PureHelperTests(unittest.TestCase):
         variants = prompts.available_variants('validator.does-not-exist')
         self.assertEqual(variants, ['a'])
         self.assertEqual(variants[0], 'a')
+
+
+class BuilderSlotTests(unittest.TestCase):
+    """The builder's working policy is an experiment slot like a validator instruction."""
+
+    def test_builder_slot_round_trips_and_a_is_the_current_policy(self):
+        self.assertEqual(prompts.prompt_slot('builder'), 'builder.policy')
+        self.assertEqual(prompts.slot_name('builder.policy'), 'builder')
+        self.assertEqual(prompts.slot_name('validator.review'), 'review')
+        self.assertEqual(prompts.variant_text('builder', 'builder.policy', 'a'), prompts.BUILDER_POLICY_A)
+        self.assertIn('builder', prompts.PROMPT_NAMES)
+
+    def test_shipped_b_variants_exist_and_fill_every_placeholder(self):
+        for name in ('builder', 'review', 'security'):
+            self.assertIn('b', prompts.available_variants(prompts.prompt_slot(name)))
+        fields = dict(raw_files=1, review_files=1, agent_calls=1, reviews=1, skills=1, findings=3,
+                      retries=1, context_chars=1, budget_lines='', capability_block='CAPS')
+        for variant in ('a', 'b'):
+            text = prompts.variant_text('builder', 'builder.policy', variant).format_map(fields)
+            self.assertIn('CAPS', text)
+            self.assertNotIn('{', text)
+
+    def test_an_experiment_on_the_builder_slot_assigns_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            (state / 'prompt-experiments.json').write_text(json.dumps({'version': 1, 'active': {
+                'slot': 'builder.policy', 'variants': ['a', 'b'], 'started_at': 0, 'min_samples_per_variant': 1}}))
+            assignment = prompts.assign_prompt_variants(state, 'some-cache-key')
+        self.assertIn(assignment['builder.policy']['variant'], ('a', 'b'))
 
 
 class OverridesAndHistoryTests(unittest.TestCase):
@@ -96,23 +125,16 @@ class AssignPromptVariantsTests(unittest.TestCase):
             (state / 'prompt-experiments.json').write_text(json.dumps(
                 {'version': 1, 'active': {'slot': slot, 'variants': variants}}))
 
-            entry_a = prompts.variant_entry('review', slot, 'a')
+            entries = {v: prompts.variant_entry('review', slot, v) for v in variants}
             checked_a = checked_b = 0
             for i in range(60):
                 key = f'cache-key-{i}'
                 expected = _expected_variant(key, slot, variants)
-                if expected == 'a':
-                    first = prompts.assign_prompt_variants(state, key)
-                    second = prompts.assign_prompt_variants(state, key)
-                    self.assertEqual(first, second)               # deterministic
-                    self.assertEqual(first, {slot: entry_a})      # matches the hash formula
-                    checked_a += 1
-                else:
-                    # variant 'b' has no bundled template; a real experiment only ever
-                    # lists variants that available_variants() vetted, so this path exits.
-                    with self.assertRaises(SystemExit):
-                        prompts.assign_prompt_variants(state, key)
-                    checked_b += 1
+                first = prompts.assign_prompt_variants(state, key)
+                self.assertEqual(first, prompts.assign_prompt_variants(state, key))  # deterministic
+                self.assertEqual(first, {slot: entries[expected]})                  # matches the hash formula
+                if expected == 'a': checked_a += 1
+                else: checked_b += 1
             self.assertGreater(checked_a, 0)
             self.assertGreater(checked_b, 0)
 

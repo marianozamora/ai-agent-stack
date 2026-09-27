@@ -672,6 +672,16 @@ successful promotion writes `prompt-overrides.json` (repo-scoped, added to
 changing what a validator is told changes what its evidence means) and stops
 the experiment if it was promoting that experiment's own slot.
 
+
+The builder's working policy — how to explore, which limits apply, what happens after
+it finishes — is an experiment slot too, `builder.policy` (`prompts.BUILDER_POLICY_A`,
+rendered by `build_prompt()` with `str.format_map()`; variant `a` is byte-identical to
+the prompt sent before the slot existed). The assignment is computed before the prompt is
+built, and every gate row records the task's `builder.policy` variant next to its own
+slot's, so `ai prompt report` judges a builder variant by the first-attempt outcome and
+reviewer tokens of the gates that follow it. Shipped `b` variants for `builder.policy`,
+`validator.review` and `validator.security` apply current Claude and Codex guidance; see
+[model-guidance.md](model-guidance.md).
 ## v0.9 "Measurement" — Phase 1 (cost/token dashboard)
 
 `ai_stack/workflow.py` gains three pure, stdlib-only functions: `parse_window(spec)`

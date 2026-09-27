@@ -7,8 +7,8 @@ from gates import prior_findings
 from crg import crg_cmd, crg_env, crg_impact, elevate_risk, parse_crg_risk
 from learning import confidence_card, render_lessons, select_lessons
 from metrics import record_metric
-from prompts import assign_prompt_variants
-from providers import builder as get_builder, builder_model
+from prompts import BUILDER_SLOT, assign_prompt_variants, variant_text
+from providers import builder as get_builder, builder_effort, builder_model
 from skills import load_skill_context, select_skills
 from tools import ctx7_cmd
 from workflow import analyze_ticket_text, ticket_snapshot
@@ -135,6 +135,12 @@ def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|No
         crg_text=crg_impact(root,state,base,refresh=False,build_if_missing=False)
         risk=elevate_risk(risk,parse_crg_risk(crg_text))
     detected_capabilities=detect_capabilities(state)
+    cache_key=task_cache_key(root,task,profile,base,selected_skills)
+    assignment=assign_prompt_variants(state,cache_key)
+    policy=variant_text('builder',BUILDER_SLOT,assignment.get(BUILDER_SLOT,{}).get('variant','a')).format_map({
+        **{key:caps[key] for key in ('raw_files','review_files','agent_calls','reviews','skills','findings','retries','context_chars')},
+        'budget_lines':render_budget_lines(detected_capabilities,caps),
+        'capability_block':capability_block(state,detected_capabilities)}).rstrip()
     prompt=f'''# AI Agent Stack orchestration
 
 Task: {task}
@@ -164,32 +170,7 @@ Active skills (lazy-loaded; max {caps['skills']}): {', '.join(selected_skills) i
 Skill instructions:
 {skill_context}
 
-Token Efficiency Policy:
-- Classify first; do not explore broadly before routing.
-- Progressive disclosure: metadata -> compact graph evidence -> snippets -> raw files.
-- Prefer one tool per question; never ask two tools the same thing.
-- Reuse external repo state/cache; never rediscover stable project facts in every task.
-- Tests/static evidence arbitrate disagreements; do not create model-to-model debate loops.
-- PASS outputs must be minimal. Findings must be capped and actionable.
-- Escalate model/context only on concrete failed evidence, security/data risk, or unresolved high-risk ambiguity.
-
-Context budget:
-- raw files <= {caps['raw_files']} unless evidence requires escalation
-- review files <= {caps['review_files']}
-- agent calls <= {caps['agent_calls']}
-- review rounds <= {caps['reviews']}
-{render_budget_lines(detected_capabilities,caps)}- active skills <= {caps['skills']}
-- findings <= {caps['findings']}
-- retries per failing approach <= {caps['retries']}
-- injected context target <= {caps['context_chars']} characters before evidence-driven escalation
-
-{capability_block(state,detected_capabilities)}
-
-Correctness pipeline:
-Builder -> deterministic checks -> regression check -> contract -> Codex adversarial review only when risk/profile warrants -> confirmed fixes -> PR summary -> one combined cleanup/ponytail/provenance review.
-Ponytail judges project-specific quality; it does not impose SOLID or FP contrary to repo conventions.
-Cleanup removes AI provenance/references and unnecessary comments without changing behavior.
-If a gate passes, return only its compact PASS contract unless more detail is required by a failure.
+{policy}
 
 Figma: {'ACTIVE: ingest via Figma MCP into the compact Design Contract, then discard raw design context.' if figma else 'off'}
 
@@ -208,11 +189,11 @@ If reusable validators are configured (`ai validators show`), use `ai pipeline -
     snapshot=[{'id':l['id'],'text':l['text'],'scope':l.get('scope','**')} for l in selected_lessons]
     save_json(task_state(state)/'state'/'lessons.json',
               {'digest':shasum(json.dumps(snapshot,sort_keys=True))[:16],'lessons':snapshot})
-    cache_key=task_cache_key(root,task,profile,base,selected_skills)
-    save_json(task_state(state)/'state'/'prompt-assignment.json',assign_prompt_variants(state,cache_key))
+    save_json(task_state(state)/'state'/'prompt-assignment.json',assignment)
     save_json(task_state(state)/'state'/'current-plan.json',{"task":task,"task_type":classify_task(task,figma),"profile":profile,"scope":scope,"risk":risk,"caps":caps,"figma":figma,"skills":selected_skills,"cache_key":cache_key,"fingerprint":semantic_fingerprint(root),"crg":{"available":bool(crg_cmd()),"risk":parse_crg_risk(crg_text),"impact_cached":bool(crg_text)},"capabilities":detected_capabilities})
     record_metric(state,'plan',profile=profile,task_type=classify_task(task,figma),risk=risk['risk'],skills=selected_skills,file_count=scope['file_count'],changed_lines=scope['changed_lines'],
-                  builder=get_builder(state).name,builder_model=builder_model(state,profile))
+                  builder=get_builder(state).name,builder_model=builder_model(state,profile),
+                  builder_effort=builder_effort(state,profile))
     return prompt
 
 
@@ -269,9 +250,11 @@ def cmd_planrun(args,launch:bool):
         active_builder=get_builder(state)
         env=crg_env(state)
         env['AI_TASK_ID']=load_json(task_state(state)/'task.json',{})['id']
-        model=builder_model(state,plan['profile'])
-        if model: print('  builder:    ',f"{active_builder.name} --model {model} ({plan['profile']} profile)")
-        active_builder.launch(prompt,root,env,model=model)  # replaces this process; never returns on success
+        model=builder_model(state,plan['profile']); effort=builder_effort(state,plan['profile'])
+        if model or effort:
+            print('  builder:    ',f"{active_builder.name}"+(f' --model {model}' if model else '')
+                  +(f' --effort {effort}' if effort else '')+f" ({plan['profile']} profile)")
+        active_builder.launch(prompt,root,env,model=model,effort=effort)  # replaces this process; never returns on success
 
 
 def cmd_ticket(args):

@@ -82,6 +82,15 @@ class ClaudeBuilderTests(unittest.TestCase):
         execvpe.assert_called_once_with(
             '/usr/local/bin/claude', ['/usr/local/bin/claude', '--model', 'sonnet', *providers.BUILDER_SETTINGS, 'the prompt'], {})
 
+    def test_launch_passes_an_effort_after_the_model(self):
+        builder = providers.ClaudeBuilder()
+        with mock.patch.object(providers.shutil, 'which', return_value='/usr/local/bin/claude'), \
+                mock.patch.object(providers.sys.stdin, 'isatty', return_value=True), \
+                mock.patch.object(providers.os, 'execvpe') as execvpe:
+            builder.launch('the prompt', Path('/repo'), {}, model='sonnet', effort='high')
+        execvpe.assert_called_once_with('/usr/local/bin/claude', [
+            '/usr/local/bin/claude', '--model', 'sonnet', '--effort', 'high', *providers.BUILDER_SETTINGS, 'the prompt'], {})
+
     def test_launch_refuses_without_a_tty_instead_of_hanging(self):
         # Regression: execvpe replaces this process with an interactive Claude session.
         # Without a real terminal to talk to (a script, CI, a pipe), it used to hang
