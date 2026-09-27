@@ -551,11 +551,50 @@ def collect_scope(root:Path,base:str)->dict:
         except OSError: continue
         if b'\0' in blob[:8000]: binary.append(name); continue
         lines+=blob.count(b'\n')+(0 if blob.endswith(b'\n') or not blob else 1)
+    # What the change says, not only where it lives: campaign task 2 rewrote Stripe
+    # webhook signature verification in `api/main.py`, and no path pattern saw a
+    # security boundary, so the security gate was never required.
+    changed_text='\n'.join(ln[1:] for ln in run(["git","diff","-U0",base],cwd=root,check=False).splitlines()
+                           if ln[:1] in '+-' and not ln.startswith(('+++','---')))
+    for name in sorted(untracked_set):
+        full=root/name
+        if full.is_file() and not full.is_symlink() and name not in binary:
+            try: changed_text+='\n'+full.read_text(errors='replace')
+            except OSError: pass
     return {"base":base,"files":files,"file_count":len(files),"changed_lines":lines,
-            "binary_files":sorted(set(binary)),"renamed_files":sorted(set(renamed))}
+            "binary_files":sorted(set(binary)),"renamed_files":sorted(set(renamed)),
+            "security_signals":security_signals(changed_text)}
 
 
 RENAME_ELEVATION_MIN = 3
+
+
+# Security-sensitive vocabulary in changed lines or in the contract's own words. Code
+# terms are English; the contract ones also cover the Spanish the campaign tickets use.
+_SECURITY_CODE=re.compile(r'\b(signature|signing|webhooks?|hmac|jwt|passwords?|passwd|secrets?|api[_-]?keys?'
+                          r'|private[_-]?keys?|csrf|cors|oauth|access[_-]?tokens?|refresh[_-]?tokens?'
+                          r'|authori[sz]\w*|authenticat\w*|permissions?|encrypt\w*|decrypt\w*|html\.escape'
+                          r'|sanitiz\w*|rate[_-]?limit\w*)\b',re.I)
+_SECURITY_PROSE=re.compile(_SECURITY_CODE.pattern+r'|\b(firmas?|firmad\w*|pagos?|cobros?|contrase[ñn]as?|secretos?'
+                           r'|autenticaci[oó]n|autorizaci[oó]n|permisos?|credenciales?|payments?|billing|credentials?)\b',re.I)
+
+
+def security_signals(text:str,pattern:re.Pattern=_SECURITY_CODE,limit:int=8)->list[str]:
+    """Distinct security-sensitive terms found in `text`, lower-cased, in first-seen order."""
+    found:list[str]=[]
+    for match in pattern.finditer(text or ''):
+        term=match.group(0).lower()
+        if term not in found: found.append(term)
+        if len(found)>=limit: break
+    return found
+
+
+def contract_security_signals(root:Path)->list[str]:
+    """Security terms in the active task's objective and risk notes, where a human says it."""
+    try: text=(task_state(repo_state(root,create=False))/'contracts'/'current-pr.yml').read_text(errors='replace')
+    except (OSError,SystemExit,RuntimeError): return []
+    lines=[ln for ln in text.splitlines() if ln.startswith(('objective:','risk_notes:'))]
+    return security_signals('\n'.join(lines),_SECURITY_PROSE)
 
 
 def classify(scope:dict, profile:str)->dict:
@@ -563,7 +602,7 @@ def classify(scope:dict, profile:str)->dict:
     high=re.compile(r'(^|/)(auth|authentication|authorization|rbac|iam|payment|payments|billing|migration|migrations|schema|database|db|crypto|secrets?|permissions?|infra|terraform|k8s|kubernetes)(/|$)|\.sql$|\.tf$',re.M)
     medium=re.compile(r'(^|/)(api|services?|integrations?|workers?|queues?|jobs?|repositories?|controllers?|middleware)(/|$)',re.M)
     sec=re.compile(r'(^|/)(auth|authentication|authorization|rbac|iam|crypto|secrets?|permissions?)(/|$)|security|tenant|token|credential',re.M)
-    security=bool(sec.search(paths))
+    security=bool(sec.search(paths)) or bool(scope.get('security_signals'))
     if high.search(paths): risk,reason='HIGH','high-risk path/domain'
     elif medium.search(paths): risk,reason='MEDIUM','business/API/integration path'
     elif scope['changed_lines']>=160 or scope['file_count']>=6: risk,reason='MEDIUM','non-trivial diff size'
@@ -576,6 +615,8 @@ def classify(scope:dict, profile:str)->dict:
     # enough of them to be a reorganisation rather than a single tidy-up.
     if len(scope.get('renamed_files') or [])>=RENAME_ELEVATION_MIN and risk=='LOW':
         risk,reason='MEDIUM','file reorganisation (renames) is not a reviewable line diff'
+    if scope.get('security_signals') and risk=='LOW':
+        risk,reason='MEDIUM','security-sensitive content: '+', '.join(scope['security_signals'][:3])
     if profile=='strict' and risk=='LOW': risk,reason='MEDIUM','strict profile minimum'
     return {"risk":risk,"reason":reason,"security":security}
 
@@ -664,6 +705,6 @@ def required_gates(root,plan):
     risk=classify(collect_scope(root,plan['scope']['base']),plan['profile'])
     required=list(GATES[:7])
     if plan['profile']!='fast' or risk['risk']!='LOW' or plan['risk']['risk']!='LOW': required.append('review')
-    if risk['security'] or plan['risk']['security']: required.append('security')
+    if risk['security'] or plan['risk']['security'] or contract_security_signals(root): required.append('security')
     if plan.get('figma'): required.append('design')
     return [name for name in ORDER if name in required]
