@@ -574,9 +574,14 @@ RENAME_ELEVATION_MIN = 3
 _SECURITY_CODE=re.compile(r'\b(signature|signing|webhooks?|hmac|jwt|passwords?|passwd|secrets?|api[_-]?keys?'
                           r'|private[_-]?keys?|csrf|cors|oauth|access[_-]?tokens?|refresh[_-]?tokens?'
                           r'|authori[sz]\w*|authenticat\w*|permissions?|encrypt\w*|decrypt\w*|html\.escape'
-                          r'|sanitiz\w*|rate[_-]?limit\w*)\b',re.I)
+                          r'|sanitiz\w*|rate[_-]?limit\w*'
+                          # Database authorization: a Supabase/Postgres RLS change lives in SQL,
+                          # where none of the words above appear (campaign: danssme's RLS tickets).
+                          r'|rls|row[ _]level[ _]security|polic(?:y|ies)|grant|revoke|privileges?'
+                          r'|escalat\w*|service_role|security[ _]definer|auth\.uid)\b',re.I)
 _SECURITY_PROSE=re.compile(_SECURITY_CODE.pattern+r'|\b(firmas?|firmad\w*|pagos?|cobros?|contrase[ñn]as?|secretos?'
-                           r'|autenticaci[oó]n|autorizaci[oó]n|permisos?|credenciales?|payments?|billing|credentials?)\b',re.I)
+                           r'|autenticaci[oó]n|autorizaci[oó]n|permisos?|credenciales?|payments?|billing|credentials?'
+                           r'|pol[ií]ticas?|privilegios?|escalada|admin(?:istrador)?s?|super[ _]?admin)\b',re.I)
 
 
 def security_signals(text:str,pattern:re.Pattern=_SECURITY_CODE,limit:int=8)->list[str]:

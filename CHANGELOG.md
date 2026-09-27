@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Database authorization counts as a security boundary.** A Supabase/Postgres RLS change lives in SQL, where none of the application-code security terms appear, so a ticket to lock down `event_registrations` policies would not have required the `security` gate. `security_signals()` now also matches `RLS`, `row level security`, `policy`/`policies`, `grant`/`revoke`, `privilege`, `escalation`, `service_role`, `security definer` and `auth.uid`, and the contract vocabulary adds `políticas`, `privilegios`, `escalada` and `admin`/`super admin`.
+
 - **Current Claude and Codex guidance, applied where it is safe and measured where it is not.** See [docs/model-guidance.md](docs/model-guidance.md).
   - *Builder effort.* `fast` launches `claude --model sonnet --effort high` (Sonnet 5's recommended default, below Claude Code's `xhigh`); overridable with `ai providers set --fast-builder-effort`, recorded as `builder_effort` on the plan metric.
   - *The builder's policy is an experiment slot.* `builder.policy` joins the validator slots in `ai prompt`; variant `a` renders byte-identically to the previous prompt, variant `b` rewrites it for current models (prose with reasons, no strategy coaching, no limits the code does not enforce). Every gate row records the task's builder variant, so `ai prompt report` compares builder prompts by the gates that follow them.
