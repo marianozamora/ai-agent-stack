@@ -15,7 +15,7 @@ Release history and shipped feature details live in [`CHANGELOG.md`](CHANGELOG.m
 - [x] Capability/plugin interfaces. (Per-repository skills already cascade over the bundled ones; providers already had driver interfaces; the capability registry above closes the remaining tool-side gap.)
 - [ ] Multi-repository workspace orchestration.
 - [x] Instrumentation for a real-usage validation campaign (`ai metrics label`, `ai metrics --campaign`).
-- [ ] Actually run the validation campaign (20–30 real tasks, human-labeled) using the tools above and act on its recommendations. In progress: 2 tasks done, protocol in [`docs/campaign-protocol.md`](docs/campaign-protocol.md), findings in [`docs/campaign-findings.md`](docs/campaign-findings.md).
+- [ ] Actually run the validation campaign (20–30 real tasks, human-labeled) using the tools above and act on its recommendations. In progress: 4 tasks across promize and danssme (one paired control), protocol in [`docs/campaign-protocol.md`](docs/campaign-protocol.md), findings in [`docs/campaign-findings.md`](docs/campaign-findings.md).
 
 ## Measurement follow-ups
 
