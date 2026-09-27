@@ -119,6 +119,7 @@ genuine fix without an explicit label.
 
 The protocol for running one — scope, baseline arm, decision rules fixed in advance,
 and a per-task log template — is in [`campaign-protocol.md`](campaign-protocol.md).
+Findings task by task are logged in [`campaign-findings.md`](campaign-findings.md).
 
 ## Zero-footprint: nothing lands in your checkout
 
