@@ -122,7 +122,7 @@ def render_open_findings(task:Path,limit:int)->str:
     return '\n'.join(lines)
 
 
-def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None,scope:dict|None=None)->str:
+def build_prompt(root:Path,state:Path,task:str,profile:str,base:str,figma:str|None,explicit_skills:list[str]|None=None,scope:dict|None=None,keep_objective:bool=False)->str:
     if scope is None: scope=collect_scope(root,base)
     risk=classify(scope,profile); caps=context_caps(profile)
     selected_skills=select_skills(state,task,profile,figma,explicit_skills)
@@ -200,7 +200,10 @@ Record final gates with `ai gate NAME -- COMMAND ...`: checks, regression, contr
 If reusable validators are configured (`ai validators show`), use `ai pipeline --dry-run` to inspect the required sequence and `ai pipeline --resume` to execute it using fresh evidence where available. Inspect task outcomes with `ai metrics`.
 '''
     enforce_budget(prompt,caps['context_chars'],'orchestration context')
-    ensure_contract(state,task,figma)
+    # `keep_objective`: every `ai work` used to rewrite the objective with the task title,
+    # discarding the one `ai start --ticket-file` imported (and any a human wrote).
+    contract_exists=(task_state(state)/'contracts'/'current-pr.yml').exists()
+    ensure_contract(state,'' if keep_objective and contract_exists else task,figma)
     (task_state(state)/'state'/'current-run.md').write_text(prompt)
     snapshot=[{'id':l['id'],'text':l['text'],'scope':l.get('scope','**')} for l in selected_lessons]
     save_json(task_state(state)/'state'/'lessons.json',
@@ -227,7 +230,8 @@ def cmd_planrun(args,launch:bool):
     if getattr(args,'ticket_file',None):
         ticket_analysis=analyze_ticket_text(Path(args.ticket_file).read_text())
         if not figma and ticket_analysis['figma_url']: figma=ticket_analysis['figma_url']
-    prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None),scope)
+    prompt=build_prompt(root,state,args.task or 'Implement the current working task.',args.profile,args.base,figma,getattr(args,'skill',None),scope,
+                        keep_objective=getattr(args,'keep_objective',False))
     plan=load_json(task_state(state)/'state'/'current-plan.json',{})
     if ticket_analysis is not None:
         task=task_state(state)

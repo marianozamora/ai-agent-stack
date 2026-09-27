@@ -315,7 +315,10 @@ def cmd_work(args):
     cmd_planrun(argparse.Namespace(
         task=args.task or meta.get('title') or identity,
         profile=args.profile,base=args.base,figma=args.figma,no_figma=args.no_figma,
-        skill=args.skill,ticket_file=args.ticket_file),launch=not args.plan_only)
+        skill=args.skill,ticket_file=args.ticket_file,
+        # The title only names the task; it must not replace an objective the ticket or
+        # a human already put in the contract. An explicit `ai work "..."` still does.
+        keep_objective=not args.task),launch=not args.plan_only)
 
 
 def cmd_finish(args):
