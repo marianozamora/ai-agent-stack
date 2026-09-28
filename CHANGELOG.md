@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`ai loop` runs the builder <-> gates cycle unattended.** Each round plans the prompt (open findings included), runs one non-interactive builder session (`claude -p`, edits accepted, only allowlisted tools), then `ai pipeline --resume`; it stops at `PR_READY`, on any `NEEDS_HUMAN` (round limit, moved base, unchanged code after a FAIL), a budget stop, a builder error or `--max-rounds`. The allowlist is derived from the repository's own `checks`/`regression` commands and detected capability CLIs, plus `--allow` / `ai providers set --builder-allow`; nothing that pushes or deletes is allowed. `--note` passes a scope decision to every round. Each round records a `builder_round` metric with the session's reported cost, turns and denied commands. On the validation campaign this cycle was driven by hand for every task.
+
 - **Fewer, steadier review rounds, and every judged finding counts.**
   - *A threat-model first pass.* The first `review`/`security` judgment of a change is asked to map its whole surface before judging -- other writers and readers of the same data (handlers, webhooks, edge functions, cron jobs, database functions), concurrent and retried requests, and who may call each function -- and report every blocker at once. danssme#92 uncovered those layers one round at a time.
   - *Re-reviews see what changed since the last round.* Each reviewer call records the commit it judged (`review/last-reviewed.json`); a re-review inlines the diff since then and says the rest was reviewed, raising unchanged code only for a demonstrable blocker. The same code had passed in one round and failed in a later one.

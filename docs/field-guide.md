@@ -39,6 +39,9 @@ What each step now catches for you:
   not run (exit 126/127) or a stale prerequisite as a retry.
 - **Wait for the builder to finish** before `ai finish`: a gate that sees the
   repository change while it runs is discarded.
+- **`ai loop`** runs builder and gates round after round without you, stopping at
+  `PR_READY` or at the first decision that is yours (round limit, moved base, budget).
+  Each round's builder cost, turns and denied commands are recorded (`builder_round`).
 
 ## How a task moves through the stack
 

@@ -62,6 +62,16 @@ usage: ai finish [-h] [--no-resume] [--allow-overrun] [--force-unlock]
                  [--task-id TASK_ID]
 ```
 
+## `ai loop`
+
+Run builder rounds and the gates unattended until PR_READY or a human decision.
+
+```text
+usage: ai loop [-h] [--profile {fast,standard,strict}]
+               [--max-rounds MAX_ROUNDS] [--note NOTE] [--allow ALLOW]
+               [--timeout TIMEOUT] [--task-id TASK_ID]
+```
+
 ## `ai switch`
 
 Make an existing open task the active one.
@@ -1016,6 +1026,7 @@ usage: ai providers set [-h] [--builder {claude}] [--reviewer {codex,command}]
                         [--reviewer-model REVIEWER_MODEL]
                         [--reviewer-effort GATE=LEVEL]
                         [--fast-builder-model FAST_BUILDER_MODEL]
+                        [--builder-allow BUILDER_ALLOW]
                         [--fast-builder-effort FAST_BUILDER_EFFORT]
                         [--fast-reviewer-effort FAST_REVIEWER_EFFORT]
                         ...

@@ -16,7 +16,7 @@ doctor` says so rather than degrading to one that mutates the repository, becaus
 a reviewer with write access could make its own verdict come true.
 """
 from __future__ import annotations
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys, tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
@@ -68,6 +68,72 @@ class ClaudeBuilder:
                              'Use ai plan / --plan-only to only prepare the prompt instead.')
         os.execvpe(path,[path,*(['--model',model] if model else []),*(['--effort',effort] if effort else []),
                          *BUILDER_SETTINGS,prompt],env)
+
+
+    def run_headless(self,prompt:str,root:Path,env:dict,model:str|None=None,effort:str|None=None,
+                     tools:list[str]|None=None,timeout:int|None=None)->dict:
+        """One non-interactive builder session (`claude -p`), for `ai loop`.
+
+        Edits are accepted and only `tools` may run, so a builder can implement, test and
+        commit unattended but nothing else. Returns the session's own report: result
+        text, reported cost, turns and every command it was denied (a denied command is
+        usually a missing allowlist entry, e.g. a repository's own task runner).
+        """
+        path=shutil.which(self.executable)
+        if not path: raise SystemExit(f'{self.name.capitalize()} CLI missing.')
+        argv=[path,'-p',prompt,*(['--model',model] if model else []),*(['--effort',effort] if effort else []),
+              '--permission-mode','acceptEdits',*BUILDER_SETTINGS,'--output-format','json']
+        if tools: argv+=['--allowedTools',*tools]
+        try:
+            done=subprocess.run(argv,cwd=root,env=env,capture_output=True,text=True,timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return {'ok':False,'result':f'builder timed out after {timeout}s','cost_usd':None,'turns':None,'denied':[]}
+        try: report=json.loads(done.stdout.strip().splitlines()[-1]) if done.stdout.strip() else {}
+        except ValueError: report={}
+        denied=[str((d.get('tool_input') or {}).get('command') or d.get('tool_name'))
+                for d in report.get('permission_denials') or [] if isinstance(d,dict)]
+        return {'ok':done.returncode==0 and not report.get('is_error'),'result':str(report.get('result') or done.stderr.strip())[:4000],
+                'cost_usd':report.get('total_cost_usd'),'turns':report.get('num_turns'),'denied':denied,
+                'session_id':report.get('session_id')}
+
+
+# The tools every unattended builder needs: read and edit the checkout, and record its work
+# in git. What a repository's own checks run (pnpm, pytest, supabase...) is added per
+# repository by builder_tools(); nothing that pushes, deletes or reaches the network is.
+BASE_BUILDER_TOOLS=['Read','Edit','Write','Glob','Grep','Bash(git add:*)','Bash(git commit:*)','Bash(git status:*)',
+                    'Bash(git diff:*)','Bash(git log:*)','Bash(git show:*)','Bash(rg:*)','Bash(ls:*)','Bash(cat:*)',
+                    'Bash(sed:*)','Bash(head:*)','Bash(tail:*)','Bash(wc:*)']
+
+
+def builder_tools(state:Path,validators:dict,capabilities:list[str])->list[str]:
+    """The builder's allowlist for this repository.
+
+    Adds the programs its `checks`/`regression` validators run (so the builder can run the
+    same checks), the detected capability CLIs (e.g. rtk, codegraph) and any
+    `ai providers set --builder-allow` entries.
+    """
+    import shlex
+    tools=list(BASE_BUILDER_TOOLS)
+    def add(pattern:str):
+        if pattern not in tools: tools.append(pattern)
+    for name in ('checks','regression'):
+        command=(validators.get(name) or {}).get('command') or []
+        if command[:2]==['sh','-c'] and len(command)>2:
+            parts=re.split(r'&&|\|\||;|\bthen\b|\bif\b|\bfi\b',command[2])
+        else: parts=[shlex.join(command)] if command else []
+        for part in parts:
+            try: words=shlex.split(part.strip())
+            except ValueError: continue
+            words=[w for w in words if '=' not in w.split('/')[0]]  # drop VAR=value prefixes
+            if not words or words[0] in ('cd','ls','[','test','true','false','>/dev/null'): continue
+            program=words[0]
+            if program in ('supabase','git','npx','npm','pnpm','yarn','bun','python3','python','uv') and len(words)>1:
+                add(f'Bash({program} {words[1]}:*)') if program in ('supabase','git') else add(f'Bash({program}:*)')
+            else: add(f'Bash({program}:*)')
+    for capability in capabilities: add(f'Bash({capability}:*)')
+    for extra in _stored_providers(state).get('builder_allow') or []:
+        if isinstance(extra,str) and extra: add(extra)
+    return tools
 
 
 CODEX_READONLY_SANDBOX=['exec','-s','read-only']  # shared by verdict() and review_argv(): never write to the checkout
@@ -352,6 +418,12 @@ def cmd_providers(args):
         if getattr(args,'reviewer_model',None) is not None:
             if args.reviewer_model: settings['reviewer_model']=args.reviewer_model
             else: settings.pop('reviewer_model',None)
+        for tool in getattr(args,'builder_allow',None) or []:
+            stored_allow=settings.get('builder_allow')
+            allowed:list[str]=list(stored_allow) if isinstance(stored_allow,list) else []
+            if tool.startswith('-'): allowed=[t for t in allowed if t!=tool[1:]]
+            elif tool not in allowed: allowed.append(tool)
+            settings['builder_allow']=allowed
         for key in ('fast_builder_model','fast_builder_effort','fast_reviewer_effort'):
             value=getattr(args,key,None)
             if value is None: continue
