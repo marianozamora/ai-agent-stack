@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse, hashlib, json, os, shutil, sys, tempfile, time, uuid
 from pathlib import Path
 from detect import proposal, render
-from core import VERSION, base_behind_upstream, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, save_json, task_state
+from core import VERSION, base_behind_upstream, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import consecutive_gate_failures, gate_attempt_number, gate_fail_verdicts, record_metric
 from prompts import BUILDER_SLOT, prompt_slot, variant_text
@@ -224,6 +224,70 @@ def with_inspection(prompt:str,inlined:str,base:str)->str:
     return prompt.replace(INSPECT_MARKER,line)+inlined
 
 
+# Security work deepened one round at a time on danssme#92 (atomic reserve -> leaked
+# rollback -> retry race -> a second webhook): each fix exposed the next layer. The first
+# pass is asked to map the change's whole surface before judging it.
+THREAT_MODEL_FIRST_PASS=('\nFirst pass: before judging, map the whole change so later rounds do not uncover it piece by '
+    'piece -- every other writer or reader of the same data (other handlers, webhooks, edge or '
+    'serverless functions, cron jobs, database triggers and functions), concurrent and retried '
+    'requests, and who is authorized to call each function involved. Report every blocker you find '
+    'now, not only the first.\n')
+
+
+def group_label(judged)->str:
+    return 'assess' if set(judged)&set(ASSESS) else ('bundle' if set(judged)&set(BUNDLES[1]) else '-'.join(judged))
+
+
+def mark_reviewed(root:Path,task:Path,label:str):
+    """Remember which commit a reviewer judged, so the next round can be shown what changed."""
+    head=safe_head(root)
+    if head:
+        seen=load_json(task/'review/last-reviewed.json',{}); seen[label]=head
+        save_json(task/'review/last-reviewed.json',seen)
+
+
+def review_delta(root:Path,task:Path,label:str,room:int)->str:
+    """The diff since the commit the previous round of this reviewer call judged.
+
+    The same code passed in one round and failed in a later one (danssme#102 PDFs, MIME):
+    each re-review re-read everything. Showing what changed since the last round -- and
+    saying the rest was reviewed -- narrows it without hiding a demonstrable blocker.
+    """
+    previous=load_json(task/'review/last-reviewed.json',{}).get(label)
+    if not previous: return ''
+    try: diff=run(['git','diff',previous],cwd=root,check=False)
+    except (RuntimeError,OSError): return ''
+    if not diff.strip(): return ''
+    block=(f'\nChanged since the previous review round (git diff {previous[:12]}); earlier rounds reviewed '
+           'the code this does not touch. Judge these changes and the prior findings; raise an issue in '
+           'unchanged code only if it is a blocker you can show with a concrete path.\n'+diff+'\n')
+    return block if len(block)<=room else ''
+
+
+def record_cached_failures(state:Path,task:Path,executed:list[str]):
+    """Record FAIL verdicts a shared call gave gates the pipeline stopped before.
+
+    They were judged -- on danssme #91/#92 they were the most important findings -- but,
+    never reaching their own gate, left no attempt to label and no round to count. Each
+    is recorded once (and removed from the cache) as a `cached` gate row.
+    """
+    for label in ('assess','bundle'):
+        cache=task/'review'/f'{label}.json'; saved=load_json(cache,{})
+        verdicts=saved.get('verdicts') or {}
+        changed=False
+        for name,verdict in list(verdicts.items()):
+            if name in executed or not isinstance(verdict,dict) or verdict.get('status')!='FAIL': continue
+            findings=[]
+            for text in (verdict.get('findings') or [])[:5]:
+                if isinstance(text,str) and text.strip():
+                    normalized=normalize_finding(text)
+                    findings.append({'hash':finding_signature(normalized),'text':normalized})
+            record_metric(state,'gate',gate=name,passed=False,verdict='FAIL',findings=findings,usage={},
+                          attempt=gate_attempt_number(state,task.name,name),cached=True)
+            verdicts.pop(name); changed=True
+        if changed: save_json(cache,saved)
+
+
 def intact_pass(task:Path,name:str,fingerprint:str)->bool:
     record=load_json(task/'gates'/f'{name}.json',{})
     return bool(record.get('passed')) and intact_record(record,fingerprint)
@@ -322,6 +386,10 @@ Fresh gate evidence (read referenced logs as needed):
                       'is still unresolved or a new blocker; do not raise new non-blocking issues the '
                       'previous pass did not report.\n'
                       +'\n'.join(f'- [{gate}] {text}' for gate,text in rereview)+'\n')
+        elif {'review','security'}&set(judged):
+            context+=THREAT_MODEL_FIRST_PASS
+        delta=review_delta(root,task,group_label(judged),plan['caps']['context_chars']//4) if rereview else ''
+        if delta: context+=delta
         effort=gate_effort(review_settings(state,plan['profile']),judged)
         # Inherit the gate process group: its timeout kills the reviewer and child
         # tools. The public entry point requires ai gate, which owns execution and
@@ -356,6 +424,7 @@ Fresh gate evidence (read referenced logs as needed):
                                            lambda value: check_bundle(value,bundle),None,effort=effort)
             verdict=result[args.name]
             if 'usage' in result: verdict['usage']=result['usage']
+            mark_reviewed(root,task,label)
             save_json(cache,{'key':key,'verdicts':{name:result[name] for name in bundle if name!=args.name}})
         else:
             prompt=f'Validate gate: {args.name}\n{instruction(args.name)}\n\n{context}'
@@ -364,6 +433,7 @@ Fresh gate evidence (read referenced logs as needed):
             enforce_budget(prompt,plan['caps']['context_chars'],'validator context')
             verdict=active_reviewer.verdict(root,task/'review',args.name,prompt,SCHEMA,
                                             lambda value: check_verdict(value,args.name),None,effort=effort)
+            mark_reviewed(root,task,group_label([args.name]))
         if verdict['status']=='PASS' and args.name=='summary':
             summary=verdict['summary_markdown']
             enforce_budget(summary,plan['caps']['handoff_chars'],'PR summary')
@@ -487,6 +557,7 @@ def cmd_pipeline(args):
             cmd_ready(args)
             status='PR_READY'
     finally:
+        if status=='FAILED': record_cached_failures(state,task,executed)
         record_metric(state,'pipeline',status=status,executed=executed,skipped=skipped,
                       duration_seconds=round(time.monotonic()-started,3),usage=usage_total,
                       usage_budget=budget,usage_cost_budget=cost_budget,overrun_gate=overrun['gate'],

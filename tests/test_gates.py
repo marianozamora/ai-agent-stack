@@ -797,6 +797,37 @@ class AssessBundleTests(unittest.TestCase):
         self.assertEqual([name for name, _ in self.calls], ['assess'])
         self.assertIn('Validate gates: contract, review, security', self.calls[0][1])
 
+    def test_the_first_pass_maps_the_whole_threat_model(self):
+        self._validate('contract')
+        self.assertIn('First pass: before judging, map the whole change', self.calls[0][1])
+
+    def test_a_rereview_is_shown_what_changed_since_the_last_round(self):
+        subprocess.run(['git', 'add', '-A'], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-qm', 'round one', '--allow-empty'], cwd=self.root, check=True, capture_output=True)
+        self._validate('contract')  # judged at this commit
+        core.save_json(self.task / 'gates' / 'review.json',
+                       {'passed': False, 'verdict': {'status': 'FAIL', 'findings': ['race in reserve']}})
+        (self.root / 'app.txt').write_text('fixed the race\n')
+        self._validate('contract')
+        prompt = self.calls[-1][1]
+        self.assertIn('Changed since the previous review round', prompt)
+        self.assertIn('+fixed the race', prompt)
+        self.assertNotIn('First pass: before judging', prompt)
+
+    def test_cached_failures_of_unreached_gates_become_labelable_rows(self):
+        core.save_json(self.task / 'review' / 'assess.json', {'key': 'k', 'verdicts': {
+            'review': {'status': 'FAIL', 'findings': ['retry leaks inventory']},
+            'security': {'status': 'PASS', 'findings': []}}})
+        gates.record_cached_failures(self.state, self.task, executed=['checks', 'regression', 'contract'])
+        rows = [json.loads(line) for line in (self.state / 'metrics.jsonl').read_text().splitlines()]
+        cached = [r for r in rows if r.get('event') == 'gate' and r.get('cached')]
+        self.assertEqual([(r['gate'], r['verdict']) for r in cached], [('review', 'FAIL')])
+        self.assertEqual(gates.gate_fail_verdicts(self.state, self.task.name, 'review'), 1)
+        self.assertNotIn('review', core.load_json(self.task / 'review' / 'assess.json', {})['verdicts'])
+        gates.record_cached_failures(self.state, self.task, executed=[])  # recorded once
+        rows = [json.loads(line) for line in (self.state / 'metrics.jsonl').read_text().splitlines()]
+        self.assertEqual(len([r for r in rows if r.get('cached')]), 1)
+
     def test_a_lone_member_runs_on_its_own(self):
         self.required = ['contract']
         for name in ('checks', 'regression'): self._fresh_pass(name)

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Fewer, steadier review rounds, and every judged finding counts.**
+  - *A threat-model first pass.* The first `review`/`security` judgment of a change is asked to map its whole surface before judging -- other writers and readers of the same data (handlers, webhooks, edge functions, cron jobs, database functions), concurrent and retried requests, and who may call each function -- and report every blocker at once. danssme#92 uncovered those layers one round at a time.
+  - *Re-reviews see what changed since the last round.* Each reviewer call records the commit it judged (`review/last-reviewed.json`); a re-review inlines the diff since then and says the rest was reviewed, raising unchanged code only for a demonstrable blocker. The same code had passed in one round and failed in a later one.
+  - *Findings from a shared call are recorded even when the pipeline stops first.* When `contract` fails, the `review`/`security` FAIL verdicts the same call produced are recorded once as `cached` gate rows: they can be labeled and they count toward `model_rounds`. They had been the most important findings on #91 and #92 and were invisible to both.
+
 - **Improvements measured on danssme (six tasks).**
   - *`ai pipeline` stops when the base moved underneath the branch.* It fetches the remote (bounded, never fatal; `AI_STACK_NO_FETCH=1` skips it) and, when the base's upstream holds commits the branch does not, exits `NEEDS_HUMAN` before any gate runs. On one day `origin/main` moved under three tasks; each cost a model round reviewing against a stale base, and once the merge would have undone the change.
   - *The builder no longer tries to run the gates.* Its prompt told it to record gates with `ai gate`/`ai pipeline`; headless builders spent turns on denied commands and reported the task blocked. It now implements, commits and stops; `ai finish` runs the gates.
