@@ -136,10 +136,10 @@ for about 2.3x the builder cost plus review.
   arms; a leftover, ignored `route.ts.tmp` was mistaken for builder scratch and deleted,
   then restored (it was empty).
 
-**Open stack follow-ups:** default `ai metrics label` to the latest failed attempt;
-`ai validators propose` should prefer a `test:run`-style script over a watch-mode
+**Stack follow-ups (all closed in #70):** default `ai metrics label` to the latest failed
+attempt; `ai validators propose` should prefer a `test:run`-style script over a watch-mode
 `test`; `ai doctor` should flag tracked gitlinks without `.gitmodules`; a round cap or
-explicit scope boundary for `security`.
+explicit scope boundary for `security` (`model_rounds` per profile).
 
 ### Task: #91 lock down `event_registrations` RLS (standard, builder variant a)
 
@@ -168,8 +168,49 @@ contract's quality.
   same call had judged `review` and `security` (fixed in #71: cached findings are listed).
 - Findings that `review`/`security` produced inside a shared call, in a round where the
   pipeline stopped at `contract`, are never recorded as gate attempts, so they cannot be
-  labeled. On #91 those were the most important findings. Open.
-- Coordination: two lines of work touched the same policies on the same day. Worth a
-  check in `ai start` or `contract` for migrations landing on the base after the task
-  started.
+  labeled. On #91 those were the most important findings. Fixed in #74: they are
+  recorded as `cached` gate rows when the pipeline stops before their gate.
+- Coordination: two lines of work touched the same policies on the same day. Fixed in
+  #73: `ai pipeline` stops with `NEEDS_HUMAN` when the base has commits the branch does
+  not include, and asks for a rebase that renames any migration now out of order.
 
+
+### Task: #103 fail closed on missing secrets (fast, first `ai loop` run)
+
+`PR_READY` after three `ai loop` runs and two manual `ai pipeline --resume --allow-overrun`
+calls: 3 commits, 20 files, +466/-102, including a `service_role`-only `email_exists`
+migration. Builder ~$2.23 over 7 sessions (Sonnet, `fast`); gates ~1.1M input tokens over
+10 pipeline runs, most of them cached.
+
+What the gates caught, all real: the `check-email` IP limit trusted the leftmost
+`x-forwarded-for`, which a client controls behind Cloudflare, so rotating it bypassed the
+limit while enumerating emails (`security`); the limiter fell back to a per-isolate
+in-memory store without Upstash or on a Redis error, so the enumeration defence failed
+open (`security`, then `review` and `contract`); a Supabase CLI version marker left in the
+tree (`cleanup`). The operator first ruled the fallback out of scope, then chose to make
+`check-email` fail closed in production when the gates kept raising it.
+
+**Gaps found:**
+
+- **Reviewer misconfiguration burned three builder rounds.** `~/.codex/config.toml` named
+  a model the ChatGPT account cannot use. The reviewer exited 1, the gate reported
+  `NEEDS_HUMAN`, the pipeline turned it into `FAILED`, and `ai loop` ran three more builder
+  rounds (~$0.60) against a gate that never judged the code. Those errors also counted
+  toward `contract`'s retry budget and left FAIL rows with no findings. A reviewer error
+  should stop the loop at once, never count as a verdict, and `ai doctor` should catch an
+  unusable reviewer model. Worked around with `ai providers set --reviewer-model`.
+- **A scope decision only reaches the builder.** `ai loop --note` is appended to the
+  builder prompt, so `review` and `contract` re-raised the finding the operator had ruled
+  out of scope. The stack still has no way to tell the gates where the ticket stops
+  (see #102).
+- **The round cap fired on a passing verdict.** `security` was stopped at its limit of 3
+  FAILs, two of them `cached` rows from older code, while the latest shared call had
+  judged the current code PASS. The cap should consider the newest verdict before
+  stopping.
+- **Environment noise reran every model gate.** Reverting the CLI marker changed the
+  tree fingerprint, so the final pipeline re-judged identical code (~250k input tokens).
+- **The builder cannot read its own contract.** Every session tried to `cat` the
+  contract, which lives in external state, and was denied; heredoc and `python3` edits
+  were denied too (it fell back to Write).
+- Reviewer variance again: `review` passed the rate-limit code in one run and failed the
+  same code in the next.
