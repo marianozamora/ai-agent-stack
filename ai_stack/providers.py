@@ -92,9 +92,29 @@ class ClaudeBuilder:
         except ValueError: report={}
         denied=[str((d.get('tool_input') or {}).get('command') or d.get('tool_name'))
                 for d in report.get('permission_denials') or [] if isinstance(d,dict)]
+        # The models that actually ran, from the session's own report: the requested model is
+        # None for every profile but `fast` (the CLI default), and that default changes with
+        # the user's Claude Code settings, so recording the request alone says nothing.
+        usage=report.get('modelUsage')
+        models=sorted(usage) if isinstance(usage,dict) else []
         return {'ok':done.returncode==0 and not report.get('is_error'),'result':str(report.get('result') or done.stderr.strip())[:4000],
                 'cost_usd':report.get('total_cost_usd'),'turns':report.get('num_turns'),'denied':denied,
-                'session_id':report.get('session_id')}
+                'session_id':report.get('session_id'),'models':models,'requested_model':model,
+                'cli_version':cli_version(path)}
+
+
+_CLI_VERSIONS:dict[str,str|None]={}
+
+
+def cli_version(path:str)->str|None:
+    """`claude --version`, once per process; None when it cannot be read."""
+    if path not in _CLI_VERSIONS:
+        try:
+            done=subprocess.run([path,'--version'],capture_output=True,text=True,timeout=15)
+            _CLI_VERSIONS[path]=done.stdout.strip().split()[0] if done.returncode==0 and done.stdout.strip() else None
+        except (OSError,subprocess.TimeoutExpired):
+            _CLI_VERSIONS[path]=None
+    return _CLI_VERSIONS[path]
 
 
 # The tools every unattended builder needs: read and edit the checkout, and record its work

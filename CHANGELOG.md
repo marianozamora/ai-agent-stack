@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`ai loop` records which model built each round.** The `builder_round` metric now carries `models` (the models that actually ran, from the session's `modelUsage`), `requested_model` (empty outside the `fast` profile, which means the CLI default) and `cli_version`, and the round's output line names the models. The `standard` profile does not pin a builder model, so a change of the Claude Code default model changed the experiment without leaving a trace. The campaign protocol also gains a manual pre-merge checklist: read the diff, verify production configuration, decide merge order.
+
 - **`ai preflight`: prove the environment is up before anything is spent.** A repository declares cheap checks (`ai preflight set -- supabase status`); `ai loop` runs them before every builder round and `ai pipeline` before any gate, and a failure stops with `NEEDS_HUMAN: environment not ready` and the command's output instead of being judged as a failure of the change. `ai preflight` alone runs them and, when none are configured, suggests probes for the services the configured checks use (`supabase status`, `docker info`). Kept in `preflight.json`, outside the gates' evidence fingerprint. On a campaign task Docker was down: `regression` failed with no visible error and `ai loop` paid for three builder rounds.
 - **A prompt over the profile's context cap is not a verdict.** The gate now records `NEEDS_HUMAN` (`blocked_by: context`) and stops, instead of leaving without a verdict line and being counted as a FAIL of the change (a campaign task: an operator note pushed the summary bundle 646 characters over the `fast` cap).
 

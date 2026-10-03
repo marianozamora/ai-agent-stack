@@ -89,6 +89,28 @@ billable tokens — which is how task 1 showed its fix rounds ran on Opus, not t
 `fast` builder. `builder_usd` stays manual only because neither Claude's transcripts
 nor Codex report a dollar cost; copy it from `/cost` if you want the money figure.
 
+`ai loop` also records, per builder round, the models that actually ran (`models`, read
+from the session's own report), the model it asked for (`requested_model`, empty outside
+`fast`: the CLI default) and the Claude Code version (`cli_version`). A change of the CLI
+default model therefore shows up in the data instead of silently mixing cohorts.
+
+### Before merging a `PR_READY` change
+
+`PR_READY` certifies that the code passed its gates. It does not look at the ticket's
+intent or at the environment the change deploys to, and in the campaign three certified
+changes needed a human for exactly that. Check by hand, every time:
+
+1. **Read the diff**, even after a clean first round. Look for decisions the builder made
+   that the ticket did not (a path that now fails closed, a behaviour that changed, a
+   scope it narrowed) and for the same unsafe pattern left at other call sites.
+2. **Production configuration.** List what the change needs in the deploy environment
+   (secrets, variables, migrations applied, quotas) and verify each one there, not in
+   documentation or a config comment. A change that can fail closed needs its dependency
+   to exist before it ships.
+3. **Merge order and deploy trigger.** If merging deploys, decide the order of open
+   changes that depend on each other, and merge dependents only after their dependency
+   is live.
+
 ## 5. Rules that keep the data clean
 
 1. **No stack changes during the campaign.** A new stack version invalidates evidence

@@ -29,7 +29,8 @@ class FakeBuilder:
     def run_headless(self, prompt, root, env, model=None, effort=None, tools=None, timeout=None):
         self.prompts.append((prompt, tools))
         (Path(root) / 'app.py').write_text(f'value = {len(self.prompts)}\n')
-        return {'ok': self.ok, 'result': 'done', 'cost_usd': 0.5, 'turns': 3, 'denied': ['make test']}
+        return {'ok': self.ok, 'result': 'done', 'cost_usd': 0.5, 'turns': 3, 'denied': ['make test'],
+                'models': ['claude-sonnet-x'], 'requested_model': None, 'cli_version': '9.9.9'}
 
 
 class LoopTests(unittest.TestCase):
@@ -89,6 +90,12 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(len(builder.prompts), 2)
         self.assertIn(loop.LOOP_SUFFIX, builder.prompts[0][0])
         self.assertEqual([r['round'] for r in self.rows('builder_round')], [1, 2])
+        # The model that ran and the CLI version are recorded: the requested model is None
+        # outside `fast`, so a change of the CLI default would otherwise be invisible.
+        first = self.rows('builder_round')[0]
+        self.assertEqual((first['models'], first['requested_model'], first['cli_version']),
+                         (['claude-sonnet-x'], None, '9.9.9'))
+        self.assertIn('claude-sonnet-x', out)
         self.assertIn('denied: make test', out)
 
     def test_a_human_decision_stops_the_loop(self):
@@ -179,6 +186,7 @@ class BuilderToolsTests(unittest.TestCase):
 class RunHeadlessTests(unittest.TestCase):
     def test_argv_and_report_parsing(self):
         report = {'result': 'ok', 'total_cost_usd': 1.25, 'num_turns': 7, 'is_error': False,
+                  'modelUsage': {'claude-sonnet-b': {}, 'claude-haiku-a': {}},
                   'permission_denials': [{'tool_name': 'Bash', 'tool_input': {'command': 'make test'}}]}
         done = subprocess.CompletedProcess([], 0, stdout=json.dumps(report) + '\n', stderr='')
         with patch.object(providers.shutil, 'which', return_value='/bin/claude'), \
@@ -191,6 +199,25 @@ class RunHeadlessTests(unittest.TestCase):
         self.assertEqual(argv[-2:], ['--allowedTools', 'Read'])
         self.assertEqual((result['ok'], result['cost_usd'], result['turns'], result['denied']),
                          (True, 1.25, 7, ['make test']))
+        self.assertEqual((result['models'], result['requested_model']), (['claude-haiku-a', 'claude-sonnet-b'], 'sonnet'))
+
+    def test_a_report_without_model_usage_records_no_models(self):
+        done = subprocess.CompletedProcess([], 0, stdout=json.dumps({'result': 'ok'}) + '\n', stderr='')
+        with patch.object(providers.shutil, 'which', return_value='/bin/claude'), \
+                patch.object(providers.subprocess, 'run', return_value=done):
+            result = providers.ClaudeBuilder().run_headless('p', Path('/repo'), {})
+        self.assertEqual((result['models'], result['requested_model']), ([], None))
+
+    def test_cli_version_is_read_once_and_tolerates_failure(self):
+        providers._CLI_VERSIONS.clear()
+        done = subprocess.CompletedProcess([], 0, stdout='2.1.288 (Claude Code)\n', stderr='')
+        with patch.object(providers.subprocess, 'run', return_value=done) as run:
+            self.assertEqual(providers.cli_version('/bin/claude'), '2.1.288')
+            self.assertEqual(providers.cli_version('/bin/claude'), '2.1.288')
+        self.assertEqual(run.call_count, 1)
+        with patch.object(providers.subprocess, 'run', side_effect=OSError):
+            self.assertIsNone(providers.cli_version('/bin/other'))
+        providers._CLI_VERSIONS.clear()
 
 
 if __name__ == '__main__':
