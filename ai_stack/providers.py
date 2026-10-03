@@ -207,6 +207,27 @@ class CommandReviewer:
         return value
 
 
+def codex_error(events:str)->str:
+    """The last error Codex reported in its JSON event stream, unwrapped, or ''.
+
+    A bare exit status sent the operator to the diagnostics file to learn that the
+    configured model was not available to the account (danssme #103).
+    """
+    reason=''
+    for line in events.splitlines():
+        try: event=json.loads(line)
+        except ValueError: continue
+        if not isinstance(event,dict): continue
+        message=event.get('message') or (event.get('error') or {}).get('message') if event.get('type') in ('error','turn.failed') else None
+        if not isinstance(message,str): continue
+        try:
+            inner=json.loads(message)
+            message=((inner.get('error') or {}).get('message') if isinstance(inner,dict) else None) or message
+        except ValueError: pass
+        reason=message
+    return reason[:400]
+
+
 def run_codex_json(executable:str,root:Path,review_dir:Path,name:str,prompt:str,
                    schema:dict[str,Any],checker:Callable[[Any],dict[str,Any]],
                    timeout:int|None=None,model:str|None=None,effort:str|None=None)->dict[str,Any]:
@@ -236,7 +257,9 @@ def run_codex_json(executable:str,root:Path,review_dir:Path,name:str,prompt:str,
         finally:
             # Keep process diagnostics externally for failures, including a timeout or missing output.
             diagnostics.write_bytes(events.read_bytes())
-        if result.returncode: raise ValueError(f'Reviewer exited {result.returncode}; diagnostics: {diagnostics}')
+        if result.returncode:
+            reason=codex_error(events.read_text(errors='replace'))
+            raise ValueError(f'Reviewer exited {result.returncode}'+(f': {reason}' if reason else '')+f'; diagnostics: {diagnostics}')
         if not final.is_file() or final.stat().st_size>64000:
             raise ValueError(f'Missing or oversized reviewer output; diagnostics: {diagnostics}')
         value=checker(json.loads(final.read_text()))

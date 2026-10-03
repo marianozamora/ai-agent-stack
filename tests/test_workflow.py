@@ -704,6 +704,18 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertEqual(run['usage']['input_tokens'], 5024)
         self.assertEqual(run['usage']['output_tokens'], 13)
 
+    def test_a_reviewer_error_stops_the_pipeline_as_needs_human(self):
+        # danssme #103: recorded as FAILED, the reviewer error sent `ai loop` back to the builder.
+        self.plan()
+        self.configure_pipeline()
+        self.ai('validators', 'set', 'contract', '--', sys.executable, '-c',
+                'import json,sys; print(json.dumps({"status":"NEEDS_HUMAN","evidence":[],'
+                '"findings":["Reviewer exited 1: model not supported"],"blocked_by":"reviewer"})); sys.exit(1)')
+        output = self.ai('pipeline', ok=False)
+        self.assertIn('NEEDS_HUMAN: the reviewer could not judge contract', output)
+        run = json.loads((Path(self.ai('path').strip()) / 'state/pipeline-run.json').read_text())
+        self.assertEqual(run['status'], 'NEEDS_HUMAN')
+
     def test_cached_input_does_not_count_against_the_budget(self):
         self.plan()
         self.configure_pipeline()

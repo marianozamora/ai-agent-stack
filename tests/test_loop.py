@@ -122,6 +122,46 @@ class LoopTests(unittest.TestCase):
         self.assertIn('Operator direction: drop PDF uploads', prompt)
         self.assertIn('Bash(make:*)', tools)
 
+    def test_the_operator_note_persists_for_the_gates_until_cleared(self):
+        import gates
+        self._loop(FakeBuilder(), [('PR_READY', None)])
+        self.assertEqual(gates.operator_note(self.task), '')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(loop.save_operator_note(self.task, 'fallback is out of scope'), 'fallback is out of scope')
+            # A later run without --note keeps the decision; the gates read the same file.
+            self.assertEqual(loop.save_operator_note(self.task, None), 'fallback is out of scope')
+        self.assertEqual(gates.operator_note(self.task), 'fallback is out of scope')
+        loop.save_operator_note(self.task, '')
+        self.assertEqual(gates.operator_note(self.task), '')
+
+    def test_the_operator_note_changes_the_gate_evidence(self):
+        import gates
+        self._loop(FakeBuilder(), [('PR_READY', None)])
+        plan = gates.current_plan(self.state)
+        before = gates.evidence_fingerprint(self.repo, self.state, plan)
+        loop.save_operator_note(self.task, 'fallback is out of scope')
+        self.assertNotEqual(before, gates.evidence_fingerprint(self.repo, self.state, plan))
+
+    def test_the_contract_is_inlined_for_the_headless_builder(self):
+        builder = FakeBuilder()
+        self._loop(builder, [('PR_READY', None)])
+        self.assertIn('PR contract (its file is outside the checkout):', builder.prompts[0][0])
+        self.assertIn('objective:', builder.prompts[0][0])
+
+
+class CodexErrorTests(unittest.TestCase):
+    def test_the_nested_api_error_is_surfaced(self):
+        events = '\n'.join([
+            json.dumps({'type': 'thread.started'}),
+            json.dumps({'type': 'error', 'message': json.dumps({'type': 'error', 'status': 400, 'error': {
+                'message': "The 'gpt-x' model is not supported when using Codex with a ChatGPT account."}})}),
+            json.dumps({'type': 'turn.failed', 'error': {'message': json.dumps({'error': {
+                'message': "The 'gpt-x' model is not supported when using Codex with a ChatGPT account."}})}}),
+        ])
+        self.assertEqual(providers.codex_error(events),
+                         "The 'gpt-x' model is not supported when using Codex with a ChatGPT account.")
+        self.assertEqual(providers.codex_error('not json\n{}'), '')
+
 
 class BuilderToolsTests(unittest.TestCase):
     def test_programs_from_the_checks_become_allowlist_entries(self):

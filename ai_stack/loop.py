@@ -18,6 +18,27 @@ from metrics import record_metric
 # Appended to the orchestration prompt: the headless builder must leave committed work
 # behind, and a human's scope decision for this run reaches every round.
 LOOP_SUFFIX = 'Commit the change when the repository\'s checks pass.'
+# The contract lives in external state, outside the checkout, where a headless session
+# may not read (danssme #103: every round's `cat` of it was denied). Inlined instead of
+# granting the directory, which acceptEdits would also make writable.
+CONTRACT_CHARS = 12000
+
+
+def save_operator_note(task:Path, note:str|None)->str:
+    """Record `--note` as the task's standing operator direction and return the one in force.
+
+    Kept with the task, not just this run's prompt: the gates read it too, so a scope
+    decision stops a reviewer re-raising what a human ruled out (danssme #103). A new
+    `--note` replaces it; `--note ''` clears it.
+    """
+    from gates import operator_note
+    path = task/'state/operator-note.md'
+    if note is not None:
+        if note.strip(): path.write_text(note.strip()+'\n')
+        else: path.unlink(missing_ok=True)
+    elif path.is_file():
+        print(f'Operator direction from an earlier run is still in force ({path}); `--note \'\'` clears it.')
+    return operator_note(task)
 
 
 def _pipeline_outcome(task:Path, message:str|None)->tuple[str,str]:
@@ -44,6 +65,7 @@ def cmd_loop(args):
 
     # The task carries its own base (`ai start --base`); fall back to the repository default.
     base = meta.get('base') or resolve_base(root, None, state)
+    note = save_operator_note(task, args.note)
     rounds = args.max_rounds
     for number in range(1, rounds + 1):
         print(f'== round {number}/{rounds}: builder')
@@ -53,7 +75,10 @@ def cmd_loop(args):
             no_figma=True, skill=None, ticket_file=None, keep_objective=True), launch=False)
         plan = load_json(task/'state/current-plan.json', {})
         prompt = (task/'state/current-run.md').read_text()
-        prompt += '\n\n' + LOOP_SUFFIX + (f'\n\nOperator direction: {args.note}' if args.note else '')
+        contract = task/'contracts/current-pr.yml'
+        if contract.is_file():
+            prompt += '\n\nPR contract (its file is outside the checkout):\n' + contract.read_text(errors='replace')[:CONTRACT_CHARS]
+        prompt += '\n\n' + LOOP_SUFFIX + (f'\n\nOperator direction: {note}' if note else '')
         tools = builder_tools(state, validator_config(state)['validators'], plan.get('capabilities') or [])
         tools += [t for t in (args.allow or []) if t not in tools]
         env = dict(os.environ, AI_TASK_ID=load_json(task/'task.json', {}).get('id', ''))
