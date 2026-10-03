@@ -842,6 +842,15 @@ class AssessBundleTests(unittest.TestCase):
         self.assertIn('+fixed the race', prompt)
         self.assertNotIn('First pass: before judging', prompt)
 
+    def test_a_rereview_records_how_its_delta_was_used(self):
+        subprocess.run(['git', 'add', '-A'], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-qm', 'round one', '--allow-empty'], cwd=self.root, check=True, capture_output=True)
+        self._validate('contract')
+        core.save_json(self.task / 'gates' / 'review.json',
+                       {'passed': False, 'verdict': {'status': 'FAIL', 'findings': ['race in reserve']}})
+        (self.root / 'app.txt').write_text('fixed the race\n')
+        self.assertEqual(self._validate('contract')['delta'], 'applied')
+
     def test_cached_failures_of_unreached_gates_become_labelable_rows(self):
         core.save_json(self.task / 'review' / 'assess.json', {'key': 'k', 'verdicts': {
             'review': {'status': 'FAIL', 'findings': ['retry leaks inventory']},
@@ -861,6 +870,47 @@ class AssessBundleTests(unittest.TestCase):
         for name in ('checks', 'regression'): self._fresh_pass(name)
         self._validate('contract')
         self.assertEqual(self.calls[0][0], 'contract')
+
+
+class ReviewDeltaStatusTests(unittest.TestCase):
+    """review_delta() says how the delta was used, so a silent fallback is visible in metrics."""
+
+    def setUp(self):
+        self.root, self.state = _sandbox(self)
+        self.task = self.root.parent / 'task'
+        (self.task / 'review').mkdir(parents=True)
+        subprocess.run(['git', 'add', '-A'], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-qm', 'round one', '--allow-empty'], cwd=self.root, check=True, capture_output=True)
+        gates.mark_reviewed(self.root, self.task, 'assess')
+
+    def test_no_earlier_round_is_no_baseline(self):
+        self.assertEqual(gates.review_delta(self.root, self.task, 'bundle', 10000), ('', 'no_baseline'))
+
+    def test_nothing_changed_is_unchanged(self):
+        self.assertEqual(gates.review_delta(self.root, self.task, 'assess', 10000), ('', 'unchanged'))
+
+    def test_a_diff_that_fits_is_applied(self):
+        (self.root / 'app.txt').write_text('fixed the race\n')
+        block, status = gates.review_delta(self.root, self.task, 'assess', 10000)
+        self.assertEqual(status, 'applied')
+        self.assertIn('+fixed the race', block)
+
+    def test_an_oversized_diff_falls_back_to_the_changed_files(self):
+        (self.root / 'app.txt').write_text('x' * 5000 + '\n')
+        block, status = gates.review_delta(self.root, self.task, 'assess', 1200)
+        self.assertEqual(status, 'stat_only')
+        self.assertIn('only the changed files are listed', block)
+        self.assertIn('app.txt', block)
+        self.assertNotIn('x' * 100, block)
+
+    def test_a_delta_that_cannot_fit_at_all_is_omitted(self):
+        (self.root / 'app.txt').write_text('x' * 5000 + '\n')
+        self.assertEqual(gates.review_delta(self.root, self.task, 'assess', 10), ('', 'omitted'))
+
+    def test_a_git_failure_is_reported_not_swallowed(self):
+        (self.root / 'app.txt').write_text('changed\n')
+        with mock.patch.object(gates, 'run', side_effect=RuntimeError('boom')):
+            self.assertEqual(gates.review_delta(self.root, self.task, 'assess', 10000), ('', 'unavailable'))
 
 
 class InlineEvidenceTests(unittest.TestCase):
