@@ -136,10 +136,10 @@ for about 2.3x the builder cost plus review.
   arms; a leftover, ignored `route.ts.tmp` was mistaken for builder scratch and deleted,
   then restored (it was empty).
 
-**Open stack follow-ups:** default `ai metrics label` to the latest failed attempt;
-`ai validators propose` should prefer a `test:run`-style script over a watch-mode
+**Stack follow-ups (all closed in #70):** default `ai metrics label` to the latest failed
+attempt; `ai validators propose` should prefer a `test:run`-style script over a watch-mode
 `test`; `ai doctor` should flag tracked gitlinks without `.gitmodules`; a round cap or
-explicit scope boundary for `security`.
+explicit scope boundary for `security` (`model_rounds` per profile).
 
 ### Task: #91 lock down `event_registrations` RLS (standard, builder variant a)
 
@@ -168,8 +168,9 @@ contract's quality.
   same call had judged `review` and `security` (fixed in #71: cached findings are listed).
 - Findings that `review`/`security` produced inside a shared call, in a round where the
   pipeline stopped at `contract`, are never recorded as gate attempts, so they cannot be
-  labeled. On #91 those were the most important findings. Open.
-- Coordination: two lines of work touched the same policies on the same day. Worth a
-  check in `ai start` or `contract` for migrations landing on the base after the task
-  started.
+  labeled. On #91 those were the most important findings. Fixed in #74: they are
+  recorded as `cached` gate rows when the pipeline stops before their gate.
+- Coordination: two lines of work touched the same policies on the same day. Fixed in
+  #73: `ai pipeline` stops with `NEEDS_HUMAN` when the base has commits the branch does
+  not include, and asks for a rebase that renames any migration now out of order.
 
