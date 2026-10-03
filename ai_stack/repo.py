@@ -151,7 +151,7 @@ def cmd_status(args):
 
 
 # Generated artifacts that, once committed, show up as a change on every test run or
-# install -- and that a cleanup gate then spends tokens reporting. promize had
+# install -- and that a cleanup gate then spends tokens reporting. One pilot repository had
 # __pycache__ bytecode and an egg-info directory committed.
 _GENERATED=(('__pycache__/','Python bytecode cache'),('.pyc','Python bytecode'),('.egg-info/','Python package metadata'),
             ('node_modules/','Node dependencies'),('.pytest_cache/','pytest cache'),('.ruff_cache/','ruff cache'),
@@ -162,7 +162,7 @@ _WALK_SKIP={'.git','node_modules','.venv','venv','dist','build','.nuxt','.output
 def repo_hygiene(root:Path,limit:int=5)->list[str]:
     """Committed generated artifacts and nested git repositories under `root`.
 
-    A nested `.git` (promize had one in backend/, left over from an early `git init`)
+    A nested `.git` (a pilot repository had one in backend/, left over from an early `git init`)
     silently captures every git command run from inside that directory.
     """
     from core import run
@@ -179,7 +179,7 @@ def repo_hygiene(root:Path,limit:int=5)->list[str]:
         if len(nested)>=limit: break
     # Gitlinks (mode 160000) without a .gitmodules entry are committed pointers to
     # repositories that are not submodules -- e.g. agent worktrees committed by accident
-    # (danssme had sixteen under .claude/worktrees/); they show as deleted in every checkout.
+    # (one pilot repository had sixteen under .claude/worktrees/); they show as deleted in every checkout.
     try: stage=run(['git','ls-files','-s'],cwd=root).splitlines()
     except (RuntimeError,OSError): stage=[]
     gitlinks=[line.split('\t',1)[1] for line in stage if line.startswith('160000 ') and '\t' in line]

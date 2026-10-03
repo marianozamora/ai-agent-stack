@@ -232,7 +232,7 @@ def gate_fail_verdicts(state:Path,task_key:str,gate:str)->int:
     """How many times this gate returned a FAIL verdict on this task, on any version of the code.
 
     Unlike the retry streak, a fix does not reset this: it counts rounds, so a gate whose
-    every fix exposes a deeper variant (danssme#102: substring, 4 segments, polyglot)
+    every fix exposes a deeper variant (a campaign task: substring, 4 segments, polyglot)
     reaches a point where a human decides the scope instead of another round.
     """
     connection=_sync_metric_index(state)

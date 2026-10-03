@@ -110,8 +110,8 @@ def cached_bundle_findings(task:Path)->list[tuple[str,str]]:
 
     The pipeline stops at the first failing gate, so when `contract` triggers the shared
     call and fails, `review` and `security` are judged but never recorded: their findings
-    sat in the cache and the builder fixed only contract's, costing extra rounds (danssme
-    #91, #102). A gate whose own record has since passed is left out.
+    sat in the cache and the builder fixed only contract's, costing extra rounds on two
+    campaign tasks. A gate whose own record has since passed is left out.
     """
     found=[]
     for cache in ('assess','bundle'):

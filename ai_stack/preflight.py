@@ -1,6 +1,6 @@
 """`ai preflight` -- prove the environment is up before anything spends tokens.
 
-On danssme #95 Docker was down: the `regression` gate's pgTAP step failed with no visible
+On a campaign task Docker was down: the `regression` gate's pgTAP step failed with no visible
 error, the gate recorded a FAIL, and `ai loop` paid for three builder rounds trying to
 diagnose an environment it was not allowed to start. A preflight is a cheap command the
 repository declares (`supabase status`, `docker info`, a health URL) that `ai loop` runs

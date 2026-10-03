@@ -138,7 +138,7 @@ class DetectionTests(unittest.TestCase):
         self.assertIn("sh -c 'ruff check . && mypy .'", lines)
 
     def test_a_single_run_test_script_wins_over_a_watch_mode_test(self):
-        # danssme: `test` is watch-mode vitest, `test:run` exits.
+        # A pilot repository: `test` is watch-mode vitest, `test:run` exits.
         self.write('package.json', '{"scripts": {"test": "vitest", "test:run": "vitest run"}}')
         self.write('pnpm-lock.yaml')
         self.assertEqual(self.row(self.propose(), 'regression')['command'], ['pnpm', 'run', 'test:run'])

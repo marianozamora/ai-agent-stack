@@ -211,7 +211,7 @@ def codex_error(events:str)->str:
     """The last error Codex reported in its JSON event stream, unwrapped, or ''.
 
     A bare exit status sent the operator to the diagnostics file to learn that the
-    configured model was not available to the account (danssme #103).
+    configured model was not available to the account (campaign).
     """
     reason=''
     for line in events.splitlines():

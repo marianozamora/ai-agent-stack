@@ -705,7 +705,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output
         self.assertEqual(run['usage']['output_tokens'], 13)
 
     def test_a_reviewer_error_stops_the_pipeline_as_needs_human(self):
-        # danssme #103: recorded as FAILED, the reviewer error sent `ai loop` back to the builder.
+        # Campaign: recorded as FAILED, the reviewer error sent `ai loop` back to the builder.
         self.plan()
         self.configure_pipeline()
         self.ai('validators', 'set', 'contract', '--', sys.executable, '-c',
