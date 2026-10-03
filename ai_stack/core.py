@@ -576,7 +576,7 @@ _SECURITY_CODE=re.compile(r'\b(signature|signing|webhooks?|hmac|jwt|passwords?|p
                           r'|authori[sz]\w*|authenticat\w*|permissions?|encrypt\w*|decrypt\w*|html\.escape'
                           r'|sanitiz\w*|rate[_-]?limit\w*'
                           # Database authorization: a Supabase/Postgres RLS change lives in SQL,
-                          # where none of the words above appear (campaign: danssme's RLS tickets).
+                          # where none of the words above appear (campaign: RLS tickets).
                           r'|rls|row[ _]level[ _]security|polic(?:y|ies)|grant|revoke|privileges?'
                           r'|escalat\w*|service_role|security[ _]definer|auth\.uid)\b',re.I)
 _SECURITY_PROSE=re.compile(_SECURITY_CODE.pattern+r'|\b(firmas?|firmad\w*|pagos?|cobros?|contrase[ñn]as?|secretos?'

@@ -753,7 +753,7 @@ class AssessBundleTests(unittest.TestCase):
         self.assertIn('Validate gates: contract, review', prompt)
 
     def test_the_operator_direction_reaches_the_reviewers(self):
-        # danssme #103: a scope decision given only to the builder was re-raised by review and contract.
+        # Campaign: a scope decision given only to the builder was re-raised by review and contract.
         self._validate('contract')
         self.assertNotIn('Operator direction', self.calls[0][1])
         (self.task / 'state/operator-note.md').write_text('The in-memory fallback is out of scope.\n')
@@ -1190,7 +1190,7 @@ class SameStateRerunTests(unittest.TestCase):
         self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 0)
 
     def test_a_reviewer_error_is_not_a_verdict(self):
-        # danssme #103: an unsupported reviewer model was recorded as three contract FAILs.
+        # Campaign: an unsupported reviewer model was recorded as three contract FAILs.
         broken = ['sh', '-c', 'echo \'{"status":"NEEDS_HUMAN","evidence":[],"findings":["Reviewer exited 1: '
                   'model not supported"],"blocked_by":"reviewer"}\'; exit 1']
         for _ in range(3):
@@ -1202,7 +1202,7 @@ class SameStateRerunTests(unittest.TestCase):
         self.assertEqual(gates.gate_fail_verdicts(self.state, self.task.name, 'contract'), 0)
 
     def test_round_limit_lets_an_already_judged_verdict_through(self):
-        # danssme #103: security hit its limit while the newest shared call had judged the
+        # Campaign: security hit its limit while the newest shared call had judged the
         # current code PASS; consuming that verdict costs nothing.
         rounds = self.plan['caps']['model_rounds']
         for index in range(rounds):

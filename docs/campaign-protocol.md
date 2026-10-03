@@ -5,7 +5,7 @@ and which parts of it earn their tokens? `ai metrics label` and `ai metrics --ca
 are the instruments (see the [field guide](field-guide.md#running-a-real-usage-validation-campaign));
 this document is how to use them without fooling ourselves.
 
-Why now: before this campaign the stack had ~2 real tasks recorded. The promize pilot
+Why now: before this campaign the stack had ~2 real tasks recorded. The first pilot
 (2026-09-08) ended in 5 `FAILED` pipelines and 0 `PR_READY`, with the `cleanup` gate
 spending ~1.15M input tokens over 4 rounds that raised different findings each time.
 #56 targets that non-convergence, but it was measured on a single diff.
@@ -28,7 +28,7 @@ with itself.
 
 ## 2. Scope
 
-- **20 real tasks over 2–3 weeks**: ~14 in promize, ~6 in danssme.
+- **20 real tasks over 2–3 weeks**: split across two private pilot repositories.
 - **Task-type mix**: ~5 bugfix, 5 feature, 4 refactor, 3 UI/design, 3 chore/docs.
 - **Profiles**: alternate per task, **`fast` on odd tasks, `standard` on even ones**.
   Use `strict` only for tasks touching payments or security.
@@ -71,7 +71,7 @@ Record what the stack cannot see in [`campaign-log-template.csv`](campaign-log-t
 | Column | Meaning |
 |---|---|
 | `task_key` | From `ai metrics --all-tasks --by task` (blank for arm B) |
-| `repo` | `promize` / `danssme` |
+| `repo` | pilot repository name |
 | `task_type` | `bugfix` / `feature` / `refactor` / `design` / `chore` |
 | `profile` | `fast` / `standard` / `strict` (blank for arm B) |
 | `arm` | `A` (stack, paired), `B` (baseline, paired), `solo` (stack, unpaired) |

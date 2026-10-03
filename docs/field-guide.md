@@ -144,7 +144,7 @@ transcripts when the task is closed and shown beside the gates'.
 
 The protocol for running one — scope, baseline arm, decision rules fixed in advance,
 and a per-task log template — is in [`campaign-protocol.md`](campaign-protocol.md).
-Findings task by task are logged in [`campaign-findings.md`](campaign-findings.md).
+Task-by-task findings are kept privately, outside this repository.
 
 ## Zero-footprint: nothing lands in your checkout
 

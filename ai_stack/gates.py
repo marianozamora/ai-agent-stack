@@ -226,7 +226,7 @@ def with_inspection(prompt:str,inlined:str,base:str)->str:
     return prompt.replace(INSPECT_MARKER,line)+inlined
 
 
-# Security work deepened one round at a time on danssme#92 (atomic reserve -> leaked
+# Security work deepened one round at a time on a campaign task (atomic reserve -> leaked
 # rollback -> retry race -> a second webhook): each fix exposed the next layer. The first
 # pass is asked to map the change's whole surface before judging it.
 THREAT_MODEL_FIRST_PASS=('\nFirst pass: before judging, map the whole change so later rounds do not uncover it piece by '
@@ -251,7 +251,7 @@ def mark_reviewed(root:Path,task:Path,label:str):
 def review_delta(root:Path,task:Path,label:str,room:int)->str:
     """The diff since the commit the previous round of this reviewer call judged.
 
-    The same code passed in one round and failed in a later one (danssme#102 PDFs, MIME):
+    The same code passed in one round and failed in a later one (campaign: PDFs, MIME):
     each re-review re-read everything. Showing what changed since the last round -- and
     saying the rest was reviewed -- narrows it without hiding a demonstrable blocker.
     """
@@ -269,7 +269,7 @@ def review_delta(root:Path,task:Path,label:str,room:int)->str:
 def record_cached_failures(state:Path,task:Path,executed:list[str]):
     """Record FAIL verdicts a shared call gave gates the pipeline stopped before.
 
-    They were judged -- on danssme #91/#92 they were the most important findings -- but,
+    They were judged -- on two campaign tasks they were the most important findings -- but,
     never reaching their own gate, left no attempt to label and no round to count. Each
     is recorded once (and removed from the cache) as a `cached` gate row.
     """
@@ -302,7 +302,7 @@ def operator_note(task:Path)->str:
 def has_cached_verdict(task:Path,name:str,fingerprint:str)->bool:
     """Whether a shared call already judged this gate on exactly this code.
 
-    Consuming it costs nothing, so a round limit must not refuse it: on danssme #103
+    Consuming it costs nothing, so a round limit must not refuse it: on a campaign task
     `security` was stopped at its limit while the newest shared call had judged the
     current code PASS.
     """
@@ -349,7 +349,7 @@ def cmd_validate(args):
         # a verdict: the prerequisite records are part of the shared-verdict cache key, so a
         # member whose predecessor had passed (review after contract, security after review)
         # otherwise computed a different key and paid for its own call -- campaign task
-        # danssme#90 judged contract, review and security in three calls per round.
+        # One campaign task judged contract, review and security in three calls per round.
         dependencies=['checks','regression']
         if args.name in members: dependencies=required[:required.index(members[0])]
         records={}
@@ -485,14 +485,14 @@ Fresh gate evidence (read referenced logs as needed):
                  'blocked_by':exc.name}
     except SystemExit as exc:
         # enforce_budget(): the prompt outgrew the profile's context cap before any call.
-        # Leaving without a verdict line recorded a FAIL of the change (danssme #95: an
+        # Leaving without a verdict line recorded a FAIL of the change (a campaign task: an
         # operator note pushed the summary bundle 646 characters over the `fast` cap).
         if not (isinstance(exc.code,str) and exc.code.startswith('NEEDS_HUMAN') and 'exceeds budget' in exc.code): raise
         verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[exc.code.removeprefix('NEEDS_HUMAN: ')],
                  'summary_markdown':'','blocked_by':'context'}
     except (OSError,ValueError,RuntimeError) as exc:
         # The reviewer never judged the change (it exited, timed out, returned no or
-        # malformed output, or was misconfigured). On danssme #103 an unsupported model
+        # malformed output, or was misconfigured). On a campaign task an unsupported model
         # name was recorded as three contract FAILs and `ai loop` paid for three builder
         # rounds against a gate that never ran.
         verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':'',

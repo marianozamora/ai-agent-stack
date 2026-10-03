@@ -20,7 +20,7 @@ from preflight import preflight_failure
 # behind, and a human's scope decision for this run reaches every round.
 LOOP_SUFFIX = 'Commit the change when the repository\'s checks pass.'
 # The contract lives in external state, outside the checkout, where a headless session
-# may not read (danssme #103: every round's `cat` of it was denied). Inlined instead of
+# may not read (a campaign task: every round's `cat` of it was denied). Inlined instead of
 # granting the directory, which acceptEdits would also make writable.
 CONTRACT_CHARS = 12000
 
@@ -29,7 +29,7 @@ def save_operator_note(task:Path, note:str|None)->str:
     """Record `--note` as the task's standing operator direction and return the one in force.
 
     Kept with the task, not just this run's prompt: the gates read it too, so a scope
-    decision stops a reviewer re-raising what a human ruled out (danssme #103). A new
+    decision stops a reviewer re-raising what a human ruled out (campaign). A new
     `--note` replaces it; `--note ''` clears it.
     """
     from gates import operator_note
@@ -70,7 +70,7 @@ def cmd_loop(args):
     rounds = args.max_rounds
     for number in range(1, rounds + 1):
         # Before each builder round: a round spent against a stopped service is paid for
-        # and then judged as a failure of the change (danssme #95: three rounds, Docker down).
+        # and then judged as a failure of the change (a campaign task: three rounds, Docker down).
         failure = preflight_failure(root, state)
         if failure: raise SystemExit(failure)
         print(f'== round {number}/{rounds}: builder')
