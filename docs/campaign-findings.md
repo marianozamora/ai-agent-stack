@@ -241,3 +241,31 @@ evidence the change is complete: the human review of the diff stays necessary.
 **Stack behaviour after #77:** `--note` reached the gates (`contract` accepted
 `scanTicket` as fail-open despite the ticket's example). No reviewer errors occurred, so
 the new stop path was not exercised.
+
+### Incident: #103 took email sign-in down in production
+
+#115 (#103) was certified `PR_READY`, merged and auto-deployed at 14:04 UTC on
+2026-10-03. `check-email` then returned 429 to every request for ~1h50m: email sign-in
+and sign-up were unavailable until hotfix danssme#118 (`failClosed: false`) deployed at
+15:58. Google sign-in kept working.
+
+Cause: the operator chose "fail closed in production without Redis" for `check-email`
+after the gates kept raising the in-memory fallback, on the assumption that Upstash was
+configured in production. It was not: `UPSTASH_REDIS_REST_URL`/`TOKEN` were only
+documented in a `wrangler.jsonc` comment, never set as Worker secrets. Nothing in the
+stack checked it, and the generated PR summary listed `CRON_SECRET` and
+`TICKET_ENCRYPTION_KEY` as deploy prerequisites but not Upstash.
+
+The certification was wrong in the sense that matters: the change was ready by its
+contract and broke production on deploy. #103 is relabeled `incorrect`. #117 (#116)
+extends the same fail-closed behaviour to more endpoints and is held until Upstash is
+configured.
+
+**Lessons:**
+
+- A fail-closed change is a deploy-time dependency. A contract that adds one must name
+  the production configuration it needs in `risk_notes`, and the operator must verify
+  it (`wrangler secret list`) before merging, not infer it from documentation.
+- In a repository that deploys on merge, `PR_READY` is one step from production. The
+  gates judged the code against its contract; none of them can see the target
+  environment.
