@@ -110,5 +110,5 @@ jobs:
       - run: coverage report -m
       - run: coverage xml
       # ratchet floor - raise as coverage improves; do not lower
-      # (full suite + subprocess instrumentation measures ~86% locally; 5pt headroom)
-      - run: coverage report --fail-under=81
+      # (full suite + subprocess instrumentation measures ~88% locally; 5pt headroom)
+      - run: coverage report --fail-under=83

@@ -19,7 +19,7 @@ Current release: see [`VERSION`](VERSION). Changes between releases are recorded
 | Runtime dependencies | none — Python 3.10+ standard library only |
 | Bundled skills | 46, resolved in a repo-over-stack cascade |
 | Test suite | 1348 tests, 872 subtests (`tests/`) |
-| Line coverage | 88% overall (`coverage report`), CI-enforced floor 81%; `ai_stack/skills.py` at 96% |
+| Line coverage | 88% overall (`coverage report`), CI-enforced floor 83%; `ai_stack/skills.py` at 96% |
 | Codebase | ~6,500 lines across [`ai_stack/`](ai_stack) |
 | License | [MIT](LICENSE) |
 
