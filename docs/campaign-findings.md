@@ -269,3 +269,29 @@ configured.
 - In a repository that deploys on merge, `PR_READY` is one step from production. The
   gates judged the code against its contract; none of them can see the target
   environment.
+
+### Task: #95 enforce ownership in competition RLS (fast, `ai loop`)
+
+PR danssme#119 after 3 `ai loop` runs (7 builder sessions, ~$3.40), 5 operator commits
+and 7 pipeline runs (~400k billable gate tokens). The gates' judgment converged
+(`contract`, `review`, `security` PASS); `summary` and the rest never ran.
+
+What it cost and why:
+
+- **Docker was down for the first run.** `regression`'s pgTAP step failed with its
+  output sent to `/dev/null`; the gate recorded FAIL and `ai loop` paid for three
+  builder rounds (~$1.13) on an environment the builder may not start. Fixed by
+  `ai preflight` (#79).
+- **The builder did not do what the note asked** (a pgTAP case), and `contract`
+  reached its round limit; the operator wrote the missing case and the later fixes.
+- **Deepening plus variance.** Each pipeline run found new, real issues in code earlier
+  runs had passed: a revoked judge reinstating themselves, a score for a slot of another
+  round, organizer-only participant inserts, confirmed participants visible in pending
+  competitions. All were real; none were in the first verdicts.
+- **An operator note became an impossible criterion.** A request aimed at the PR
+  summary was enforced by `contract`, which runs before the summary exists.
+- **The summary bundle outgrew the `fast` context cap** (12,671 > 12,000) because the
+  context embeds the full verdicts of every earlier gate; with a 9-criterion contract
+  it no longer fits. Recorded as a FAIL of the change until #79.
+- An operator commit failed commitlint (header too long) unseen, and the gates judged
+  the staged tree.
