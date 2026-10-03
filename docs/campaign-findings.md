@@ -214,3 +214,30 @@ tree (`cleanup`). The operator first ruled the fallback out of scope, then chose
   were denied too (it fell back to Write).
 - Reviewer variance again: `review` passed the rate-limit code in one run and failed the
   same code in the next.
+
+### Task: #116 fail closed on rate limits without Redis (standard, `ai loop`)
+
+The first run after #77. `PR_READY` in one round twice: the first run (builder $0.72,
+~83k billable gate tokens) passed every gate; after an operator review of the diff, a
+second run with `--note` (builder $0.58, ~91k) also passed in one round. 2 commits,
+`fix/rate-limit-fail-closed`, PR danssme#117. The cheapest task of the campaign so far
+(earlier `standard` tasks: ~450k per task).
+
+**What the gates missed and a human caught** (both in the first run's diff, all gates
+PASS):
+
+- `scanTicket` was made fail-closed: a Redis outage during an event would stop staff
+  scanning tickets at the door. The ticket listed "tickets" as an example of fail-closed,
+  and the gates checked the code against that example rather than against what the
+  call is for.
+- Four callers (chat, mapbox proxy, contact, search) still read the client IP from the
+  leftmost `x-forwarded-for`, the spoofing #103 fixed in `getDefaultIdentifier`. With
+  fail-closed limits, a client could still rotate the header to evade them. Outside the
+  contract's criteria, and neither `review` nor `security` raised it.
+
+Two false negatives on a `PR_READY` that took one round. A clean first round is not
+evidence the change is complete: the human review of the diff stays necessary.
+
+**Stack behaviour after #77:** `--note` reached the gates (`contract` accepted
+`scanTicket` as fail-open despite the ticket's example). No reviewer errors occurred, so
+the new stop path was not exercised.
