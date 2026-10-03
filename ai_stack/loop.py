@@ -93,9 +93,12 @@ def cmd_loop(args):
                                              tools=tools, timeout=args.timeout)
         record_metric(state, 'builder_round', round=number, ok=report['ok'], cost_usd=report.get('cost_usd'),
                       turns=report.get('turns'), denied=len(report.get('denied') or []),
+                      models=report.get('models'), requested_model=report.get('requested_model'),
+                      cli_version=report.get('cli_version'),
                       duration_seconds=round(time.monotonic() - started, 1))
         cost = report.get('cost_usd')
         print(f"   builder: {'ok' if report['ok'] else 'FAILED'}, {report.get('turns')} turns"
+              + (f", {'+'.join(report['models'])}" if report.get('models') else '')
               + (f', ${cost:.2f}' if isinstance(cost, (int, float)) else ''))
         for command in (report.get('denied') or [])[:5]:
             print(f'   denied: {command[:120]}  (allow it with --allow or `ai providers set --builder-allow`)')
