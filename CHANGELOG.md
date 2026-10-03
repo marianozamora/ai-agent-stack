@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Lessons from the first `ai loop` run (danssme #103).**
+  - *A reviewer that cannot judge stops the pipeline.* A reviewer that exits, times out or returns no verdict now records `blocked_by: reviewer`, does not count toward the retry budget or `model_rounds`, and ends `ai pipeline` with `NEEDS_HUMAN` (the run's status too), so `ai loop` stops instead of starting another builder round. A command that cannot run (exit 126/127) stops the same way. An unsupported Codex model had been recorded as three `contract` FAILs and paid for three builder rounds. The Codex error itself (e.g. the model not being available to the account) is now in the message.
+  - *`--note` reaches the reviewers.* The operator direction is kept with the task (`state/operator-note.md`), included in every gate's context as a human scope decision that never relaxes an acceptance criterion or `must_not_change`, and part of the evidence fingerprint, so changing it re-judges. It persists across `ai loop` runs until replaced; `--note ''` clears it. `review` and `contract` had re-raised a finding the operator had ruled out of scope.
+  - *A round limit does not refuse a verdict that is already paid for.* Shared-call caches record the code state they judged; a gate at its `model_rounds` limit still consumes a cached verdict for exactly the current code. `security` had been stopped at its limit while the newest shared call had judged the current code PASS.
+  - *The headless builder gets its contract inline.* The contract lives in external state, where every round's attempt to read it was denied; granting the directory would also have made it writable.
+
 - **`ai loop` runs the builder <-> gates cycle unattended.** Each round plans the prompt (open findings included), runs one non-interactive builder session (`claude -p`, edits accepted, only allowlisted tools), then `ai pipeline --resume`; it stops at `PR_READY`, on any `NEEDS_HUMAN` (round limit, moved base, unchanged code after a FAIL), a budget stop, a builder error or `--max-rounds`. The allowlist is derived from the repository's own `checks`/`regression` commands and detected capability CLIs, plus `--allow` / `ai providers set --builder-allow`; nothing that pushes or deletes is allowed. `--note` passes a scope decision to every round. Each round records a `builder_round` metric with the session's reported cost, turns and denied commands. On the validation campaign this cycle was driven by hand for every task.
 
 - **Fewer, steadier review rounds, and every judged finding counts.**

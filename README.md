@@ -51,7 +51,7 @@ ai pipeline --resume --task-id 1450
 ai ready --task-id 1450
 ```
 
-Use `ai plan` when another agent will consume the generated prompt, or `ai run` to launch Claude directly. To run the whole cycle unattended -- builder round, gates, the next round with the open findings -- use `ai loop`: it stops at `PR_READY` or whenever a human has to decide (a gate's round limit, a moved base, the budget, `--max-rounds`). The builder runs non-interactively with an allowlist derived from the repository's own checks (extend it with `--allow` or `ai providers set --builder-allow`), and `--note` passes a scope decision to every round. `ai pipeline` executes configured gates; `ai ready` only evaluates recorded, fresh evidence and never launches a model.
+Use `ai plan` when another agent will consume the generated prompt, or `ai run` to launch Claude directly. To run the whole cycle unattended -- builder round, gates, the next round with the open findings -- use `ai loop`: it stops at `PR_READY` or whenever a human has to decide (a gate's round limit, a moved base, the budget, `--max-rounds`). The builder runs non-interactively with an allowlist derived from the repository's own checks (extend it with `--allow` or `ai providers set --builder-allow`), and `--note` records a scope decision that every builder round and every reviewer reads, until it is replaced (`--note ''` clears it). `ai pipeline` executes configured gates; `ai ready` only evaluates recorded, fresh evidence and never launches a model.
 
 See the generated [command reference](docs/commands.md) for every command and flag, and the [field guide](docs/field-guide.md) for the complete lifecycle diagrams.
 

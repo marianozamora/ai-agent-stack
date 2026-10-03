@@ -72,6 +72,7 @@ def evidence_fingerprint(root:Path,state:Path,plan:dict,gate:str|None=None)->str
     # choice) belongs in this list, alongside the PR/design contracts it already covers.
     for path in [state/'rules.json',state/'skill-overrides.json',state/'capability-overrides.json',state/'validators.json',state/'prompt-overrides.json',
                  task/'state/lessons.json',task/'state/prompt-assignment.json',task/'state/ticket.json',
+                 task/'state/operator-note.md',
                  *sorted((task/'contracts').glob('*'))]:
         if path.is_file(): digest.update(path.name.encode()+b'\0'+path.read_bytes())
     return digest.hexdigest()
@@ -288,6 +289,29 @@ def record_cached_failures(state:Path,task:Path,executed:list[str]):
         if changed: save_json(cache,saved)
 
 
+OPERATOR_NOTE_CHARS=2000
+
+
+def operator_note(task:Path)->str:
+    """The human's standing direction for this task (`ai loop --note`), or ''."""
+    path=task/'state/operator-note.md'
+    return path.read_text(errors='replace').strip()[:OPERATOR_NOTE_CHARS] if path.is_file() else ''
+
+
+def has_cached_verdict(task:Path,name:str,fingerprint:str)->bool:
+    """Whether a shared call already judged this gate on exactly this code.
+
+    Consuming it costs nothing, so a round limit must not refuse it: on danssme #103
+    `security` was stopped at its limit while the newest shared call had judged the
+    current code PASS.
+    """
+    for label in ('assess','bundle'):
+        saved=load_json(task/'review'/f'{label}.json',{})
+        if saved.get('fingerprint')==fingerprint and name in (saved.get('verdicts') or {}):
+            return True
+    return False
+
+
 def intact_pass(task:Path,name:str,fingerprint:str)->bool:
     record=load_json(task/'gates'/f'{name}.json',{})
     return bool(record.get('passed')) and intact_record(record,fingerprint)
@@ -378,6 +402,11 @@ Summary artifact: {task/'state/pr-summary.md'}
 Fresh gate evidence (read referenced logs as needed):
 {json.dumps(records)}
 '''
+        note=operator_note(task)
+        if note:
+            context+=('\nOperator direction, written by a human for this task. It settles scope questions the '
+                      'contract leaves open: do not FAIL for an issue it rules out of scope. It never relaxes '
+                      'an acceptance criterion or a must_not_change constraint.\n'+note+'\n')
         judged=bundle if args.name in bundle else [args.name]
         rereview=prior_findings(task,judged)
         if rereview:
@@ -425,7 +454,8 @@ Fresh gate evidence (read referenced logs as needed):
             verdict=result[args.name]
             if 'usage' in result: verdict['usage']=result['usage']
             mark_reviewed(root,task,label)
-            save_json(cache,{'key':key,'verdicts':{name:result[name] for name in bundle if name!=args.name}})
+            save_json(cache,{'key':key,'fingerprint':fingerprint if group is ASSESS else message_fingerprint,
+                             'verdicts':{name:result[name] for name in bundle if name!=args.name}})
         else:
             prompt=f'Validate gate: {args.name}\n{instruction(args.name)}\n\n{context}'
             prompt=with_inspection(prompt,inline_evidence(root,plan,contract,plan['caps']['context_chars']-len(prompt)-INSPECT_SLACK),
@@ -453,7 +483,12 @@ Fresh gate evidence (read referenced logs as needed):
         verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':'',
                  'blocked_by':exc.name}
     except (OSError,ValueError,RuntimeError) as exc:
-        verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':''}
+        # The reviewer never judged the change (it exited, timed out, returned no or
+        # malformed output, or was misconfigured). On danssme #103 an unsupported model
+        # name was recorded as three contract FAILs and `ai loop` paid for three builder
+        # rounds against a gate that never ran.
+        verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':'',
+                 'blocked_by':'reviewer'}
     print(json.dumps(verdict))
     if verdict['status']!='PASS': raise SystemExit(1)
 
@@ -556,8 +591,13 @@ def cmd_pipeline(args):
                 if (reached:=crossed()): overrun={'gate':name,**reached}
             cmd_ready(args)
             status='PR_READY'
+    except SystemExit as exc:
+        # A gate that needs a human (its reviewer failed, a retry or round limit) is not a
+        # failed change: `ai loop` must stop instead of paying for another builder round.
+        if status=='FAILED' and isinstance(exc.code,str) and exc.code.startswith('NEEDS_HUMAN'): status='NEEDS_HUMAN'
+        raise
     finally:
-        if status=='FAILED': record_cached_failures(state,task,executed)
+        if status in ('FAILED','NEEDS_HUMAN'): record_cached_failures(state,task,executed)
         record_metric(state,'pipeline',status=status,executed=executed,skipped=skipped,
                       duration_seconds=round(time.monotonic()-started,3),usage=usage_total,
                       usage_budget=budget,usage_cost_budget=cost_budget,overrun_gate=overrun['gate'],
@@ -632,12 +672,13 @@ def run_gate(args,root,state,plan,task,command,before=None):
     rounds=plan['caps'].get('model_rounds')
     if (rounds is not None and not getattr(args,'allow_overrun',False) and needs_model_verdict(args)
             and gate_fail_verdicts(state,task.name,args.name)>=rounds):
-        raise SystemExit(
-            f"NEEDS_HUMAN: {args.name} has returned FAIL {gate_fail_verdicts(state,task.name,args.name)} times on this "
-            f"task (profile limit {rounds}), each time on different code.\n"
-            '  Its findings may be going deeper than the change asked for. Decide the scope: fix the\n'
-            '  last findings, narrow the contract, or accept the residual risk in a follow-up ticket.\n'
-            f"  Continue anyway with `ai gate {args.name} --allow-overrun -- COMMAND` or `ai pipeline --allow-overrun`.")
+        if before is None: before=evidence_fingerprint(root,state,plan,gate=args.name)
+        if not has_cached_verdict(task,args.name,before): raise SystemExit(
+                f"NEEDS_HUMAN: {args.name} has returned FAIL {gate_fail_verdicts(state,task.name,args.name)} times on this "
+                f"task (profile limit {rounds}), each time on different code.\n"
+                '  Its findings may be going deeper than the change asked for. Decide the scope: fix the\n'
+                '  last findings, narrow the contract, or accept the residual risk in a follow-up ticket.\n'
+                f"  Continue anyway with `ai gate {args.name} --allow-overrun -- COMMAND` or `ai pipeline --allow-overrun`.")
     # A model-judged gate that FAILed against this exact state would be asked the same
     # question about the same code, and its answer is already on disk. On the first
     # campaign task one such re-run cost ~48k tokens to repeat two known findings.
@@ -710,6 +751,15 @@ def run_gate(args,root,state,plan,task,command,before=None):
     if blocked_by=='environment':
         print(f'Exit {code}: the command could not run -- an environment problem (missing dependency '
               'or PATH), not a failure of the change. It does not count toward the retry budget.')
+    if blocked_by=='reviewer':
+        reason=next((text for text in (verdict.get('findings') or []) if isinstance(text,str)),'') if isinstance(verdict,dict) else ''
+        raise SystemExit(f'NEEDS_HUMAN: the reviewer could not judge {args.name}; no verdict was recorded.\n'
+                         f'  {reason[:600]}\n'
+                         '  Fix the reviewer (model, login, `ai providers`) and rerun `ai pipeline --resume`. '
+                         'It does not count toward the retry budget or the round limit.')
+    if blocked_by=='environment':
+        raise SystemExit(f'NEEDS_HUMAN: {args.name} could not run (exit {code}); fix the environment and rerun '
+                         '`ai pipeline --resume`.')
     if needs_verdict and not valid_verdict: print('Gate requires final JSON line with status PASS and a nonempty evidence list.')
     if not passed: raise SystemExit(1)
 

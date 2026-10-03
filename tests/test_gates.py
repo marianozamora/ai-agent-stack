@@ -752,6 +752,21 @@ class AssessBundleTests(unittest.TestCase):
         self.assertEqual(name, 'assess')
         self.assertIn('Validate gates: contract, review', prompt)
 
+    def test_the_operator_direction_reaches_the_reviewers(self):
+        # danssme #103: a scope decision given only to the builder was re-raised by review and contract.
+        self._validate('contract')
+        self.assertNotIn('Operator direction', self.calls[0][1])
+        (self.task / 'state/operator-note.md').write_text('The in-memory fallback is out of scope.\n')
+        self._validate('contract')
+        self.assertIn('Operator direction, written by a human', self.calls[1][1])
+        self.assertIn('The in-memory fallback is out of scope.', self.calls[1][1])
+
+    def test_the_shared_cache_records_the_code_it_judged(self):
+        self._validate('contract')
+        fingerprint = gates.evidence_fingerprint(self.root, self.state, gates.current_plan(self.state))
+        self.assertTrue(gates.has_cached_verdict(self.task, 'review', fingerprint))
+        self.assertFalse(gates.has_cached_verdict(self.task, 'review', 'other'))
+
     def test_security_joins_when_it_is_required(self):
         self.required = ['contract', 'review', 'security']
         self._validate('contract')
@@ -1155,10 +1170,40 @@ class SameStateRerunTests(unittest.TestCase):
 
     def test_a_command_that_cannot_run_is_an_environment_problem(self):
         missing = ['sh', '-c', 'exit 127']
-        out = self._run('checks', missing, adapter='exit-code')
-        self.assertIn('environment problem', out)
-        for _ in range(3): self._run('checks', missing, adapter='exit-code')
+        for _ in range(4):
+            with self.assertRaises(SystemExit) as ctx:
+                self._run('checks', missing, adapter='exit-code')
+            self.assertIn('NEEDS_HUMAN: checks could not run', str(ctx.exception))
         self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'checks'), 0)
+
+    def test_a_reviewer_error_is_not_a_verdict(self):
+        # danssme #103: an unsupported reviewer model was recorded as three contract FAILs.
+        broken = ['sh', '-c', 'echo \'{"status":"NEEDS_HUMAN","evidence":[],"findings":["Reviewer exited 1: '
+                  'model not supported"],"blocked_by":"reviewer"}\'; exit 1']
+        for _ in range(3):
+            with self.assertRaises(SystemExit) as ctx:
+                self._run('contract', broken)
+            self.assertIn('NEEDS_HUMAN: the reviewer could not judge contract', str(ctx.exception))
+            self.assertIn('model not supported', str(ctx.exception))
+        self.assertEqual(gates.consecutive_gate_failures(self.state, self.task.name, 'contract'), 0)
+        self.assertEqual(gates.gate_fail_verdicts(self.state, self.task.name, 'contract'), 0)
+
+    def test_round_limit_lets_an_already_judged_verdict_through(self):
+        # danssme #103: security hit its limit while the newest shared call had judged the
+        # current code PASS; consuming that verdict costs nothing.
+        rounds = self.plan['caps']['model_rounds']
+        for index in range(rounds):
+            (self.root / 'app.txt').write_text(f'version {index}\n')
+            self._run('security', self.FAIL)
+        (self.root / 'app.txt').write_text('final\n')
+        passing = ['sh', '-c', 'echo \'{"status":"PASS","evidence":["ok"],"findings":[]}\'']
+        with self.assertRaises(SystemExit) as ctx:
+            self._run('security', passing)
+        self.assertIn('returned FAIL', str(ctx.exception))
+        fingerprint = gates.evidence_fingerprint(self.root, self.state, self.plan, gate='security')
+        core.save_json(self.task / 'review' / 'assess.json',
+                       {'key': 'k', 'fingerprint': fingerprint, 'verdicts': {'security': {'status': 'PASS'}}})
+        self.assertIn('security: PASS', self._run('security', passing))
 
 
 class BuilderVariantMetricTests(unittest.TestCase):
