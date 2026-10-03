@@ -25,6 +25,7 @@ from issues import cmd_tasks_to_issues
 from lifecycle import cmd_handoff, cmd_planrun, cmd_ticket
 from loop import cmd_loop
 from metrics import cmd_metrics
+from preflight import cmd_preflight
 from prompts import PROMPT_NAMES, cmd_prompt
 from providers import BUILDERS, REVIEWERS, cmd_providers
 from repo import cmd_doctor, cmd_init, cmd_optimize, cmd_profile, cmd_rules, cmd_status
@@ -52,7 +53,7 @@ COMMAND_DESCRIPTIONS = {
     'tasks-to-issues':'Turn a tasks file (or the contract\'s acceptance criteria) into GitHub issues.',
     'impact':'Report deterministic diff impact.', 'ready':'Certify readiness from fresh gate evidence.',
     'gate':'Run and record one evidence gate.', 'pipeline':'Run all required configured gates in order.',
-    'validators':'Inspect or configure reusable validators.', 'validate':'Run a bundled semantic validator.',
+    'validators':'Inspect or configure reusable validators.', 'preflight':'Check that the services the gates need are up, before anything is spent.', 'validate':'Run a bundled semantic validator.',
     'metrics':'Report or prune task metrics.', 'benchmark':'Run routing or pipeline benchmarks.',
     'profile':'Inspect the repository profile.', 'confidence':'Report historical outcome evidence.',
     'prompt':'Manage measured validator-prompt experiments.', 'failures':'Inspect recurring failure patterns.',
@@ -101,6 +102,9 @@ def parser():
     q=sp.add_parser('ready'); q.add_argument('--no-launch',action='store_true',help=argparse.SUPPRESS); q.set_defaults(func=cmd_ready)
     gate=sp.add_parser('gate'); gate.add_argument('name',choices=GATES); gate.add_argument('--timeout',type=int,default=600); gate.add_argument('--force-unlock',action='store_true',help="Reclaim this task's lock when the owning process is gone (must precede the gate name)"); gate.add_argument('--allow-overrun',action='store_true',help="Run even though this gate has already failed past the profile's retry budget (must precede the gate name)"); gate.add_argument('command',nargs=argparse.REMAINDER); gate.set_defaults(func=cmd_gate)
     pipeline=sp.add_parser('pipeline'); pipeline.add_argument('--dry-run',action='store_true'); pipeline.add_argument('--resume',action='store_true'); pipeline.add_argument('--allow-overrun',action='store_true',help='Continue past this profile\'s usage budget instead of stopping'); pipeline.add_argument('--force-unlock',action='store_true',help='Reclaim this task\'s lock when the owning process is gone'); pipeline.set_defaults(func=cmd_pipeline)
+    preflight=sp.add_parser('preflight'); pfs=preflight.add_subparsers(dest='action'); preflight.set_defaults(func=cmd_preflight)
+    pfs.add_parser('run'); pfs.add_parser('show'); pfs.add_parser('clear')
+    pfset=pfs.add_parser('set'); pfset.add_argument('--timeout',type=int,default=60,help='Seconds before the check counts as failed (default: 60)'); pfset.add_argument('command',nargs=argparse.REMAINDER)
     validators=sp.add_parser('validators'); vs=validators.add_subparsers(dest='action',required=True); validators.set_defaults(func=cmd_validators)
     vs.add_parser('show')
     vs.add_parser('install')

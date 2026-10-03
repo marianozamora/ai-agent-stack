@@ -14,6 +14,7 @@ import argparse, os, time
 from pathlib import Path
 from core import git_root, load_json, repo_state, resolve_base, task_state
 from metrics import record_metric
+from preflight import preflight_failure
 
 # Appended to the orchestration prompt: the headless builder must leave committed work
 # behind, and a human's scope decision for this run reaches every round.
@@ -68,6 +69,10 @@ def cmd_loop(args):
     note = save_operator_note(task, args.note)
     rounds = args.max_rounds
     for number in range(1, rounds + 1):
+        # Before each builder round: a round spent against a stopped service is paid for
+        # and then judged as a failure of the change (danssme #95: three rounds, Docker down).
+        failure = preflight_failure(root, state)
+        if failure: raise SystemExit(failure)
         print(f'== round {number}/{rounds}: builder')
         # Same prompt path as `ai work`: the title only seeds a new contract's objective.
         cmd_planrun(argparse.Namespace(

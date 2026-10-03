@@ -5,6 +5,7 @@ from detect import proposal, render
 from core import VERSION, base_behind_upstream, collect_scope, contamination, enforce_budget, git_root, load_json, repo_state, require_human, required_gates, run, safe_head, save_json, task_state
 from learning import confidence_card
 from metrics import consecutive_gate_failures, gate_attempt_number, gate_fail_verdicts, record_metric
+from preflight import preflight_failure
 from prompts import BUILDER_SLOT, prompt_slot, variant_text
 from workflow import billable_tokens, contract_list_field, execute, finding_signature, normalize_finding, usage_from_verdict, validate_config, violated_path_constraints
 from tasks import require_open_task, task_lock
@@ -482,6 +483,13 @@ Fresh gate evidence (read referenced logs as needed):
     except PrerequisiteNotReady as exc:
         verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[str(exc)],'summary_markdown':'',
                  'blocked_by':exc.name}
+    except SystemExit as exc:
+        # enforce_budget(): the prompt outgrew the profile's context cap before any call.
+        # Leaving without a verdict line recorded a FAIL of the change (danssme #95: an
+        # operator note pushed the summary bundle 646 characters over the `fast` cap).
+        if not (isinstance(exc.code,str) and exc.code.startswith('NEEDS_HUMAN') and 'exceeds budget' in exc.code): raise
+        verdict={'status':'NEEDS_HUMAN','evidence':[],'findings':[exc.code.removeprefix('NEEDS_HUMAN: ')],
+                 'summary_markdown':'','blocked_by':'context'}
     except (OSError,ValueError,RuntimeError) as exc:
         # The reviewer never judged the change (it exited, timed out, returned no or
         # malformed output, or was misconfigured). On danssme #103 an unsupported model
@@ -532,6 +540,10 @@ def cmd_pipeline(args):
             'no gate was run.\n'
             f"  Rebase first (`git rebase {drift['upstream']}`), renaming any new migration whose timestamp is now\n"
             '  older than one on the base, then run `ai finish` again. `--allow-overrun` continues on the stale base.')
+    # Before any gate: a service the checks need (a local database, Docker) being down is
+    # the environment, not the change, and must not be recorded as a gate FAIL.
+    failure=preflight_failure(root,state)
+    if failure: raise SystemExit(failure)
     budget=plan['caps'].get('usage_tokens')
     card=confidence_card(root,state,plan['scope']['base'],plan['profile'],scope=plan['scope'],risk=plan['risk'])
     if budget and card['projected_usage_tokens']>budget:
@@ -751,11 +763,13 @@ def run_gate(args,root,state,plan,task,command,before=None):
     if blocked_by=='environment':
         print(f'Exit {code}: the command could not run -- an environment problem (missing dependency '
               'or PATH), not a failure of the change. It does not count toward the retry budget.')
-    if blocked_by=='reviewer':
+    if blocked_by in ('reviewer','context'):
         reason=next((text for text in (verdict.get('findings') or []) if isinstance(text,str)),'') if isinstance(verdict,dict) else ''
+        remedy=('Shorten the operator note or the contract, or use a larger profile,' if blocked_by=='context'
+                else 'Fix the reviewer (model, login, `ai providers`)')
         raise SystemExit(f'NEEDS_HUMAN: the reviewer could not judge {args.name}; no verdict was recorded.\n'
                          f'  {reason[:600]}\n'
-                         '  Fix the reviewer (model, login, `ai providers`) and rerun `ai pipeline --resume`. '
+                         f'  {remedy} and rerun `ai pipeline --resume`. '
                          'It does not count toward the retry budget or the round limit.')
     if blocked_by=='environment':
         raise SystemExit(f'NEEDS_HUMAN: {args.name} could not run (exit {code}); fix the environment and rerun '

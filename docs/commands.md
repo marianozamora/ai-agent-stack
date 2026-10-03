@@ -168,6 +168,46 @@ usage: ai pipeline [-h] [--dry-run] [--resume] [--allow-overrun]
                    [--force-unlock] [--task-id TASK_ID]
 ```
 
+## `ai preflight`
+
+Check that the services the gates need are up, before anything is spent.
+
+```text
+usage: ai preflight [-h] [--task-id TASK_ID] {run,show,clear,set} ...
+```
+
+### `ai preflight run`
+
+
+
+```text
+usage: ai preflight run [-h]
+```
+
+### `ai preflight show`
+
+
+
+```text
+usage: ai preflight show [-h]
+```
+
+### `ai preflight clear`
+
+
+
+```text
+usage: ai preflight clear [-h]
+```
+
+### `ai preflight set`
+
+
+
+```text
+usage: ai preflight set [-h] [--timeout TIMEOUT] ...
+```
+
 ## `ai validators`
 
 Inspect or configure reusable validators.

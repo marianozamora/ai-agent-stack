@@ -761,6 +761,19 @@ class AssessBundleTests(unittest.TestCase):
         self.assertIn('Operator direction, written by a human', self.calls[1][1])
         self.assertIn('The in-memory fallback is out of scope.', self.calls[1][1])
 
+    def test_a_context_over_budget_is_not_a_verdict(self):
+        (self.task / 'state/operator-note.md').write_text('x' * 200)
+        buf = io.StringIO()
+        with mock.patch.object(gates, 'enforce_budget', side_effect=SystemExit(
+                'NEEDS_HUMAN: validator context exceeds budget (12646 > 12000 characters).')), \
+                mock.patch.dict(os.environ, {'AI_GATE': 'contract'}), contextlib.redirect_stdout(buf), \
+                self.assertRaises(SystemExit):
+            gates.cmd_validate(argparse.Namespace(name='contract'))
+        verdict = json.loads(buf.getvalue().strip().splitlines()[-1])
+        self.assertEqual((verdict['status'], verdict['blocked_by']), ('NEEDS_HUMAN', 'context'))
+        self.assertIn('exceeds budget', verdict['findings'][0])
+        self.assertEqual(self.calls, [])
+
     def test_the_shared_cache_records_the_code_it_judged(self):
         self._validate('contract')
         fingerprint = gates.evidence_fingerprint(self.root, self.state, gates.current_plan(self.state))
